@@ -1,0 +1,271 @@
+# app/crud/inquiries.py
+
+"""
+CRUD operations for inquiries table.
+Soft delete default, no manual timestamps, proper FK joins.
+"""
+
+from typing import List, Optional
+from sqlalchemy import select, and_, func
+from sqlalchemy.orm import Session, joinedload
+
+from app.models.inquiries import Inquiry
+from app.models.properties import Property
+from app.schemas.inquiries import InquiryCreate, InquiryUpdate
+
+
+class InquiryCRUD:
+    """CRUD operations for property inquiries"""
+
+    def create(
+        self, 
+        db: Session, 
+        *, 
+        obj_in: InquiryCreate,
+        user_id: int  # Explicit user_id parameter
+    ) -> Inquiry:
+        """Create a new inquiry with default 'new' status"""
+        db_obj = Inquiry(
+            user_id=user_id, # ✅ Use passed user_id
+            property_id=obj_in.property_id,
+            message=obj_in.message
+            # inquiry_status defaults to 'new' in DB
+            # created_at, updated_at handled by DB
+        )
+        db.add(db_obj)
+        db.commit()
+        db.refresh(db_obj)
+        return db_obj
+
+    def get(
+        self, 
+        db: Session, 
+        *, 
+        inquiry_id: int
+    ) -> Optional[Inquiry]:
+        """Get an active inquiry by ID"""
+        stmt = select(Inquiry).where(
+            and_(
+                Inquiry.inquiry_id == inquiry_id,
+                Inquiry.deleted_at.is_(None)
+            )
+        )
+        return db.execute(stmt).scalar_one_or_none()
+
+    def get_multi(
+        self, 
+        db: Session, 
+        *, 
+        skip: int = 0, 
+        limit: int = 100
+    ) -> List[Inquiry]:
+        """
+        Get multiple active inquiries with pagination.
+        Ordered by created_at DESC (newest first).
+        """
+        stmt = (
+            select(Inquiry)
+            .where(Inquiry.deleted_at.is_(None))
+            .order_by(Inquiry.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+        )
+        return db.execute(stmt).scalars().all()
+
+    def update(
+        self, 
+        db: Session, 
+        *, 
+        inquiry_id: int,
+        obj_in: InquiryUpdate
+    ) -> Optional[Inquiry]:
+        """
+        Update an inquiry.
+        updated_at handled by DB trigger automatically.
+        """
+        db_obj = self.get(db=db, inquiry_id=inquiry_id)
+        if not db_obj:
+            return None
+
+        update_data = obj_in.model_dump(exclude_unset=True)
+        
+        # Protect core fields from update
+        protected_fields = {'id', 'user_id', 'property_id', 'created_at'}
+        for field in protected_fields:
+            update_data.pop(field, None)
+
+        for field, value in update_data.items():
+            setattr(db_obj, field, value)
+
+        # DB trigger handles updated_at automatically
+        db.commit()
+        db.refresh(db_obj)
+        return db_obj
+
+    def soft_delete(
+        self, 
+        db: Session, 
+        *, 
+        inquiry_id: int
+    ) -> Optional[Inquiry]:
+        """
+        Soft delete an inquiry.
+        deleted_at set by DB trigger.
+        """
+        db_obj = self.get(db=db, inquiry_id=inquiry_id)
+        if not db_obj:
+            return None
+
+        db_obj.deleted_at = func.now()  # Trigger handles timestamp
+        db.commit()
+        db.refresh(db_obj)
+        return db_obj
+
+    def get_by_property(
+        self, 
+        db: Session, 
+        *, 
+        property_id: int, 
+        skip: int = 0, 
+        limit: int = 100
+    ) -> List[Inquiry]:
+        """Get active inquiries for a specific property"""
+        stmt = (
+            select(Inquiry)
+            .where(
+                and_(
+                    Inquiry.property_id == property_id,
+                    Inquiry.deleted_at.is_(None)
+                )
+            )
+            .order_by(Inquiry.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+        )
+        return db.execute(stmt).scalars().all()
+
+    def get_by_user(
+        self, 
+        db: Session, 
+        *, 
+        user_id: int, 
+        skip: int = 0, 
+        limit: int = 100
+    ) -> List[Inquiry]:
+        """Get active inquiries made by a specific user"""
+        stmt = (
+            select(Inquiry)
+            .where(
+                and_(
+                    Inquiry.user_id == user_id,
+                    Inquiry.deleted_at.is_(None)
+                )
+            )
+            .order_by(Inquiry.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+        )
+        return db.execute(stmt).scalars().all()
+
+    def get_by_property_owner(
+        self, 
+        db: Session, 
+        *, 
+        owner_user_id: int, 
+        skip: int = 0, 
+        limit: int = 100
+    ) -> List[Inquiry]:
+        """
+        Get active inquiries for properties owned by a specific user.
+        Joins through Property table to filter by owner.
+        """
+        stmt = (
+            select(Inquiry)
+            .join(Property, Inquiry.property_id == Property.property_id)
+            .where(
+                and_(
+                    Property.user_id == owner_user_id,
+                    Inquiry.deleted_at.is_(None),
+                    Property.deleted_at.is_(None)
+                )
+            )
+            .order_by(Inquiry.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+        )
+        return db.execute(stmt).scalars().all()
+
+    def update_status(
+        self, 
+        db: Session, 
+        *, 
+        inquiry_id: int, 
+        new_status: str
+    ) -> Optional[Inquiry]:
+        """
+        Update inquiry status.
+        Valid statuses: 'new', 'viewed', 'responded' (DB CHECK constraint).
+        """
+        db_obj = self.get(db=db, inquiry_id=inquiry_id)
+        if not db_obj:
+            return None
+
+        db_obj.inquiry_status = new_status
+        # DB trigger handles updated_at
+        db.commit()
+        db.refresh(db_obj)
+        return db_obj
+
+    def mark_as_viewed(
+        self, 
+        db: Session, 
+        *, 
+        inquiry_id: int
+    ) -> Optional[Inquiry]:
+        """Convenience method to mark inquiry as viewed"""
+        return self.update_status(db=db, inquiry_id=inquiry_id, new_status='viewed')
+
+    def mark_as_responded(
+        self, 
+        db: Session, 
+        *, 
+        inquiry_id: int
+    ) -> Optional[Inquiry]:
+        """Convenience method to mark inquiry as responded"""
+        return self.update_status(db=db, inquiry_id=inquiry_id, new_status='responded')
+
+    def count_by_property(
+        self,
+        db: Session,
+        *,
+        property_id: int
+    ) -> int:
+        """Count active inquiries for a property"""
+        stmt = select(func.count()).select_from(Inquiry).where(
+            and_(
+                Inquiry.property_id == property_id,
+                Inquiry.deleted_at.is_(None)
+            )
+        )
+        return db.execute(stmt).scalar()
+
+    def count_by_status(
+        self,
+        db: Session,
+        *,
+        property_id: int,
+        status: str
+    ) -> int:
+        """Count inquiries by status for a property"""
+        stmt = select(func.count()).select_from(Inquiry).where(
+            and_(
+                Inquiry.property_id == property_id,
+                Inquiry.inquiry_status == status,
+                Inquiry.deleted_at.is_(None)
+            )
+        )
+        return db.execute(stmt).scalar()
+
+
+# Singleton instance
+inquiry = InquiryCRUD()

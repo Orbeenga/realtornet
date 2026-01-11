@@ -1,0 +1,33 @@
+# realtornet/pyproject.toml
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "realtornet"
+version = "0.1.0"
+description = "A FastAPI-based real estate platform"
+authors = [
+  { name="Orbeenga Apine", email="apineorbeenga@gmail.com" },
+]
+readme = "README.md"
+requires-python = ">=3.10,<3.14"  # Lock to 3.10-3.13 range
+
+[project.urls]
+"Homepage" = "https://github.com/Orbeenga/realtornet"
+"Repository" = "https://github.com/Orbeenga/realtornet"
+"Bug Tracker" = "https://github.com/Orbeenga/realtornet/issues"
+
+[tool.setuptools]
+# Tell setuptools where to find your package code
+packages = ["app"]
+
+# Optional: If you have top-level scripts, configure them here
+# [project.scripts]
+# command-name = "app.module:function"
+
+# Optional: Add URLs for repository, homepage etc.
+# [project.urls]
+# "Homepage" = "https://yourprojecthomepage.com"
+# "Repository" = "https://github.com/Orbeenga/realtornet"
