@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     POSTGRES_USER: str
     POSTGRES_PASSWORD: str
     POSTGRES_DB: str
-    POSTGRES_PORT: str = "5432"
+    POSTGRES_PORT: str = "6543"
     DATABASE_URL: str = ""  # Optional: direct connection string override
     
     # Test database

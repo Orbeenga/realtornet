@@ -12,7 +12,7 @@ from app.core.config import settings
 from app.models.base import Base
 
 
-# Create production-ready SQLAlchemy engine with connection pooling
+# Create production-ready SQLAlchemy engine optimized for international latency
 engine = create_engine(
     settings.DATABASE_URI,  # Fixed: Use primary property name
     poolclass=QueuePool,
@@ -22,8 +22,24 @@ engine = create_engine(
     pool_recycle=settings.DB_POOL_RECYCLE,  # Recycle connections after 1 hour
     pool_pre_ping=True,  # Verify connections before using (edge-critical)
     echo=settings.DEBUG,  # SQL logging in debug mode
+    # ✅ CONNECTION FIXES FOR NIGERIA -> US WEST
+    connect_args={
+        "connect_timeout": 30,  # 30s handshake allowance
+        "keepalives": 1,
+        "keepalives_idle": 30,
+        "keepalives_interval": 10,
+        "keepalives_count": 5
+    }
 )
 
+# Create session factory (sync only - async removed per Option A)
+SessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine,
+    class_=Session,
+    expire_on_commit=False  # Prevent detached instance errors
+)
 
 # Register PostgreSQL session parameters for edge optimization
 @event.listens_for(engine, "connect")
@@ -38,16 +54,6 @@ def set_pg_session_params(dbapi_conn, connection_record):
         # Set timezone to UTC for consistency
         cursor.execute("SET TIME ZONE 'UTC'")
         # Cursor automatically closed by context manager
-
-
-# Create session factory (sync only - async removed per Option A)
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine,
-    class_=Session,
-    expire_on_commit=False  # Prevent detached instance errors
-)
 
 
 def get_db():
