@@ -467,7 +467,7 @@ def get_stats_overview(
             "pending_properties": pending_properties
         }
     except Exception as e:
-        logger.error(f"Error generating stats overview: {str(e)}")
+        logger.error(f"Error generating stats overview")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Unable to generate statistics. Please try again later."

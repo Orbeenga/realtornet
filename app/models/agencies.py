@@ -39,6 +39,8 @@ class Agency(Base, AuditMixin, SoftDeleteMixin):
     phone_number = Column(String, nullable=True)
     address = Column(Text, nullable=True)
     description = Column(Text, nullable=True)
+
+    # Branding
     logo_url = Column(String, nullable=True)
     website_url = Column(String, nullable=True)
     

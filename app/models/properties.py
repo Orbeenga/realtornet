@@ -84,5 +84,8 @@ class Property(Base, AuditMixin, SoftDeleteMixin):
     inquiries = relationship("Inquiry", back_populates="property")
     amenities = relationship("Amenity", secondary="property_amenities", back_populates="properties")
 
+    # Timestamps, audit and soft delete inherited from mixins:
+    # created_at, updated_at, deleted_at
+
     def __repr__(self):
         return f"<Property(property_id={self.property_id}, title={self.title})>"

@@ -9,7 +9,7 @@ from sqlalchemy.dialects.postgresql import ENUM
 from sqlalchemy.orm import relationship
 import enum
 
-from app.models.base import Base, TimestampMixin
+from app.models.base import Base, AuditMixin, SoftdeleteMixin
 
 
 # Enums (Match DB exactly)
@@ -21,7 +21,7 @@ class ProfileStatus(str, enum.Enum):
 
 
 # Profile Model
-class Profile(Base, TimestampMixin):
+class Profile(Base, AuditMixin, SoftdeleteMixin):
     """
     Extended profile information for users.
     Matches DB table: profiles
@@ -59,8 +59,8 @@ class Profile(Base, TimestampMixin):
         nullable=True
     )
     
-    # Timestamps inherited from TimestampMixin:
-    # created_at, updated_at
+    # Timestamps, audit and soft delete inherited from mixins:
+    # created_at, updated_at, deleted_at
     
     # Relationship with User (one-to-one)
     user = relationship("User", back_populates="profile")

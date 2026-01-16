@@ -67,6 +67,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         # Enhanced autogenerate configuration
+        include_object=include_object,
         compare_type=True,              # Detect column type changes
         compare_server_default=True,    # Detect default value changes
         include_schemas=False,          # Don't include schema in table names
@@ -74,6 +75,30 @@ def run_migrations_offline() -> None:
     
     with context.begin_transaction():
         context.run_migrations()
+
+
+def include_object(object, name, type_, reflected, compare_to):
+    """
+    Filter function to exclude objects from autogenerate.
+    
+    Excludes:
+    - Tables in 'auth' schema (managed by Supabase)
+    - Tables in 'storage' schema (managed by Supabase)
+    - PostGIS spatial_ref_sys table (system table)
+    """
+    # Exclude auth schema (Supabase internal)
+    if type_ == "table" and object.schema == "auth":
+        return False
+    
+    # Exclude storage schema (Supabase internal)
+    if type_ == "table" and object.schema == "storage":
+        return False
+    
+    # Exclude PostGIS system table
+    if type_ == "table" and name == "spatial_ref_sys":
+        return False
+    
+    return True
 
 
 def run_migrations_online() -> None:
@@ -92,10 +117,10 @@ def run_migrations_online() -> None:
         url,
         poolclass=pool.NullPool,
         # Optional: Add connection arguments for Supabase if needed
-        # connect_args={
-        #     "connect_timeout": 30,
-        #     "options": "-c timezone=utc"
-        # }
+        connect_args={
+             "connect_timeout": 30,
+             "options": "-c timezone=utc"
+        }
     )
     
     with connectable.connect() as connection:
@@ -106,6 +131,7 @@ def run_migrations_online() -> None:
             compare_type=True,              # Detect column type changes
             compare_server_default=True,    # Detect default value changes
             include_schemas=False,          # Don't include schema in table names
+            include_object=include_object,  # Tell Alembic to use your filter function
             # Optional: Add render_item function for custom rendering
             # render_as_batch=False,        # Not needed for PostgreSQL
         )

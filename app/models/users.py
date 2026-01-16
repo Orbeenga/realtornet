@@ -4,8 +4,8 @@ User model - strictly matching database schema.
 DB Tables: users
 Phase 2 Aligned: Soft delete, proper FK naming, Supabase integration
 """
-from __future__ import annotations # <--- Added for forward ref support
-from typing import TYPE_CHECKING
+# from __future__ import annotations # <--- Added for forward ref support
+# from typing import TYPE_CHECKING
 
 from sqlalchemy import Column, String, Boolean, BigInteger, ForeignKey, CheckConstraint, DateTime
 from sqlalchemy.dialects.postgresql import UUID, ENUM
@@ -15,9 +15,9 @@ import enum
 from app.models.base import Base, AuditMixin, SoftDeleteMixin
 
 # Prevent circular imports for type checking only
-if TYPE_CHECKING:
-    from app.models.agent_profiles import AgentProfile
-    from app.models.agencies import Agency
+# if TYPE_CHECKING:
+   # from app.models.agent_profiles import AgentProfile
+   # from app.models.agencies import Agency
     # Add other models here as needed for type hints
 
 class UserRole(str, enum.Enum):

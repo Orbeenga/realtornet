@@ -255,14 +255,15 @@ async def upload_avatar(
             "Avatar upload failed",
             extra={
                 "user_id": current_user.user_id,
-                "error": str(e)
+                "error": e.__class__.__name__
             },
             exc_info=True
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error uploading avatar: {str(e)}"
+            detail="Error uploading avatar"
         )
+
 
 
 @router.delete("/me/avatar", response_model=Profile)

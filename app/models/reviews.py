@@ -5,10 +5,10 @@ from sqlalchemy import Column, BigInteger, Integer, ForeignKey, Text, CheckConst
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
-from app.models.base import Base, AuditMixin, SoftDeleteMixin
+from app.models.base import Base, TimestampMixin, SoftDeleteMixin
 
 
-class Review(Base, AuditMixin, SoftDeleteMixin):  # Add AuditMixin
+class Review(Base, TimestampMixin, SoftDeleteMixin):
     """
     Review model for properties and agents.
     Primary Key: review_id (bigint GENERATED ALWAYS AS IDENTITY)

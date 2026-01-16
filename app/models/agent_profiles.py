@@ -4,8 +4,8 @@ AgentProfile model - strictly matching database schema.
 DB Table: agent_profiles
 Phase 2 Aligned: Canonical agent data, soft delete, audit trail
 """
-from __future__ import annotations # <--- Added for string forward ref support
-from typing import TYPE_CHECKING
+# from __future__ import annotations # <--- Added for string forward ref support
+# from typing import TYPE_CHECKING
 
 from sqlalchemy import Column, BigInteger, String, ForeignKey, Integer, Text
 from sqlalchemy.orm import relationship
@@ -13,9 +13,9 @@ from sqlalchemy.orm import relationship
 from app.models.base import Base, AuditMixin, SoftDeleteMixin
 
 # Prevent circular imports for type checking only
-if TYPE_CHECKING:
-    from app.models.users import User
-    from app.models.agencies import Agency
+# if TYPE_CHECKING:
+   # from app.models.users import User
+   # from app.models.agencies import Agency
 
 class AgentProfile(Base, AuditMixin, SoftDeleteMixin):
     """
