@@ -9,7 +9,7 @@ from sqlalchemy.dialects.postgresql import ENUM
 from sqlalchemy.orm import relationship
 import enum
 
-from app.models.base import Base, AuditMixin, SoftdeleteMixin
+from app.models.base import Base, AuditMixin, SoftDeleteMixin
 
 
 # Enums (Match DB exactly)
@@ -21,7 +21,7 @@ class ProfileStatus(str, enum.Enum):
 
 
 # Profile Model
-class Profile(Base, AuditMixin, SoftdeleteMixin):
+class Profile(Base, AuditMixin, SoftDeleteMixin):
     """
     Extended profile information for users.
     Matches DB table: profiles
@@ -30,7 +30,7 @@ class Profile(Base, AuditMixin, SoftdeleteMixin):
     __tablename__ = "profiles"
     
     # Primary key - matches DB exactly
-    id = Column(
+    profile_id = Column(
         BigInteger,
         primary_key=True,
         autoincrement=True,
@@ -66,4 +66,4 @@ class Profile(Base, AuditMixin, SoftdeleteMixin):
     user = relationship("User", back_populates="profile")
     
     def __repr__(self):
-        return f"<Profile(id={self.id}, user_id={self.user_id}, full_name={self.full_name})>"
+        return f"<Profile(profile_id={self.profile_id}, user_id={self.user_id}, full_name={self.full_name})>"

@@ -10,7 +10,7 @@ Usage:
 - Always current (views reflect real-time data)
 """
 
-from sqlalchemy import Column, Integer, String, Numeric, DateTime, Boolean, Text
+from sqlalchemy import Column, BigInteger, Integer, String, Numeric, DateTime, Boolean, Text
 from sqlalchemy.dialects.postgresql import UUID
 from geoalchemy2 import Geography
 from app.models.base import Base
@@ -37,14 +37,14 @@ class ActivePropertiesView(Base):
     }
     
     # Primary identifier
-    property_id = Column(Integer, primary_key=True)
+    property_id = Column(BigInteger, primary_key=True)
     
     # Core property fields
     title = Column(String(255), nullable=False)
     description = Column(Text)
-    user_id = Column(Integer, nullable=False)
-    property_type_id = Column(Integer)
-    location_id = Column(Integer)
+    user_id = Column(BigInteger, nullable=False)
+    property_type_id = Column(BigInteger)
+    location_id = Column(BigInteger)
     
     # Geography
     geom = Column(Geography(geometry_type='POINT', srid=4326))

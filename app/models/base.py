@@ -4,9 +4,9 @@ SQLAlchemy Base Configuration - Database-First Canonical Approach
 All definitions strictly match the normalized database schema.
 """
 
-from sqlalchemy import MetaData, Column, DateTime, ForeignKey
+from sqlalchemy import MetaData, Column, DateTime, ForeignKey, Table
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, declared_attr
 from sqlalchemy.sql import func
 
 
@@ -43,12 +43,12 @@ class TimestampMixin:
     
     created_at = Column(
         DateTime(timezone=True),
-        nullable=False,
+        nullable=True,
         server_default=func.now()
     )
     updated_at = Column(
         DateTime(timezone=True),
-        nullable=False,
+        nullable=True,
         server_default=func.now()
     )
 
@@ -59,18 +59,20 @@ class AuditMixin(TimestampMixin):
     Use for: users, properties, agencies, agent_profiles, locations
     Matches DB: created_by and updated_by uuid
     """
-    # Add use_alter=True for cross-schema FKs
-    created_by = Column(
-        UUID(as_uuid=True),
-        ForeignKey("auth.users.id", use_alter=True, name="fk_created_by"),
-        nullable=True
-    )
-    
-    updated_by = Column(
-        UUID(as_uuid=True),
-        ForeignKey("auth.users.id", use_alter=True, name="fk_updated_by"),
-        nullable=True
-    )
+    # Intentionally no ForeignKey (Supabase auth.users)
+    @declared_attr
+    def created_by(cls):
+        return Column(
+            UUID(as_uuid=True),
+            nullable=True
+        )
+
+    @declared_attr
+    def updated_by(cls):
+        return Column(
+            UUID(as_uuid=True),
+            nullable=True
+        )
 
 
 class SoftDeleteMixin:
@@ -81,12 +83,13 @@ class SoftDeleteMixin:
     """
     deleted_at = Column(DateTime(timezone=True), nullable=True)
 
-    # Add use_alter=True for cross-schema FK
-    deleted_by = Column(
-        UUID(as_uuid=True),
-        ForeignKey("auth.users.id", use_alter=True, name="fk_deleted_by"),
-        nullable=True
-    )
+    # Intentionally no ForeignKey (Supabase auth.users)
+    @declared_attr
+    def deleted_by(cls):
+        return Column(
+            UUID(as_uuid=True),
+            nullable=True
+        )
 
 
 # Export

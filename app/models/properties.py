@@ -1,7 +1,7 @@
 # app/models/properties.py
 """Property model - 100% fidelity to database schema."""
 
-from sqlalchemy import Column, BigInteger, ForeignKey, String, Text, Numeric, Boolean, CheckConstraint, DateTime, Integer
+from sqlalchemy import Column, BigInteger, ForeignKey, String, Text, Numeric, Boolean, CheckConstraint, DateTime, Integer, text
 from sqlalchemy.dialects.postgresql import ENUM
 from sqlalchemy.orm import relationship
 from geoalchemy2 import Geography
@@ -41,11 +41,11 @@ class Property(Base, AuditMixin, SoftDeleteMixin):
     location_id = Column(BigInteger, ForeignKey("locations.location_id"), nullable=True)
     geom = Column(Geography(geometry_type='POINT', srid=4326), nullable=True)
     price = Column(Numeric(precision=12, scale=2), nullable=False)
-    price_currency = Column(String, nullable=True, server_default="'NGN'::character varying")
+    price_currency = Column(String, nullable=True, server_default=text("'NGN'::character varying"))
     bedrooms = Column(Integer, nullable=True)
     bathrooms = Column(Integer, nullable=True)
     property_size = Column(Numeric(precision=10, scale=2), nullable=True)
-    is_featured = Column(Boolean, nullable=True, server_default="false")
+    is_featured = Column(Boolean, nullable=True, server_default=text("false"))
     listing_type = Column(
         ENUM(ListingType, name="listing_type_enum", create_type=False),  # ✅ Updated reference
         nullable=False
@@ -53,17 +53,17 @@ class Property(Base, AuditMixin, SoftDeleteMixin):
     listing_status = Column(
         ENUM(ListingStatus, name="listing_status_enum", create_type=False),  # ✅ Updated reference
         nullable=False,
-        server_default="'available'::listing_status_enum"
+        server_default=text("'available'::listing_status_enum")
     )
-    is_verified = Column(Boolean, nullable=True, server_default="false")
+    is_verified = Column(Boolean, nullable=True, server_default=text("false"))
     verification_date = Column(DateTime(timezone=True), nullable=True)
     
     # New amenity/feature columns
     year_built = Column(Integer, nullable=True)
     parking_spaces = Column(Integer, nullable=True)
-    has_garden = Column(Boolean, nullable=True, server_default="false")
-    has_security = Column(Boolean, nullable=True, server_default="false")
-    has_swimming_pool = Column(Boolean, nullable=True, server_default="false")
+    has_garden = Column(Boolean, nullable=True, server_default=text("false"))
+    has_security = Column(Boolean, nullable=True, server_default=text("false"))
+    has_swimming_pool = Column(Boolean, nullable=True, server_default=text("false"))
 
     __table_args__ = (
         CheckConstraint("price > 0::numeric", name="properties_price_check"),

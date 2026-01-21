@@ -5,7 +5,7 @@ DB Table: agencies
 Phase 2 Aligned: Canonical location, soft delete, audit trail
 """
 
-from sqlalchemy import Column, BigInteger, String, Text, Boolean, CheckConstraint
+from sqlalchemy import Column, BigInteger, String, Text, Boolean, CheckConstraint, text
 from sqlalchemy.orm import relationship
 
 from app.models.base import Base, AuditMixin, SoftDeleteMixin
@@ -45,7 +45,7 @@ class Agency(Base, AuditMixin, SoftDeleteMixin):
     website_url = Column(String, nullable=True)
     
     # Verification status
-    is_verified = Column(Boolean, nullable=False, default=False)
+    is_verified = Column(Boolean, nullable=True, server_default=text('false'))
     
     # Timestamps + audit + soft delete inherited from mixins:
     # - created_at, updated_at, updated_by (AuditMixin)

@@ -14,11 +14,11 @@ class Amenity(Base, TimestampMixin):
     """
     __tablename__ = "amenities"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    amenity_id = Column(BigInteger, primary_key=True, autoincrement=True)
     name = Column(Text, unique=True, nullable=False)
     description = Column(Text, nullable=True)
 
     properties = relationship("Property", secondary="property_amenities", back_populates="amenities")
 
     def __repr__(self):
-        return f"<Amenity(id={self.id}, name={self.name})>"
+        return f"<Amenity(amenity_id={self.amenity_id}, name={self.name})>"

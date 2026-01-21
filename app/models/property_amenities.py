@@ -10,5 +10,5 @@ property_amenities = Table(
     "property_amenities",
     Base.metadata,
     Column("property_id", BigInteger, ForeignKey("properties.property_id"), primary_key=True, nullable=False),
-    Column("amenity_id", BigInteger, ForeignKey("amenities.id"), primary_key=True, nullable=False),
+    Column("amenity_id", BigInteger, ForeignKey("amenities.amenity_id"), primary_key=True, nullable=False),
 )

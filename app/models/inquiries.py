@@ -5,7 +5,7 @@ DB Table: inquiries
 Phase 2 Aligned: Canonical PK naming, ENUM type, soft delete
 """
 
-from sqlalchemy import Column, BigInteger, ForeignKey, Text, Enum as SQLEnum
+from sqlalchemy import Column, BigInteger, ForeignKey, Text, Enum as SQLEnum, text
 from sqlalchemy.orm import relationship
 
 from app.models.base import Base, TimestampMixin, SoftDeleteMixin
@@ -58,7 +58,7 @@ class Inquiry(Base, TimestampMixin, SoftDeleteMixin):
             create_type=False  # ENUM already exists in DB
         ),
         nullable=False,
-        server_default='new',
+        server_default=text("'new'::text"),  # ← Cast to text matching DB CHECK constraint
         index=True
     )
 
