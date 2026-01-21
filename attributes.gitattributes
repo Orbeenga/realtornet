@@ -1,0 +1,10 @@
+#gitattributes
+"""
+Normalizes Line Feed → Carriage Return + Line Feed conversion
+Unix-style line endings → (LF) Windows-style line endings (CRLF).
+"""
+# Enforce Unix-style line endings in the repo
+*.py  text eol=lf
+*.sql text eol=lf
+*.sh  text eol=lf
+*.env text eol=lf
