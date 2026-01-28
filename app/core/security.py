@@ -7,6 +7,7 @@ Consolidated security module containing:
 - Password hashing (bcrypt)
 - JWT token generation and validation
 - Multi-tenant authentication
+- Using bcrypt directly instead of passlib (passlib has bugs)
 """
 
 from __future__ import annotations
@@ -15,22 +16,18 @@ from typing import Optional
 from uuid import UUID
 
 from jose import jwt, JWTError
-from passlib.context import CryptContext
 from pydantic import BaseModel, Field, field_validator
+import bcrypt
 
 from app.core.config import settings
 from app.core.exceptions import AuthenticationException
 
 
 # PASSWORD HASHING (Bcrypt)
-
-# Create a CryptContext for bcrypt hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
-
-
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """
     Verify that a plain text password matches the stored hashed password.
+    UPDATED: Uses bcrypt directly to avoid passlib bugs
     
     Args:
         plain_password: Plain text password from user input
@@ -39,12 +36,18 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     Returns:
         True if password matches, False otherwise
     """
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        password_bytes = plain_password.encode('utf-8')
+        hashed_bytes = hashed_password.encode('utf-8')
+        return bcrypt.checkpw(password_bytes, hashed_bytes)
+    except (ValueError, TypeError):
+        return False
 
 
 def get_password_hash(password: str) -> str:
     """
     Generate a bcrypt hash for the provided plain text password.
+    UPDATED: Uses bcrypt directly to avoid passlib bugs
     
     Args:
         password: Plain text password to hash
@@ -54,7 +57,10 @@ def get_password_hash(password: str) -> str:
         
     Note: 12 rounds provides strong security while maintaining performance
     """
-    return pwd_context.hash(password)
+    password_bytes = password.encode('utf-8')
+    salt = bcrypt.gensalt(rounds=12)
+    hashed = bcrypt.hashpw(password_bytes, salt)
+    return hashed.decode('utf-8')
 
 
 # JWT TOKEN MANAGEMENT
@@ -120,19 +126,20 @@ def create_token(
 
     expire = datetime.now(timezone.utc) + expires_delta
 
-    payload = TokenPayload(
-        sub=str(supabase_id),  # JWT spec requires string subject
-        supabase_id=supabase_id,
-        user_id=user_id,
-        exp=expire,
-        token_type=token_type,
-        user_role=user_role,
-        agency_id=agency_id
-    )
+    payload_dict = {
+        "sub": str(supabase_id),
+        "supabase_id": str(supabase_id),
+        "user_id": user_id,
+        "exp": int(expire.timestamp()),  # ← Convert to Unix timestamp!
+        "iat": int(datetime.now(timezone.utc).timestamp()),
+        "token_type": token_type,
+        "user_role": user_role,
+        "agency_id": agency_id
+    }
 
     return jwt.encode(
-        payload.model_dump(mode='json', exclude_unset=True),
-        settings.SECRET_KEY,
+        payload_dict, 
+        settings.SECRET_KEY, 
         algorithm=settings.ALGORITHM
     )
 
@@ -156,6 +163,7 @@ def decode_token(token: str) -> TokenPayload:
             settings.SECRET_KEY,
             algorithms=[settings.ALGORITHM]
         )
+
         return TokenPayload(**payload_dict)
     except jwt.ExpiredSignatureError:
         raise AuthenticationException(

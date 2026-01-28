@@ -8,7 +8,8 @@ Phase 2 Aligned: Soft delete, proper FK naming, Supabase integration
 # from typing import TYPE_CHECKING
 
 from sqlalchemy import Column, String, Boolean, BigInteger, ForeignKey, CheckConstraint, DateTime
-from sqlalchemy.dialects.postgresql import UUID, ENUM
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.types import Enum as SQLAEnum
 from sqlalchemy.orm import relationship
 import enum
 
@@ -81,7 +82,7 @@ class User(Base, AuditMixin, SoftDeleteMixin):
 
     # User role and verification
     user_role = Column(
-        ENUM(UserRole, name="user_role_enum", create_type=False),
+        SQLAEnum(UserRole, values_callable=lambda x: [e.value for e in x]),
         nullable=False,
         index=True
     )

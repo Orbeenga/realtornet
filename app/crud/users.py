@@ -276,7 +276,13 @@ class UserCRUD:
         if not user:
             return None
         
-        if not verify_password(password, user.password_hash):
+        try:
+            # ADDED: Try-catch for bcrypt edge cases (72-byte limit)
+            if not verify_password(password, user.password_hash):
+                return None
+        except (ValueError, TypeError):
+            # Handles bcrypt 72-byte limit or malformed hash
+            print(f"Password verification error")
             return None
         
         # Update last login timestamp
@@ -299,6 +305,10 @@ class UserCRUD:
         """Check if user email is verified"""
         return user.is_verified
     
+    def is_active(self, user: User) -> bool:
+        """Check if user is active (not soft deleted)"""
+        return user.deleted_at is None
+
     def can_modify_user(
         self, 
         current_user: User, 

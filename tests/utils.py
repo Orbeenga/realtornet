@@ -36,11 +36,11 @@ def get_auth_headers(
         )
     """
     access_token = generate_access_token(
-        supabase_id=supabase_id,
-        user_id=user_id,
-        user_role=user_role,
-        agency_id=agency_id
-    )
+    supabase_id=supabase_id,
+    user_id=user_id,
+    user_role=user_role,
+    agency_id=agency_id
+)
     return {"Authorization": f"Bearer {access_token}"}
 
 

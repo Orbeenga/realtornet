@@ -71,7 +71,7 @@ def login_access_token(
     access_token = generate_access_token(
         supabase_id=user.supabase_id,
         user_id=user.user_id,
-        role=user.user_role.value if user.user_role else None,
+        user_role=user.user_role.value if user.user_role else None,
         agency_id=user.agency_id
     )
     
@@ -79,7 +79,7 @@ def login_access_token(
     refresh_token = generate_refresh_token(
         supabase_id=user.supabase_id,
         user_id=user.user_id,
-        role=user.user_role.value if user.user_role else None,
+        user_role=user.user_role.value if user.user_role else None,
         agency_id=user.agency_id
     )
     
@@ -142,7 +142,7 @@ def refresh_access_token(
         new_access_token = generate_access_token(
             supabase_id=refresh_payload.supabase_id,
             user_id=refresh_payload.user_id,
-            role=refresh_payload.role,
+            user_role=refresh_payload.user_role,
             agency_id=refresh_payload.agency_id
         )
         
@@ -199,13 +199,17 @@ def register_user(
         )
     
     # Create new user
-    user = user_crud.create(db, obj_in=user_in)
+    # Generate supabase_id for registration (in real app, this comes from Supabase Auth)
+    import uuid
+    supabase_id = str(uuid.uuid4())  # In production, this would come from Supabase Auth callback
+    
+    # Pass supabase_id to create
+    user = user_crud.create(db, obj_in=user_in, supabase_id=supabase_id)
     
     # Send welcome email as a background task
     send_welcome_email.delay(
-        to_email=user.email,
-        subject="Welcome to RealtorNet!",
-        body=f"Hello {user.first_name}, welcome to RealtorNet!"
+        user.email,
+        user.first_name
     )
     
     return user

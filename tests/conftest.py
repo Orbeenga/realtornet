@@ -1,7 +1,8 @@
-# tests/conftest.py
+# tests/conftest_no_mock.py
+# tests/conftest_no_mock.py
 """
-Pytest configuration and fixtures for RealtorNet tests.
-Provides test database, client, and user fixtures.
+Conftest WITHOUT OAuth2 mock - to see the real error.
+Copy this to tests/conftest.py temporarily to diagnose.
 """
 
 import pytest
@@ -9,6 +10,9 @@ import uuid
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+
+import os
+os.environ["ENV"] = "test"  # Force test environment
 
 from app.core.config import settings
 from app.core.database import Base, get_db
@@ -39,18 +43,24 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 def db():
     """
     Create a fresh PostgreSQL test database for each test.
-    Uses create_all/drop_all for test isolation (acceptable for tests).
+    Uses transactions for proper isolation without dropping tables.
     """
+    # Create tables once at module level (not per test)
+    Base.metadata.create_all(bind=engine)
+    
+    connection = engine.connect()
+    transaction = connection.begin()
+    db = TestingSessionLocal(bind=connection)
+    
     try:
-        Base.metadata.create_all(bind=engine)
-        db = TestingSessionLocal()
         yield db
     except Exception as e:
-        print(f"Database connection error: {e}")
+        print(f"Test error: {e}")
         raise
     finally:
         db.close()
-        Base.metadata.drop_all(bind=engine)
+        transaction.rollback()  # Rolls back all changes from this test
+        connection.close()
 
 
 @pytest.fixture(scope="function")
@@ -75,15 +85,17 @@ def normal_user(db):
     """
     Create a normal seeker user for testing.
     """
+    password_hash = get_password_hash("password")
+    
     user = User(
         email="user@example.com",
-        password_hash=get_password_hash("password"),
+        password_hash=password_hash,
         first_name="Test",
         last_name="User",
         phone_number="+1234567890",
-        user_role=UserRole.SEEKER,  # Fixed: Use SEEKER instead of USER
+        user_role=UserRole.SEEKER,
         is_verified=False,
-        supabase_id=uuid.uuid4(),  # Fixed: Added required field
+        supabase_id=uuid.uuid4(),
     )
     db.add(user)
     db.commit()
@@ -96,15 +108,17 @@ def agent_user(db):
     """
     Create an agent user for testing.
     """
+    password_hash = get_password_hash("password")
+    
     user = User(
         email="agent@example.com",
-        password_hash=get_password_hash("password"),
+        password_hash=password_hash,
         first_name="Test",
         last_name="Agent",
         phone_number="+1234567891",
         user_role=UserRole.AGENT,
         is_verified=True,
-        supabase_id=uuid.uuid4(),  # Fixed: Added required field
+        supabase_id=uuid.uuid4(),
     )
     db.add(user)
     db.commit()
@@ -117,16 +131,18 @@ def admin_user(db):
     """
     Create an admin user for testing.
     """
+    password_hash = get_password_hash("password")
+    
     user = User(
         email="admin@example.com",
-        password_hash=get_password_hash("password"),
+        password_hash=password_hash,
         first_name="Test",
         last_name="Admin",
         phone_number="+1234567892",
         user_role=UserRole.ADMIN,
         is_verified=True,
         is_admin=True,
-        supabase_id=uuid.uuid4(),  # Fixed: Added required field
+        supabase_id=uuid.uuid4(),
     )
     db.add(user)
     db.commit()

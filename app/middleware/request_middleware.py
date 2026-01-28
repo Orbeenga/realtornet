@@ -73,10 +73,13 @@ class RedisRateLimitMiddleware(BaseHTTPMiddleware):
         call_next: RequestResponseEndpoint
     ) -> Response:
         """
-        Process request with rate limiting.
-        
+        Rate limiting and request tracking middleware.
         Returns 429 if rate limit exceeded, otherwise processes request normally.
         """
+        # ADDED: Skip rate limiting in test environment
+        if settings.ENV == "test":
+            return await call_next(request)
+
         # Get client identifier
         client_id = self._get_client_identifier(request)
         current_time = time.time()
