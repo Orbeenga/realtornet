@@ -13,7 +13,7 @@ from fastapi import HTTPException
 from geoalchemy2.functions import ST_DWithin, ST_Distance
 from geoalchemy2.elements import WKTElement
 
-from app.models.properties import Property, ListingStatus
+from app.models.properties import Property, ListingType, ListingStatus
 from app.models.locations import Location
 from app.schemas.properties import PropertyCreate, PropertyUpdate, PropertyFilter
 from app.models.property_types import PropertyType
@@ -66,7 +66,7 @@ class PropertyCRUD:
         query = select(Property).where(
             and_(
                 Property.is_featured == True,
-                Property.listing_status == ListingStatus.AVAILABLE,
+                Property.listing_status == ListingStatus.available,
                 Property.deleted_at.is_(None)
             )
         ).order_by(Property.created_at.desc()).limit(limit)
@@ -286,7 +286,7 @@ class PropertyCRUD:
         ).where(
             and_(
                 Property.deleted_at.is_(None),
-                Property.listing_status == ListingStatus.AVAILABLE,
+                Property.listing_status == ListingStatus.available,
                 ST_DWithin(
                     Location.geom,
                     point,
@@ -300,7 +300,7 @@ class PropertyCRUD:
     
     
     # CREATE OPERATIONS
-        
+    
     def create(
         self, 
         db: Session, 
@@ -334,27 +334,13 @@ class PropertyCRUD:
                 detail=f"Property type with id={obj_in.property_type_id} not found"
             )
         
-        create_data = obj_in.dict(exclude_unset=True)
+        # Get clean data from Pydantic schema
+        create_data = obj_in.model_dump(mode='python', exclude_unset=True)
         
+        # Create property instance with validated data
         db_obj = Property(
-            title=create_data["title"],
-            description=create_data["description"],
-            price=create_data["price"],
-            price_currency=create_data.get("price_currency", "NGN"),
-            bedrooms=create_data.get("bedrooms"),
-            bathrooms=create_data.get("bathrooms"),
-            property_size=create_data.get("property_size"),
-            property_type_id=create_data["property_type_id"],
-            listing_type=create_data["listing_type"],
-            listing_status=create_data.get("listing_status", ListingStatus.AVAILABLE),
-            location_id=create_data["location_id"],
-            user_id=user_id,  # From auth context
-            year_built=create_data.get("year_built"),
-            parking_spaces=create_data.get("parking_spaces"),
-            has_garden=create_data.get("has_garden", False),
-            has_security=create_data.get("has_security", False),
-            has_swimming_pool=create_data.get("has_swimming_pool", False),
-            is_featured=create_data.get("is_featured", False),
+            **create_data,  # Unpack all validated fields from schema
+            user_id=user_id,  # From auth context (not from request body)
             is_verified=False,  # Must be verified by admin
             updated_by=created_by_supabase_id
             # Timestamps handled by DB DEFAULT now()

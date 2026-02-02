@@ -293,6 +293,10 @@ class UserCRUD:
     
     # AUTHORIZATION HELPERS
        
+    def is_seeker(self, user: User) -> bool:
+        """Check if user has seeker role"""
+        return user.user_role == UserRole.SEEKER
+    
     def is_agent(self, user: User) -> bool:
         """Check if user has agent role"""
         return user.user_role == UserRole.AGENT
@@ -308,6 +312,20 @@ class UserCRUD:
     def is_active(self, user: User) -> bool:
         """Check if user is active (not soft deleted)"""
         return user.deleted_at is None
+
+    def remove(
+        self,
+        db: Session, 
+        *, 
+        user_id: int, 
+        deleted_by_supabase_id: Optional[str] = None
+    ) -> Optional[User]:
+        """Alias for soft_delete (backward compatibility with tests)"""
+        return self.soft_delete(
+            db, 
+            user_id=user_id, 
+            deleted_by_supabase_id=deleted_by_supabase_id
+        )
 
     def can_modify_user(
         self, 

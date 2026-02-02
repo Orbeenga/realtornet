@@ -10,9 +10,22 @@ from typing import Optional, List
 from datetime import datetime
 from decimal import Decimal
 
-# ✅ IMPORT enums from models instead of redefining them
-from app.models.properties import ListingType, ListingStatus
+from enum import Enum
 
+class ListingType(str, Enum):
+    """Schema enum - values match DB exactly"""
+    sale = "sale"
+    rent = "rent"
+    lease = "lease"
+
+class ListingStatus(str, Enum):
+    """Schema enum - lowercase values match DB"""
+    available = "available"
+    active = "active"
+    pending = "pending"
+    sold = "sold"
+    rented = "rented"
+    unavailable = "unavailable"
 
 # Base Schema (shared fields for responses)
 class PropertyBase(BaseModel):
@@ -32,6 +45,11 @@ class PropertyBase(BaseModel):
     has_garden: Optional[bool] = False
     has_security: Optional[bool] = False
     has_swimming_pool: Optional[bool] = False
+    
+    model_config = ConfigDict(
+        use_enum_values=True,
+        from_attributes=True
+    )
 
     @field_validator('price')
     @classmethod
@@ -71,7 +89,7 @@ class PropertyBase(BaseModel):
 # Create Schema (for POST requests - excludes DB-controlled fields)
 class PropertyCreate(PropertyBase):
     """Schema for creating a new property"""
-    user_id: int  # Required - must link to a user
+    # user_id: int  # Required - must link to a user
     is_featured: Optional[bool] = False
     # Optional: amenity IDs to link
     amenity_ids: Optional[List[int]] = None
@@ -81,6 +99,8 @@ class PropertyCreate(PropertyBase):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
 
+    # enum values inherited from models
+    model_config = ConfigDict(use_enum_values=True)
 
 # Update Schema (for PATCH/PUT requests - all fields optional)
 class PropertyUpdate(BaseModel):
@@ -105,6 +125,9 @@ class PropertyUpdate(BaseModel):
     has_swimming_pool: Optional[bool] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+
+    # enum values inherited from models
+    model_config = ConfigDict(use_enum_values=True)
 
     @field_validator('price')
     @classmethod
@@ -216,6 +239,8 @@ class PropertyFilter(BaseModel):
     page: int = 1
     page_size: int = 20
 
+    # enum values inherited from models
+    model_config = ConfigDict(use_enum_values=True)
 
 # List Response Schema (for paginated lists)
 class PropertyListResponse(BaseModel):

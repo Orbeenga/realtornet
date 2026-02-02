@@ -12,19 +12,19 @@ from app.models.base import Base, AuditMixin, SoftDeleteMixin
 
 class ListingType(str, enum.Enum):  
     """Listing type enum matching DB listing_type_enum"""
-    FOR_SALE = "for sale"
-    FOR_RENT = "for rent"
-    LEASE = "lease"
+    sale = "sale"
+    rent = "rent"
+    lease = "lease"
 
 
-class ListingStatus(str, enum.Enum):  
-    """Listing status enum matching DB listing_status_enum"""
-    AVAILABLE = "available"
-    ACTIVE = "active"
-    PENDING = "pending"
-    SOLD = "sold"
-    RENTED = "rented"
-    UNAVAILABLE = "unavailable"
+class ListingStatus(str, enum.Enum):   
+    """Listing status enum - Fully lowercase for consistency"""
+    available = "available"
+    active = "active"
+    pending = "pending"
+    sold = "sold"
+    rented = "rented"
+    unavailable = "unavailable"
 
 class Property(Base, AuditMixin, SoftDeleteMixin):
     """
