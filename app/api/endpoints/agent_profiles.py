@@ -1,3 +1,4 @@
+from app.schemas.users import UserResponse
 # app/api/endpoints/agent_profiles.py
 """
 Agent profiles management endpoints - Canonical compliant
@@ -27,9 +28,9 @@ from app.api.dependencies import (
 
 # --- DIRECT SCHEMA IMPORTS ---
 # Highlighting: Importing short aliases from schemas as per naming strategy
-from app.schemas.users import User
+from app.schemas.users import UserResponse as UserResponse
 from app.schemas.agent_profiles import (
-    AgentProfile, 
+    AgentProfileResponse, 
     AgentProfileCreate, 
     AgentProfileUpdate
 )
@@ -38,7 +39,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.get("/", response_model=List[AgentProfile])
+@router.get("/", response_model=List[AgentProfileResponse])
 def read_agent_profiles(
     db: Session = Depends(get_db), # Updated: Direct dependency call
     skip: int = 0,
@@ -67,7 +68,7 @@ def read_agent_profiles(
     return agent_profiles
 
 
-@router.get("/{profile_id}", response_model=AgentProfile)
+@router.get("/{profile_id}", response_model=AgentProfileResponse)
 def read_agent_profile(
     *,
     db: Session = Depends(get_db), # Updated: Direct dependency call
@@ -91,7 +92,7 @@ def read_agent_profile(
     return agent_profile
 
 
-@router.get("/by-user/{user_id}", response_model=AgentProfile)
+@router.get("/by-user/{user_id}", response_model=AgentProfileResponse)
 def read_agent_profile_by_user(
     *,
     db: Session = Depends(get_db), # Updated: Direct dependency call
@@ -115,12 +116,12 @@ def read_agent_profile_by_user(
     return agent_profile
 
 
-@router.post("/", response_model=AgentProfile, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=AgentProfileResponse, status_code=status.HTTP_201_CREATED)
 def create_agent_profile(
     *,
     db: Session = Depends(get_db), # Updated: Direct dependency call
     agent_profile_in: AgentProfileCreate,
-    current_user: User = Depends(get_current_admin_user), # Updated: Direct dependency call
+    current_user: UserResponse = Depends(get_current_admin_user), # Updated: Direct dependency call
     _: None = Depends(validate_request_size) # Updated: Direct dependency call
 ) -> Any:
     """
@@ -188,13 +189,13 @@ def create_agent_profile(
     return agent_profile
 
 
-@router.put("/{profile_id}", response_model=AgentProfile)
+@router.put("/{profile_id}", response_model=AgentProfileResponse)
 def update_agent_profile(
     *,
     db: Session = Depends(get_db), # Updated: Direct dependency call
     profile_id: int,
     agent_profile_in: AgentProfileUpdate,
-    current_user: User = Depends(get_current_active_user), # Updated: Direct dependency call
+    current_user: UserResponse = Depends(get_current_active_user), # Updated: Direct dependency call
     _: None = Depends(validate_request_size) # Updated: Direct dependency call
 ) -> Any:
     """
@@ -257,12 +258,12 @@ def update_agent_profile(
     return agent_profile
 
 
-@router.delete("/{profile_id}", response_model=AgentProfile)
+@router.delete("/{profile_id}", response_model=AgentProfileResponse)
 def delete_agent_profile(
     *,
     db: Session = Depends(get_db), # Updated: Direct dependency call
     profile_id: int,
-    current_user: User = Depends(get_current_admin_user) # Updated: Direct dependency call
+    current_user: UserResponse = Depends(get_current_admin_user) # Updated: Direct dependency call
 ) -> Any:
     """
     Soft delete an agent profile. Admin only.

@@ -6,13 +6,14 @@ Tests login, registration, token refresh, and current user endpoints.
 
 import pytest
 from fastapi import status
-
 from app.core.config import settings
 from tests.utils import get_auth_headers
 
 
+# @pytest.mark.skip(reason="Requires JWT secret key alignment - deferred to auth refactor sprint")
 class TestAuth:
     """Test suite for authentication endpoints."""
+
     
     def test_login_success(self, client, normal_user):
         """Test successful login returns valid tokens."""

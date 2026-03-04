@@ -1,3 +1,4 @@
+from app.schemas.users import UserResponse
 # FILE 1: app/api/endpoints/property_images.py
 """
 Property images management endpoints - Canonical compliant
@@ -22,8 +23,8 @@ from app.api.dependencies import (
 )
 
 # --- DIRECT SCHEMA IMPORTS (using aliases) ---
-from app.schemas.users import User
-from app.schemas.property_images import PropertyImage, PropertyImageCreate, PropertyImageUpdate
+from app.schemas.users import UserResponse as UserResponse
+from app.schemas.property_images import PropertyImageResponse, PropertyImageCreate, PropertyImageUpdate
 
 # --- SERVICES ---
 from app.services.storage_services import upload_property_image, delete_property_image
@@ -32,7 +33,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.get("/property/{property_id}", response_model=List[PropertyImage])
+@router.get("/property/{property_id}", response_model=List[PropertyImageResponse])
 def read_property_images(
     *,
     db: Session = Depends(get_db),
@@ -56,7 +57,7 @@ def read_property_images(
     return images
 
 
-@router.get("/{image_id}", response_model=PropertyImage)
+@router.get("/{image_id}", response_model=PropertyImageResponse)
 def read_property_image(
     *,
     db: Session = Depends(get_db),
@@ -78,7 +79,7 @@ def read_property_image(
     return image
 
 
-@router.post("/property/{property_id}/upload", response_model=PropertyImage, status_code=status.HTTP_201_CREATED)
+@router.post("/property/{property_id}/upload", response_model=PropertyImageResponse, status_code=status.HTTP_201_CREATED)
 async def upload_property_image_endpoint(
     *,
     db: Session = Depends(get_db),
@@ -86,7 +87,7 @@ async def upload_property_image_endpoint(
     file: UploadFile = File(...),
     caption: str = None,
     is_primary: bool = False,
-    current_user: User = Depends(get_current_active_user),
+    current_user: UserResponse = Depends(get_current_active_user),
     _: None = Depends(validate_request_size)
 ) -> Any:
     """
@@ -111,7 +112,7 @@ async def upload_property_image_endpoint(
             detail="Property not found"
         )
     
-    # Check ownership: property owner or admin
+    # Check ownership: PropertyResponse owner or admin
     if property.user_id != current_user.user_id and not user_crud.is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -191,19 +192,19 @@ async def upload_property_image_endpoint(
         )
 
 
-@router.put("/{image_id}", response_model=PropertyImage)
+@router.put("/{image_id}", response_model=PropertyImageResponse)
 def update_property_image(
     *,
     db: Session = Depends(get_db),
     image_id: int,
     image_in: PropertyImageUpdate,
-    current_user: User = Depends(get_current_active_user),
+    current_user: UserResponse = Depends(get_current_active_user),
     _: None = Depends(validate_request_size)
 ) -> Any:
     """
     Update property image metadata (caption, is_primary, display_order).
     
-    Permissions: Property owner or admin.
+    Permissions: PropertyResponse owner or admin.
     Does not change the actual image file - use delete + upload for that.
     No audit trail (property_images table has no updated_by column).
     """
@@ -247,13 +248,13 @@ async def delete_property_image_endpoint(
     *,
     db: Session = Depends(get_db),
     image_id: int,
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserResponse = Depends(get_current_active_user)
 ) -> Any:
     """
     Delete a property image.
     
     Hard delete - removes from both Supabase Storage and database.
-    Permissions: Property owner or admin.
+    Permissions: PropertyResponse owner or admin.
     No soft delete (property_images table has no deleted_at column).
     """
     image = property_image_crud.get(db, image_id=image_id)
@@ -308,13 +309,13 @@ async def delete_property_image_endpoint(
         )
 
 
-@router.put("/property/{property_id}/reorder", response_model=List[PropertyImage])
+@router.put("/property/{property_id}/reorder", response_model=List[PropertyImageResponse])
 def reorder_property_images(
     *,
     db: Session = Depends(get_db),
     property_id: int,
     image_order: List[int],
-    current_user: User = Depends(get_current_active_user),
+    current_user: UserResponse = Depends(get_current_active_user),
     _: None = Depends(validate_request_size)
 ) -> Any:
     """
@@ -323,7 +324,7 @@ def reorder_property_images(
     Accepts list of image_ids in desired display order.
     Updates display_order for all images accordingly.
     
-    Permissions: Property owner or admin.
+    Permissions: PropertyResponse owner or admin.
     """
     # Verify property exists
     property = property_crud.get(db, property_id=property_id)
@@ -368,18 +369,18 @@ def reorder_property_images(
     return images
 
 
-@router.post("/{image_id}/set-primary", response_model=PropertyImage)
+@router.post("/{image_id}/set-primary", response_model=PropertyImageResponse)
 def set_primary_image(
     *,
     db: Session = Depends(get_db),
     image_id: int,
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserResponse = Depends(get_current_active_user)
 ) -> Any:
     """
     Set an image as the primary image for its property.
     
     Automatically unsets other primary images for the same property.
-    Permissions: Property owner or admin.
+    Permissions: PropertyResponse owner or admin.
     """
     image = property_image_crud.get(db, image_id=image_id)
     

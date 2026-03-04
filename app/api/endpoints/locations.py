@@ -1,6 +1,7 @@
+from app.schemas.users import UserResponse
 # app/api/endpoints/locations.py
 """
-Location management endpoints - Canonical compliant
+LocationResponse management endpoints - Canonical compliant
 Handles geography data with PostGIS support, admin-only mutations, soft delete
 """
 from typing import Any, List
@@ -23,7 +24,7 @@ from app.api.dependencies import (
 # --- DIRECT SCHEMA IMPORTS ---
 from app.schemas.users import UserResponse
 from app.schemas.locations import (
-    Location,
+    LocationResponse,
     LocationCreate,
     LocationUpdate,
     LocationListResponse
@@ -32,7 +33,7 @@ from app.schemas.locations import (
 router = APIRouter()
 
 
-@router.get("/", response_model=List[Location])
+@router.get("/", response_model=List[LocationResponse])
 def read_locations(
     db: Session = Depends(get_db),
     skip: int = 0,
@@ -66,8 +67,8 @@ def read_locations(
     return locations
 
 
-@router.post("/", response_model=Location, status_code=status.HTTP_201_CREATED)
-def create_location(
+@router.post("/", response_model=LocationResponse, status_code=status.HTTP_201_CREATED)
+def create_LocationResponse(
     *,
     db: Session = Depends(get_db),
     location_in: LocationCreate,
@@ -75,7 +76,7 @@ def create_location(
     _: None = Depends(validate_request_size)
 ) -> Any:
     """
-    Create new location. Admin only.
+    Create new LocationResponse. Admin only.
     
     Validates geography coordinates if provided.
     CRUD layer converts lat/lon to PostGIS Geography(POINT, 4326).
@@ -98,13 +99,13 @@ def create_location(
             )
     
     # Create with audit tracking
-    location = location_crud.create(
+    LocationResponse = location_crud.create(
         db, 
         obj_in=location_in,
         created_by=current_user.supabase_id  # UUID audit trail
     )
     
-    return location
+    return LocationResponse
 
 
 @router.get("/states", response_model=List[str])
@@ -161,30 +162,30 @@ def read_neighborhoods(
     return neighborhoods
 
 
-@router.get("/{location_id}", response_model=Location)
-def read_location(
+@router.get("/{location_id}", response_model=LocationResponse)
+def read_LocationResponse(
     *,
     db: Session = Depends(get_db),
     location_id: int,
 ) -> Any:
     """
-    Get location by ID.
+    Get LocationResponse by ID.
     
-    Public endpoint - returns 404 if location not found or soft-deleted.
+    Public endpoint - returns 404 if LocationResponse not found or soft-deleted.
     """
-    location = location_crud.get(db, location_id=location_id)
+    LocationResponse = location_crud.get(db, location_id=location_id)
     
-    if not location:
+    if not LocationResponse:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Location not found",
+            detail="LocationResponse not found",
         )
     
-    return location
+    return LocationResponse
 
 
-@router.put("/{location_id}", response_model=Location)
-def update_location(
+@router.put("/{location_id}", response_model=LocationResponse)
+def update_LocationResponse(
     *,
     db: Session = Depends(get_db),
     location_id: int,
@@ -193,19 +194,19 @@ def update_location(
     _: None = Depends(validate_request_size)
 ) -> Any:
     """
-    Update a location. Admin only.
+    Update a LocationResponse. Admin only.
     
     Validates geography coordinates if being updated.
     CRUD layer handles WKT conversion for PostGIS.
     
     Audit: Tracks updater via updated_by (Supabase UUID)
     """
-    location = location_crud.get(db, location_id=location_id)
+    LocationResponse = location_crud.get(db, location_id=location_id)
     
-    if not location:
+    if not LocationResponse:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Location not found",
+            detail="LocationResponse not found",
         )
     
     # Validate geography if coordinates being updated
@@ -224,60 +225,60 @@ def update_location(
             )
     
     # Update with audit tracking
-    location = location_crud.update(
+    LocationResponse = location_crud.update(
         db, 
-        db_obj=location, 
+        db_obj=LocationResponse, 
         obj_in=location_in,
         updated_by=current_user.supabase_id  # UUID audit trail
     )
     
-    return location
+    return LocationResponse
 
 
-@router.delete("/{location_id}", response_model=Location)
-def delete_location(
+@router.delete("/{location_id}", response_model=LocationResponse)
+def delete_LocationResponse(
     *,
     db: Session = Depends(get_db),
     location_id: int,
     current_user: UserResponse = Depends(get_current_admin_user)
 ) -> Any:
     """
-    Soft delete a location. Admin only.
+    Soft delete a LocationResponse. Admin only.
     
     Sets deleted_at timestamp, preserves data for audit trail.
-    Consider: Location may have FK relationships with properties.
+    Consider: LocationResponse may have FK relationships with properties.
     
     Audit: Tracks who deleted via deleted_by (Supabase UUID)
     """
-    location = location_crud.get(db, location_id=location_id)
+    LocationResponse = location_crud.get(db, location_id=location_id)
     
-    if not location:
+    if not LocationResponse:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Location not found",
+            detail="LocationResponse not found",
         )
     
-    # Check if location has active properties (optional business rule)
+    # Check if LocationResponse has active properties (optional business rule)
     # Prevent deletion of locations with properties:
     from app.crud.properties import property as property_crud
-    active_properties = property_crud.count_by_location(db, location_id=location_id)
+    active_properties = property_crud.count_by_LocationResponse(db, location_id=location_id)
     if active_properties > 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot delete location with {active_properties} active properties"
+            detail=f"Cannot delete LocationResponse with {active_properties} active properties"
         )
     
     # Soft delete with audit trail
-    location = location_crud.soft_delete(
+    LocationResponse = location_crud.soft_delete(
         db, 
         location_id=location_id,
         deleted_by_supabase_id=current_user.supabase_id
     )
     
-    return location
+    return LocationResponse
 
 
-@router.get("/by-coordinates/", response_model=List[Location])
+@router.get("/by-coordinates/", response_model=List[LocationResponse])
 def read_locations_by_coordinates(
     *,
     db: Session = Depends(get_db),

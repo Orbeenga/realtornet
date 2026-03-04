@@ -88,4 +88,3 @@ class AgentProfileListResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 # Fast API alias
-AgentProfile = AgentProfileResponse

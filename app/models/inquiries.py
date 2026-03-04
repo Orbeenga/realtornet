@@ -4,12 +4,16 @@ Inquiry model - strictly matching database schema.
 DB Table: inquiries
 Phase 2 Aligned: Canonical PK naming, ENUM type, soft delete
 """
-
+import enum
 from sqlalchemy import Column, BigInteger, ForeignKey, Text, Enum as SQLEnum, text
 from sqlalchemy.orm import relationship
 
 from app.models.base import Base, TimestampMixin, SoftDeleteMixin
 
+class InquiryStatus(str, enum.Enum):
+    new = "new"
+    viewed = "viewed"
+    responded = "responded"
 
 class Inquiry(Base, TimestampMixin, SoftDeleteMixin):
     """
@@ -50,15 +54,15 @@ class Inquiry(Base, TimestampMixin, SoftDeleteMixin):
     # Inquiry content
     message = Column(Text, nullable=True)
 
-    # Status - CORRECTED to use ENUM type
+    # Status - Using the class for better type safety
     inquiry_status = Column(
         SQLEnum(
-            'new', 'viewed', 'responded',
+            InquiryStatus, # Use the class here
             name='inquiry_status_enum',
-            create_type=False  # ENUM already exists in DB
+            create_type=False
         ),
         nullable=False,
-        server_default=text("'new'::text"),  # ← Cast to text matching DB CHECK constraint
+        server_default=text("'new'::inquiry_status_enum"),
         index=True
     )
 

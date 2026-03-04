@@ -135,16 +135,28 @@ def calculate_bounding_box(
     min_lat = latitude - math.degrees(rad_dist)
     max_lat = latitude + math.degrees(rad_dist)
     
-    # Longitude bounds (longitude gets smaller when latitude increases)
-    delta_lon = math.asin(math.sin(rad_dist) / math.cos(math.radians(latitude)))
-    min_lon = longitude - math.degrees(delta_lon)
-    max_lon = longitude + math.degrees(delta_lon)
+    # Longitude bounds (handle poles specially)
+    cos_lat = math.cos(math.radians(latitude))
     
+    if abs(cos_lat) < 0.0001:  # At or very near poles
+        delta_lon = 180.0  # Box spans all longitudes
+    else:
+        asin_arg = math.sin(rad_dist) / cos_lat
+        
+        if abs(asin_arg) >= 1.0:  # Box spans all longitudes at this latitude
+            delta_lon = 180.0
+        else:
+            delta_lon = math.degrees(math.asin(asin_arg))
+    
+    min_lon = longitude - delta_lon
+    max_lon = longitude + delta_lon
+    
+    # Clamp to valid coordinate ranges
     return {
-        "min_lat": max(-90, min_lat),
-        "max_lat": min(90, max_lat),
-        "min_lon": max(-180, min_lon),
-        "max_lon": min(180, max_lon)
+        "min_lat": max(-90.0, min_lat),    # ✅ Clamp to >= -90
+        "max_lat": min(90.0, max_lat),     # ✅ Clamp to <= 90
+        "min_lon": max(-180.0, min_lon),   # ✅ Clamp to >= -180
+        "max_lon": min(180.0, max_lon)     # ✅ Clamp to <= 180
     }
 
 
@@ -183,8 +195,11 @@ def wkt_to_coords(wkt: str) -> Optional[Tuple[float, float]]:
     if not wkt:
         return None
         
-    # Match "POINT(lon lat)" format
-    match = re.match(r'POINT\s*\(\s*([+-]?\d+\.?\d*)\s+([+-]?\d+\.?\d*)\s*\)', wkt, re.IGNORECASE)
+    # Match "POINT(lon lat)" format with support for scientific notation
+    # Pattern supports: 123, 123.456, -123.456, 1.23e2, 1.23E-2, etc.
+    pattern = r'POINT\s*\(\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)\s+([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)\s*\)'
+    match = re.match(pattern, wkt, re.IGNORECASE)
+    
     if match:
         longitude = float(match.group(1))
         latitude = float(match.group(2))

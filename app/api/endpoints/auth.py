@@ -3,7 +3,7 @@
 Authentication endpoints - Canonical compliant
 Handles login, registration, token refresh with proper soft delete and audit tracking
 """
-from datetime import timedelta
+from uuid import UUID
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status, Body
 from fastapi.security import OAuth2PasswordRequestForm
@@ -140,9 +140,9 @@ def refresh_access_token(
         
         # Generate new access token with full user data
         new_access_token = generate_access_token(
-            supabase_id=refresh_payload.supabase_id,
+            supabase_id=UUID(refresh_payload.supabase_id),
             user_id=refresh_payload.user_id,
-            user_role=refresh_payload.user_role,
+            user_role=refresh_payload.role,
             agency_id=refresh_payload.agency_id
         )
         

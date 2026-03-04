@@ -1,7 +1,7 @@
 # app/models/property_images.py
 """PropertyImage model - 100% fidelity to database schema."""
 
-from sqlalchemy import Column, BigInteger, ForeignKey, String, Boolean
+from sqlalchemy import Column, Integer, BigInteger, ForeignKey, String, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import text
 
@@ -16,8 +16,13 @@ class PropertyImage(Base, TimestampMixin):
     __tablename__ = "property_images"
 
     image_id = Column(BigInteger, primary_key=True, autoincrement=True)
-    property_id = Column(BigInteger, ForeignKey("properties.property_id"), nullable=True)
+    property_id = Column(BigInteger, ForeignKey("properties.property_id"), nullable=False) # False for integrity
     image_url = Column(String, nullable=False)
+    
+    # Optional fields with defaults
+    caption = Column(String, nullable=True)
+    display_order = Column(Integer, nullable=False, server_default=text("0"))
+    
     is_primary = Column(Boolean, nullable=True, server_default=text("false"))
     is_verified = Column(Boolean, nullable=True, server_default=text("false"))
 

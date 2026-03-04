@@ -76,4 +76,3 @@ class AgencyListResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 # Alias for backward compatibility
-Agency = AgencyResponse

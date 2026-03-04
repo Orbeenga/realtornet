@@ -1,3 +1,4 @@
+from app.schemas.users import UserResponse
 # app/api/endpoints/users.py
 """
 User management endpoints - Canonical compliant
@@ -24,7 +25,7 @@ from app.api.dependencies import (
 )
 
 # --- DIRECT SCHEMA IMPORTS (using aliases) ---
-from app.schemas.users import User, UserCreate, UserUpdate
+from app.schemas.users import UserResponse as UserResponse, UserCreate, UserUpdate
 
 # --- SERVICES ---
 from app.services.storage_services import upload_profile_image
@@ -33,12 +34,12 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.get("/", response_model=List[User])
+@router.get("/", response_model=List[UserResponse])
 def read_users(
     db: Session = Depends(get_db),
     skip: int = 0,
     limit: int = 100,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: UserResponse = Depends(get_current_admin_user),
 ) -> Any:
     """
     Retrieve users. Admin only.
@@ -49,7 +50,7 @@ def read_users(
     return users
 
 
-@router.get("/realtors", response_model=List[User])
+@router.get("/realtors", response_model=List[UserResponse])
 def read_realtors(
     db: Session = Depends(get_db),
     skip: int = 0,
@@ -64,10 +65,10 @@ def read_realtors(
     return realtors
 
 
-@router.get("/{user_id}", response_model=User)
+@router.get("/{user_id}", response_model=UserResponse)
 def read_user_by_id(
     user_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: UserResponse = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -98,12 +99,12 @@ def read_user_by_id(
     return user
 
 
-@router.put("/me", response_model=User)
+@router.put("/me", response_model=UserResponse)
 def update_user_me(
     *,
     db: Session = Depends(get_db),
     user_in: UserUpdate,
-    current_user: User = Depends(get_current_active_user),
+    current_user: UserResponse = Depends(get_current_active_user),
     _: None = Depends(validate_request_size)
 ) -> Any:
     """
@@ -122,7 +123,7 @@ def update_user_me(
     logger.info(
         "User updated self",
         extra={
-            "user_id": user.user_id,
+            "user_id": UserResponse.user_id,
             "updated_by": current_user.supabase_id
         }
     )
@@ -130,13 +131,13 @@ def update_user_me(
     return user
 
 
-@router.put("/{user_id}", response_model=User)
+@router.put("/{user_id}", response_model=UserResponse)
 def update_user(
     *,
     db: Session = Depends(get_db),
     user_id: int,
     user_in: UserUpdate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: UserResponse = Depends(get_current_admin_user),
     _: None = Depends(validate_request_size)
 ) -> Any:
     """
@@ -163,7 +164,7 @@ def update_user(
     logger.info(
         "User updated by admin",
         extra={
-            "user_id": user.user_id,
+            "user_id": UserResponse.user_id,
             "updated_by": current_user.supabase_id
         }
     )
@@ -171,12 +172,12 @@ def update_user(
     return user
 
 
-@router.delete("/{user_id}", response_model=User)
+@router.delete("/{user_id}", response_model=UserResponse)
 def delete_user(
     *,
     db: Session = Depends(get_db),
     user_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: UserResponse = Depends(get_current_admin_user),
 ) -> Any:
     """
     Soft delete a user. Admin only.
@@ -209,7 +210,7 @@ def delete_user(
         "User soft deleted",
         extra={
             "user_id": user_id,
-            "email": user.email,
+            "email": UserResponse.email,
             "deleted_by": current_user.supabase_id
         }
     )
@@ -221,7 +222,7 @@ def delete_user(
 async def upload_user_profile_image(
     user_id: int,
     file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user),
+    current_user: UserResponse = Depends(get_current_user),
     db: Session = Depends(get_db),
     _: None = Depends(validate_request_size)
 ) -> Any:
@@ -286,7 +287,7 @@ async def upload_user_profile_image(
         logger.info(
             "User profile image uploaded",
             extra={
-                "user_id": user.user_id,
+                "user_id": UserResponse.user_id,
                 "image_url": url,
                 "uploaded_by": current_user.supabase_id
             }

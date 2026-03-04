@@ -344,22 +344,24 @@ class AgentProfileCRUD:
         *, 
         profile_id: int,
         deleted_by_supabase_id: Optional[str] = None
-    ) -> Optional[AgentProfile]:
+    ) -> AgentProfile:
         """
         Soft delete an agent profile by setting deleted_at timestamp.
         Profile data preserved for commission history, review attribution.
+        Bypasses default CRUD filters to properly handle 'already deleted' states.
         """
-        db_obj = self.get(db, profile_id=profile_id)
+        # Bypass self.get() to see deleted records
+        db_obj = db.get(AgentProfile, profile_id)  # Direct lookup, no filters
+        
         if not db_obj:
             raise ValueError(f"Agent profile with id={profile_id} not found")
         
-        # Check if already deleted
         if db_obj.deleted_at is not None:
             raise ValueError(f"Agent profile with id={profile_id} is already deleted")
-    
+
         db_obj.deleted_at = datetime.now(timezone.utc)
         db_obj.deleted_by = deleted_by_supabase_id
-    
+
         db.add(db_obj)
         db.commit()
         db.refresh(db_obj)

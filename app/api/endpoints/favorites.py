@@ -1,3 +1,4 @@
+from app.schemas.users import UserResponse
 # app/api/endpoints/favorites.py
 """
 Favorites management endpoints - Canonical compliant
@@ -21,21 +22,21 @@ from app.api.dependencies import (
 )
 
 # --- DIRECT SCHEMA IMPORTS (using aliases from schema file) ---
-from app.schemas.users import User
-from app.schemas.favorites import Favorite, FavoriteCreate
+from app.schemas.users import UserResponse as UserResponse
+from app.schemas.favorites import FavoriteResponse, FavoriteCreate
 
 router = APIRouter()
 
 
-@router.post("/", response_model=Favorite, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=FavoriteResponse, status_code=status.HTTP_201_CREATED)
 def create_favorite(
     favorite_in: FavoriteCreate,
-    current_user: User = Depends(get_current_active_user),
+    current_user: UserResponse = Depends(get_current_active_user),
     db: Session = Depends(get_db),
     _: None = Depends(validate_request_size)
 ):
     """
-    Create a new favorite for a user and property.
+    Create a new FavoriteResponse for a user and property.
     
     - Prevents duplicate favorites
     - Automatically sets is_active to True
@@ -43,14 +44,14 @@ def create_favorite(
     
     Audit: Tracks creator via user_id FK (no created_by column per DB schema)
     """
-    # Ensure user is creating favorite for themselves
+    # Ensure user is creating FavoriteResponse for themselves
     if favorite_in.user_id != current_user.user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot create favorite for another user"
+            detail="Cannot create FavoriteResponse for another user"
         )
 
-    # Check if favorite already exists (including soft-deleted)
+    # Check if FavoriteResponse already exists (including soft-deleted)
     existing_favorite = favorite_crud.get(
         db, 
         user_id=favorite_in.user_id,
@@ -61,13 +62,13 @@ def create_favorite(
         if existing_favorite.deleted_at is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Favorite already exists for this user and property"
+                detail="FavoriteResponse already exists for this user and property"
             )
         else:
-            # Soft-deleted favorite exists - suggest restore instead
+            # Soft-deleted FavoriteResponse exists - suggest restore instead
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Favorite was previously deleted. Use restore endpoint to reactivate."
+                detail="FavoriteResponse was previously deleted. Use restore endpoint to reactivate."
             )
     
     # Verify property exists
@@ -82,27 +83,27 @@ def create_favorite(
     return favorite_crud.create(db, obj_in=favorite_in)
 
 
-@router.delete("/", response_model=Favorite)
+@router.delete("/", response_model=FavoriteResponse)
 def delete_favorite(
     user_id: int,
     property_id: int,
-    current_user: User = Depends(get_current_active_user),
+    current_user: UserResponse = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
-    Soft delete a favorite for a specific user and property.
+    Soft delete a FavoriteResponse for a specific user and property.
     
-    - Marks the favorite as inactive
+    - Marks the FavoriteResponse as inactive
     - Sets deleted_at timestamp
     - Enforces user authentication and ownership
     
     Audit: Tracks who deleted via deleted_by (Supabase UUID)
     """
-    # Ensure user is deleting their own favorite
+    # Ensure user is deleting their own FavoriteResponse
     if user_id != current_user.user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot delete another user's favorite"
+            detail="Cannot delete another user's FavoriteResponse"
         )
 
     # Soft delete with audit trail
@@ -116,18 +117,18 @@ def delete_favorite(
     if not deleted_favorite:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Favorite not found"
+            detail="FavoriteResponse not found"
         )
     
     return deleted_favorite
 
 
-@router.get("/user/{user_id}", response_model=List[Favorite])
+@router.get("/user/{user_id}", response_model=List[FavoriteResponse])
 def get_user_favorites(
     user_id: int,
     skip: int = 0,
     limit: int = 100,
-    current_user: User = Depends(get_current_user),
+    current_user: UserResponse = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -153,28 +154,28 @@ def get_user_favorites(
     )
 
 
-@router.post("/restore", response_model=Favorite)
+@router.post("/restore", response_model=FavoriteResponse)
 def restore_favorite(
     user_id: int,
     property_id: int,
-    current_user: User = Depends(get_current_active_user),
+    current_user: UserResponse = Depends(get_current_active_user),
     db: Session = Depends(get_db),
     _: None = Depends(validate_request_size)
 ):
     """
-    Restore a previously soft-deleted favorite.
+    Restore a previously soft-deleted FavoriteResponse.
     
-    - Reactivates the favorite
+    - Reactivates the FavoriteResponse
     - Clears deleted_at timestamp
     - Enforces user authentication and ownership
     
     Note: Favorites table has no updated_by column per DB schema
     """
-    # Ensure user is restoring their own favorite
+    # Ensure user is restoring their own FavoriteResponse
     if user_id != current_user.user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot restore another user's favorite"
+            detail="Cannot restore another user's FavoriteResponse"
         )
 
     # Restore (favorites table has no updated_by per DB schema)
@@ -187,7 +188,7 @@ def restore_favorite(
     if not restored_favorite:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="No inactive favorite found to restore"
+            detail="No inactive FavoriteResponse found to restore"
         )
     
     return restored_favorite
@@ -197,13 +198,13 @@ def restore_favorite(
 def check_is_favorited(
     user_id: int,
     property_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: UserResponse = Depends(get_current_user),
     db: Session = Depends(get_db)
 ) -> dict:
     """
     Check if a property is currently favorited by a user.
     
-    - Returns object with favorite status for future extensibility.
+    - Returns object with FavoriteResponse status for future extensibility.
     - Only checks active (non-deleted) favorites
     - Users can only check their own favorites (unless admin)
     """

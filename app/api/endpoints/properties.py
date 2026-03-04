@@ -1,3 +1,4 @@
+from app.schemas.users import UserResponse
 # app/api/endpoints/properties.py
 """
 Property management endpoints - Canonical compliant
@@ -328,8 +329,8 @@ def delete_property(
     return property
 
 
-@router.get("/by-location/{location_id}", response_model=List[PropertyResponse])
-def read_properties_by_location(
+@router.get("/by-LocationResponse/{location_id}", response_model=List[PropertyResponse])
+def read_properties_by_LocationResponse(
     location_id: int,
     db: Session = Depends(get_db),
     skip: int = 0,
@@ -337,7 +338,7 @@ def read_properties_by_location(
     current_user: Optional[UserResponse] = Depends(get_current_user_optional)
 ) -> Any:
     """
-    Retrieve properties by location ID.
+    Retrieve properties by LocationResponse ID.
     
     Respects same visibility rules as main property list.
     CRUD layer filters by deleted_at IS NULL.
@@ -345,7 +346,7 @@ def read_properties_by_location(
     # Apply visibility logic based on user role
     if current_user:
         if user_crud.is_admin(current_user):
-            properties = property_crud.get_by_location(
+            properties = property_crud.get_by_LocationResponse(
                 db=db, 
                 location_id=location_id, 
                 skip=skip, 

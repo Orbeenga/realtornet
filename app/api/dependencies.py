@@ -2,12 +2,6 @@
 """
 RealtorNet API Dependencies - Authentication & Authorization
 Phase 2 Aligned: Supabase UUID, soft delete, multi-tenant, DoS protection
-
-Security Enhancements (Vercel CVE Mitigation):
-- Request validation at dependency level
-- Generic error messages (no auth flow leakage)
-- Soft delete filtering (prevent deleted user access)
-- Agency context for multi-tenant RLS
 """
 
 from typing import Optional
@@ -17,7 +11,6 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
-# --- DIRECT IMPORTS ---
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import decode_token, TokenPayload
@@ -25,11 +18,6 @@ from app.core.exceptions import AuthenticationException, AuthorizationException
 from app.models.users import User, UserRole
 from app.models.agencies import Agency
 from app.crud.users import user as user_crud
-
-# OAuth2 scheme for token authentication
-# oauth2_scheme = OAuth2PasswordBearer(
-   # tokenUrl=f"{settings.API_V1_STR}/auth/login"
-# )
 
 oauth2_scheme = OAuth2PasswordBearer(
     tokenUrl=f"{settings.API_V1_STR}/auth/login",
@@ -47,12 +35,6 @@ oauth2_scheme_optional = OAuth2PasswordBearer(
 MAX_REQUEST_BODY_SIZE = 10 * 1024 * 1024  # 10MB limit
 
 def validate_request_size(request: Request):
-    """
-    Validate request body size to prevent DoS attacks.
-    
-    Protects against CVE-2025-55184 (malicious large payloads).
-    Applied automatically via Depends() in protected routes.
-    """
     content_length = request.headers.get("content-length")
     if content_length and int(content_length) > MAX_REQUEST_BODY_SIZE:
         raise HTTPException(
@@ -69,14 +51,6 @@ def get_current_user(
 ) -> User:
     """
     Get the current authenticated user from JWT token.
-    
-    Canonical Compliance:
-    - Uses supabase_id (UUID) for secure lookup
-    - Filters soft-deleted users
-    - Generic error messages (security best practice)
-    
-    Raises:
-        HTTPException 401: Invalid/expired token or user not found
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -85,29 +59,50 @@ def get_current_user(
     )
 
     try:
-        # Decode token and extract payload
+        # Step 1: Decode token
         token_payload: TokenPayload = decode_token(token)
-        
-        # Lookup user by Supabase UUID (secure public identifier)
+        print(f"\nDEBUG get_current_user:")
+        print(f"  supabase_id = {token_payload.supabase_id!r}  (type: {type(token_payload.supabase_id).__name__})")
+        print(f"  sub         = {token_payload.sub!r}")
+        print(f"  user_id     = {token_payload.user_id!r}")
+
+        # Step 2: Resolve the UUID string to query with
+        s_id = token_payload.supabase_id or token_payload.sub
+        print(f"  s_id        = {s_id!r}")
+
+        if not s_id:
+            print("  FAIL: s_id is None/empty")
+            raise credentials_exception
+
+        s_id_str = str(s_id)
+
+        # Step 3: Query user
         user = db.query(User).filter(
-            User.supabase_id == token_payload.supabase_id,
-            User.deleted_at.is_(None)  # Soft delete filter (canonical rule #10)
+            User.supabase_id == s_id_str,
+            User.deleted_at.is_(None)
         ).first()
-        
+        print(f"  user found  = {user!r}")
+
         if user is None:
+            # Extra debug: check if user exists at all (ignore soft delete)
+            user_any = db.query(User).filter(User.supabase_id == s_id_str).first()
+            print(f"  user (any)  = {user_any!r}  (soft-deleted check)")
             raise credentials_exception
-        
-        # Verify internal user_id matches (additional security layer)
-        # Allow tokens without user_id for testing
+
+        # Step 4: Verify user_id if present
         if token_payload.user_id and user.user_id != token_payload.user_id:
+            print(f"  FAIL: user_id mismatch token={token_payload.user_id} db={user.user_id}")
             raise credentials_exception
-        
+
+        print(f"  SUCCESS: returning user {user.user_id}")
         return user
-        
+
+    except HTTPException:
+        raise  # Re-raise our own 401s directly — do NOT let except Exception swallow them
     except AuthenticationException:
         raise credentials_exception
-    except Exception:
-        # Generic error - don't leak internal details (Vercel insight)
+    except Exception as e:
+        print(f"  EXCEPTION: {type(e).__name__}: {e}")
         raise credentials_exception
 
 
@@ -117,13 +112,11 @@ def get_current_user_optional(
 ) -> Optional[User]:
     """
     Get current user if token provided, otherwise return None.
-    
     For endpoints that work for both authenticated and anonymous users.
-    Examples: public property listings, browse pages
     """
     if not token:
         return None
-    
+
     try:
         return get_current_user(db=db, token=token)
     except HTTPException:
@@ -133,11 +126,7 @@ def get_current_user_optional(
 def get_current_active_user(
     current_user: User = Depends(get_current_user),
 ) -> User:
-    """
-    Ensure the current user is active (not soft deleted).
-    
-    Uses the is_active property from User model which checks deleted_at == None
-    """
+    """Ensure the current user is active (not soft deleted)."""
     if not current_user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -151,11 +140,6 @@ def get_current_active_user(
 def get_current_admin_user(
     current_user: User = Depends(get_current_active_user),
 ) -> User:
-    """
-    Ensure the current user has admin privileges.
-    
-    Uses CRUD helper for consistent authorization checks.
-    """
     if not user_crud.is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -167,11 +151,6 @@ def get_current_admin_user(
 def get_current_agent_user(
     current_user: User = Depends(get_current_active_user),
 ) -> User:
-    """
-    Ensure the current user is a real estate agent.
-    
-    Uses CRUD helper for consistent authorization checks.
-    """
     if not user_crud.is_agent(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -183,11 +162,6 @@ def get_current_agent_user(
 def get_current_seeker_user(
     current_user: User = Depends(get_current_active_user),
 ) -> User:
-    """
-    Ensure the current user is a property seeker (buyer/seller).
-    
-    Uses CRUD helper for consistent authorization checks.
-    """
     if not user_crud.is_seeker(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -202,36 +176,20 @@ def get_current_agency(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ) -> Optional[Agency]:
-    """
-    Extract agency context for multi-tenant operations.
-    
-    Returns:
-        Agency object if user belongs to one, None otherwise
-    
-    Use Cases:
-        - RLS enforcement (filter properties by agency_id)
-        - Agent-specific operations
-        - Agency admin operations
-    """
     if not current_user.agency_id:
         return None
-    
+
     agency = db.query(Agency).filter(
         Agency.agency_id == current_user.agency_id,
-        Agency.deleted_at.is_(None)  # Soft delete filter
+        Agency.deleted_at.is_(None)
     ).first()
-    
+
     return agency
 
 
 def require_agency(
     agency: Optional[Agency] = Depends(get_current_agency)
 ) -> Agency:
-    """
-    Ensure user belongs to an agency (strict requirement).
-    
-    Use for agency-specific operations like creating listings.
-    """
     if agency is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -246,14 +204,4 @@ def protected_route(
     _: None = Depends(validate_request_size),
     current_user: User = Depends(get_current_active_user)
 ) -> User:
-    """
-    Combined dependency for protected routes requiring:
-    - Request size validation (DoS protection)
-    - Active authenticated user
-    
-    Usage:
-        @router.post("/properties", dependencies=[Depends(protected_route)])
-        def create_property(...):
-            pass
-    """
     return current_user

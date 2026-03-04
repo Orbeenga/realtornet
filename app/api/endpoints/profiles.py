@@ -1,3 +1,4 @@
+from app.schemas.users import UserResponse
 # app/api/endpoints/profiles.py
 """
 Profile management endpoints - Canonical compliant
@@ -23,8 +24,8 @@ from app.api.dependencies import (
 )
 
 # --- DIRECT SCHEMA IMPORTS (using aliases) ---
-from app.schemas.users import User
-from app.schemas.profiles import Profile, ProfileCreate, ProfileUpdate
+from app.schemas.users import UserResponse as UserResponse
+from app.schemas.profiles import ProfileResponse, ProfileCreate, ProfileUpdate
 
 # --- SERVICES ---
 from app.services.storage_services import upload_profile_image
@@ -33,10 +34,10 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.get("/me", response_model=Profile)
+@router.get("/me", response_model=ProfileResponse)
 def read_profile_me(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserResponse = Depends(get_current_active_user)
 ) -> Any:
     """
     Get current user's profile.
@@ -54,11 +55,11 @@ def read_profile_me(
     return user_profile
 
 
-@router.get("/{profile_id}", response_model=Profile)
+@router.get("/{profile_id}", response_model=ProfileResponse)
 def read_profile_by_id(
     profile_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: UserResponse = Depends(get_current_user)
 ) -> Any:
     """
     Get a specific profile by ID.
@@ -88,12 +89,12 @@ def read_profile_by_id(
     )
 
 
-@router.post("/", response_model=Profile, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=ProfileResponse, status_code=status.HTTP_201_CREATED)
 def create_profile(
     *,
     db: Session = Depends(get_db),
     profile_in: ProfileCreate,
-    current_user: User = Depends(get_current_active_user),
+    current_user: UserResponse = Depends(get_current_active_user),
     _: None = Depends(validate_request_size)
 ) -> Any:
     """
@@ -139,12 +140,12 @@ def create_profile(
     return user_profile
 
 
-@router.put("/me", response_model=Profile)
+@router.put("/me", response_model=ProfileResponse)
 def update_profile_me(
     *,
     db: Session = Depends(get_db),
     profile_in: ProfileUpdate,
-    current_user: User = Depends(get_current_active_user),
+    current_user: UserResponse = Depends(get_current_active_user),
     _: None = Depends(validate_request_size)
 ) -> Any:
     """
@@ -180,12 +181,12 @@ def update_profile_me(
     return updated_profile
 
 
-@router.post("/me/avatar", response_model=Profile)
+@router.post("/me/avatar", response_model=ProfileResponse)
 async def upload_avatar(
     *,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: UserResponse = Depends(get_current_active_user),
     _: None = Depends(validate_request_size)
 ) -> Any:
     """
@@ -266,10 +267,10 @@ async def upload_avatar(
 
 
 
-@router.delete("/me/avatar", response_model=Profile)
+@router.delete("/me/avatar", response_model=ProfileResponse)
 def delete_avatar(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserResponse = Depends(get_current_active_user)
 ) -> Any:
     """
     Remove avatar from current user's profile.

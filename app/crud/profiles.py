@@ -7,7 +7,7 @@ Canonical Rules: No manual timestamps, RLS-aware, user_id from auth context
 
 from typing import List, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import select
+from sqlalchemy import select, cast, String, func
 from fastapi import HTTPException
 
 from app.models.profiles import Profile, ProfileStatus
@@ -34,23 +34,33 @@ class CRUDProfile:
         ).scalar_one_or_none()
     
     def get_multi(
-        self, 
-        db: Session, 
-        *, 
-        skip: int = 0, 
+        self,
+        db: Session,
+        *,
+        skip: int = 0,
         limit: int = 100,
         status: Optional[ProfileStatus] = None
     ) -> List[Profile]:
-        """Get multiple profiles with optional status filter and pagination"""
+        """Get multiple profiles with optional status filter and pagination."""
+        # from sqlalchemy import cast, String, func
+        
         query = select(Profile)
         
-        # Apply status filter
-        if status:
-            query = query.where(Profile.status == status)
+        if status is not None:
+            # Extract string value from Enum (e.g., ProfileStatus.ACTIVE -> 'active')
+            status_str = status.value if hasattr(status, 'value') else str(status)
+            
+            # CRITICAL: Use case-insensitive comparison to handle Enum storage variations
+            # PostgreSQL may store as 'active', 'ACTIVE', or 'Active' depending on how
+            # the enum type was created. func.lower() ensures match regardless of casing.
+            query = query.where(
+                func.lower(cast(Profile.status, String)) == status_str.lower()
+            )
         
-        # Pagination
+        # Pagination - apply after filtering
         query = query.offset(skip).limit(limit)
-        
+
+        # Execute query and return results as list
         return db.execute(query).scalars().all()
     
     def get_active_profiles(
@@ -100,16 +110,16 @@ class CRUDProfile:
             )
         
         # Create profile with data from schema
-        create_data = obj_in.dict(exclude_unset=True)
+        # create_data = obj_in.dict(exclude_unset=True)
         
         db_obj = Profile(
-            user_id=user_id,  # From auth context, NOT from request
-            full_name=create_data.get("full_name"),
-            phone_number=create_data.get("phone_number"),
-            address=create_data.get("address"),
-            profile_picture=create_data.get("profile_picture"),
-            bio=create_data.get("bio"),
-            status=create_data.get("status", ProfileStatus.ACTIVE)  # Default to active
+            user_id=user_id,
+            full_name=obj_in.full_name,  # Direct access preserves types
+            phone_number=obj_in.phone_number,
+            address=obj_in.address,
+            profile_picture=obj_in.profile_picture,
+            bio=obj_in.bio,
+            # status=obj_in.status.value if obj_in.status else "active"  # Keeps Enum object
             # Timestamps handled by DB DEFAULT now()
         )
         
@@ -137,7 +147,7 @@ class CRUDProfile:
         - updated_at auto-handled by DB trigger or manual set
         - Only update fields present in obj_in (exclude_unset=True)
         """
-        update_data = obj_in.dict(exclude_unset=True)
+        update_data = obj_in.model_dump(exclude_unset=True)
         
         # Remove protected fields
         protected_fields = {"profile_id", "user_id", "created_at", "status"}
@@ -172,19 +182,18 @@ class CRUDProfile:
         if not db_obj:
             return None
         
+        # Normalize and assign in one step
+        # db_obj.status = ProfileStatus(status) if isinstance(status, str) else status
+
+        # Normalize string to Enum
+        if isinstance(status, str):
+            status = ProfileStatus(status)
         db_obj.status = status
+                
         db.add(db_obj)
         db.commit()
         db.refresh(db_obj)
         return db_obj
-    
-    def deactivate(self, db: Session, *, profile_id: int) -> Optional[Profile]:
-        """Soft delete by setting status to INACTIVE"""
-        return self.update_status(
-            db, 
-            profile_id=profile_id, 
-            status=ProfileStatus.INACTIVE
-        )
     
     def reactivate(self, db: Session, *, profile_id: int) -> Optional[Profile]:
         """Reactivate an inactive profile"""
@@ -268,11 +277,11 @@ class CRUDProfile:
         
         # Create minimal profile
         default_profile = ProfileCreate(
-            full_name=default_full_name,
-            status=ProfileStatus.ACTIVE
+            full_name=default_full_name
         )
         return self.create(db, obj_in=default_profile, user_id=user_id)
 
 
 # Singleton instance
 profile = CRUDProfile()
+

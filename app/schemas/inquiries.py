@@ -107,4 +107,3 @@ class InquiryFilter(BaseModel):
     include_deleted: bool = False
 
 # Alias for convenience
-Inquiry = InquiryResponse

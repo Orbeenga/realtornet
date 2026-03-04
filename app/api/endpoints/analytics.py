@@ -1,7 +1,9 @@
+from app.schemas.users import UserResponse
+from app.schemas.users import UserResponse
 # app/api/endpoints/analytics.py
 """
 Analytics API Endpoints
-Location: app/api/endpoints/analytics.py
+LocationResponse: app/api/endpoints/analytics.py
 
 Exposes analytics views and computed statistics with security hardening:
 - RLS enforcement via get_current_active_user
@@ -33,7 +35,7 @@ from app.api.dependencies import (
     get_current_admin_user,  # Replaces require_role
     validate_request_size
 )
-from app.models.users import User
+from app.models.users import User as User
 from app.services.analytics_services import analytics_service
 from app.models.analytics import ActivePropertiesView, AgentPerformanceView
 from app.schemas.stats import (
@@ -63,7 +65,7 @@ class ActivePropertyResponse(BaseModel):
     is_featured: bool = False
     is_verified: bool = False
     
-    # Location data
+    # LocationResponse data
     state: Optional[str] = None
     city: Optional[str] = None
     neighborhood: Optional[str] = None
@@ -121,7 +123,7 @@ router = APIRouter(
     "/properties/active",
     response_model=List[ActivePropertyResponse],
     summary="Get active property listings",
-    description="Returns active properties from pre-computed view with location, owner, and engagement metrics"
+    description="Returns active properties from pre-computed view with LocationResponse, owner, and engagement metrics"
 )
 async def get_active_properties(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
@@ -129,7 +131,7 @@ async def get_active_properties(
     state: Optional[str] = Query(None, description="Filter by state"),
     city: Optional[str] = Query(None, description="Filter by city"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserResponse = Depends(get_current_active_user)
 ):
     """
     Get active property listings with enriched data.
@@ -143,7 +145,7 @@ async def get_active_properties(
     """
     try:
         if state or city:
-            properties = analytics_service.get_active_properties_by_location(
+            properties = analytics_service.get_active_properties_by_LocationResponse(
                 db, state=state, city=city, skip=skip, limit=limit
             )
         else:
@@ -167,7 +169,7 @@ async def get_active_properties(
 async def get_featured_properties(
     limit: int = Query(10, ge=1, le=50, description="Maximum featured properties"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserResponse = Depends(get_current_active_user)
 ):
     """
     Get featured properties from view.
@@ -194,7 +196,7 @@ async def get_agent_performance(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=500, description="Maximum records to return"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserResponse = Depends(get_current_active_user)
 ):
     """
     Get agent performance metrics from pre-computed view.
@@ -222,7 +224,7 @@ async def get_agent_performance(
 async def get_agent_performance_by_id(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserResponse = Depends(get_current_active_user)
 ):
     """
     Get performance metrics for a specific agent.
@@ -251,7 +253,7 @@ async def get_top_agents(
         pattern="^(total_listings|active_listings|sold_count|avg_rating)$"
     ),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserResponse = Depends(get_current_active_user)
 ):
     """
     Get top performing agents from view.
@@ -286,7 +288,7 @@ async def get_top_agents(
 async def get_system_stats(
     db: Session = Depends(get_db),
     # Use explicit admin dependency instead of require_role helper
-    current_user: User = Depends(get_current_admin_user)
+    current_user: UserResponse = Depends(get_current_admin_user)
 ):
     """
     Get comprehensive system statistics.
@@ -318,7 +320,7 @@ async def get_system_stats(
 )
 async def get_usage_metrics(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: UserResponse = Depends(get_current_admin_user)
 ):
     """
     Get time-series usage metrics.
@@ -348,7 +350,7 @@ async def get_usage_metrics(
 )
 async def get_data_integrity_report(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: UserResponse = Depends(get_current_admin_user)
 ):
     """
     Get data integrity and quality report.
@@ -381,7 +383,7 @@ async def get_data_integrity_report(
 async def get_property_engagement(
     property_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: UserResponse = Depends(get_current_active_user)
 ):
     """
     Get engagement metrics for a specific property.
@@ -391,7 +393,7 @@ async def get_property_engagement(
     Returns:
     - Inquiry count
     - Favorite count
-    - Review count and distribution
+    - ReviewResponse count and distribution
     - Average rating
     - Days listed
     - Featured/verified status

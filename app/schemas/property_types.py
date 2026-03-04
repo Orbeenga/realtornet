@@ -67,4 +67,3 @@ class PropertyTypeListResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 # fastapi alias
-PropertyType = PropertyTypeResponse

@@ -113,9 +113,6 @@ class ReviewFilter(BaseModel):
     include_deleted: bool = False
 
 # Aliases for backward compatibility
-PropertyReview = PropertyReviewResponse
-AgentReview = AgentReviewResponse
-Review = ReviewResponse
 PropertyReviewUpdate = ReviewUpdate
 AgentReviewUpdate = ReviewUpdate
 ReviewCreate = PropertyReviewCreate

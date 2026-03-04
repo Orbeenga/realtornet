@@ -4,10 +4,10 @@ Profile model - strictly matching database schema.
 DB Table: profiles
 """
 
-from sqlalchemy import Column, BigInteger, ForeignKey, Text, String
-from sqlalchemy.dialects.postgresql import ENUM
+from sqlalchemy import Column, BigInteger, ForeignKey, Text, String, Enum, text
 from sqlalchemy.orm import relationship
 import enum
+from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM
 
 from app.models.base import Base, AuditMixin, SoftDeleteMixin
 
@@ -55,8 +55,11 @@ class Profile(Base, AuditMixin, SoftDeleteMixin):
     
     # Status
     status = Column(
-        ENUM(ProfileStatus, name="profile_status_enum", create_type=False),
-        nullable=True
+        # Use sqlalchemy.Enum, pass the class, and the DB Type name
+        Enum(ProfileStatus, name="profile_status_enum", values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+        # Use text() to cast the default value explicitly for Postgres
+        server_default=text("'active'::profile_status_enum")
     )
     
     # Timestamps, audit and soft delete inherited from mixins:

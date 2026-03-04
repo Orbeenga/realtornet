@@ -94,4 +94,3 @@ class SavedSearchListResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 # alias for backward compatibility
-SavedSearch = SavedSearchResponse

@@ -130,4 +130,3 @@ class LocationFilter(BaseModel):
     radius_km: Optional[float] = None
 
 # fastapi alias
-Location = LocationResponse

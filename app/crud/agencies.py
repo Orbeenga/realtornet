@@ -7,7 +7,7 @@ Canonical Rules: Full audit trail (created_by, updated_by, deleted_by), soft del
 
 from typing import List, Optional, Dict, Any, Union
 from sqlalchemy.orm import Session
-from sqlalchemy import select, or_, func
+from sqlalchemy import select, or_, func, and_
 from datetime import datetime, timezone
 import logging
 
@@ -272,7 +272,7 @@ class AgencyCRUD:
         Soft delete an agency by setting deleted_at timestamp.
         Agency data preserved for audit trail, agent relationships intact.
         """
-        db_obj = self.get(db, agency_id=agency_id)
+        db_obj = self.get(db, agency_id=agency_id, include_deleted=True)
         if not db_obj:
             raise ValueError(f"Agency with id={agency_id} not found")
         
@@ -306,7 +306,7 @@ class AgencyCRUD:
         Get statistics for an agency.
         Returns agent count, property count, active listings, etc.
         """
-        from app.models.users import AgentProfile
+        from app.models.agent_profiles import AgentProfile
         from app.models.properties import Property
         
         # Count agents

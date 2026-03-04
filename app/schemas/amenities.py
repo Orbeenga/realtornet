@@ -67,4 +67,3 @@ class AmenityListResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 # fastapi alias
-Amenity = AmenityResponse

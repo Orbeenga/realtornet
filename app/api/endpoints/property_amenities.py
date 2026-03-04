@@ -1,14 +1,15 @@
+from app.schemas.users import UserResponse
 #app/api/endpoints/property_amenities.py
 """
 Property amenities management endpoints - Canonical compliant
-Handles property-amenity associations (junction table) with ownership validation
+Handles property-AmenityResponse associations (junction table) with ownership validation
 """
 from typing import Any, List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 # --- DIRECT CRUD IMPORTS ---
-from app.crud.property_amenities import property_amenity as property_amenity_crud
+from app.crud.property_amenities import property_amenities as property_amenity_crud
 from app.crud.properties import property as property_crud
 from app.crud.amenities import amenity as amenity_crud
 from app.crud.users import user as user_crud
@@ -22,9 +23,9 @@ from app.api.dependencies import (
 
 # --- DIRECT SCHEMA IMPORTS ---
 from app.schemas.users import UserResponse
-from app.schemas.amenities import Amenity
+from app.schemas.amenities import AmenityResponse
 from app.schemas.property_amenities import (
-    PropertyAmenity, 
+    PropertyAmenityResponse, 
     PropertyAmenityCreate, 
     PropertyAmenityBulkCreate
 )
@@ -32,7 +33,7 @@ from app.schemas.property_amenities import (
 router = APIRouter()
 
 
-@router.get("/property/{property_id}", response_model=List[Amenity])
+@router.get("/property/{property_id}", response_model=List[AmenityResponse])
 def read_property_amenities(
     *,
     db: Session = Depends(get_db),
@@ -42,7 +43,7 @@ def read_property_amenities(
     Retrieve all amenities for a specific property.
     
     Public endpoint - anyone can view property amenities.
-    Returns full amenity objects (not just IDs).
+    Returns full AmenityResponse objects (not just IDs).
     """
     # Verify property exists
     db_property = property_crud.get(db, property_id=property_id)
@@ -56,7 +57,7 @@ def read_property_amenities(
     return amenities
 
 
-@router.post("/", response_model=PropertyAmenity, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=PropertyAmenityResponse, status_code=status.HTTP_201_CREATED)
 def add_amenity_to_property(
     *,
     db: Session = Depends(get_db),
@@ -65,7 +66,7 @@ def add_amenity_to_property(
     _: None = Depends(validate_request_size)
 ) -> Any:
     """
-    Add an amenity to a property.
+    Add an AmenityResponse to a property.
     
     Permissions:
     - Property owner can add amenities to their property
@@ -81,19 +82,19 @@ def add_amenity_to_property(
             detail="Property not found"
         )
     
-    # Check ownership: property owner or admin
+    # Check ownership: PropertyResponse owner or admin
     if db_property.user_id != current_user.user_id and not user_crud.is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to modify this property's amenities"
         )
     
-    # Verify amenity exists
-    amenity = amenity_crud.get(db, amenity_id=property_amenity_in.amenity_id)
-    if not amenity:
+    # Verify AmenityResponse exists
+    AmenityResponse = amenity_crud.get(db, amenity_id=property_amenity_in.amenity_id)
+    if not AmenityResponse:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Amenity not found"
+            detail="AmenityResponse not found"
         )
     
     # Check if association already exists
@@ -105,7 +106,7 @@ def add_amenity_to_property(
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This amenity is already associated with the property"
+            detail="This AmenityResponse is already associated with the property"
         )
     
     # Create association
@@ -113,7 +114,7 @@ def add_amenity_to_property(
     return db_obj
 
 
-@router.post("/bulk", response_model=List[PropertyAmenity], status_code=status.HTTP_201_CREATED)
+@router.post("/bulk", response_model=List[PropertyAmenityResponse], status_code=status.HTTP_201_CREATED)
 def add_amenities_to_property_bulk(
     *,
     db: Session = Depends(get_db),
@@ -127,7 +128,7 @@ def add_amenities_to_property_bulk(
     Efficient bulk operation - validates ownership once.
     Skips amenities already associated with the property.
     
-    Permissions: Property owner or admin.
+    Permissions: PropertyResponse owner or admin.
     """
     # Verify property exists
     db_property = property_crud.get(db, property_id=bulk_in.property_id)
@@ -141,7 +142,7 @@ def add_amenities_to_property_bulk(
     # Validate all amenities exist
     for amenity_id in bulk_in.amenity_ids:
         if not amenity_crud.get(db, amenity_id=amenity_id):
-            raise HTTPException(status_code=404, detail=f"Amenity {amenity_id} not found")
+            raise HTTPException(status_code=404, detail=f"AmenityResponse {amenity_id} not found")
     
     # Bulk create (CRUD handles duplicate detection)
     return property_amenity_crud.create_bulk(
@@ -160,12 +161,12 @@ def remove_amenity_from_property(
     current_user: UserResponse = Depends(get_current_active_user)
 ) -> Any:
     """
-    Remove an amenity from a property.
+    Remove an AmenityResponse from a property.
 
      Hard delete - removes the association permanently.
     Junction tables typically don't use soft delete.
     
-    Permissions: Property owner or admin.
+    Permissions: PropertyResponse owner or admin.
     """
     # Verify property exists
     db_property = property_crud.get(db, property_id=property_id)
@@ -183,7 +184,7 @@ def remove_amenity_from_property(
     
     # Hard delete (remove association)
     property_amenity_crud.remove(db, property_id=property_id, amenity_id=amenity_id)
-    return {"message": "Amenity removed successfully"}
+    return {"message": "AmenityResponse removed successfully"}
 
 
 @router.delete("/bulk")
@@ -198,7 +199,7 @@ def remove_amenities_from_property_bulk(
 
     Efficient bulk operation - hard deletes all associations.
     
-    Permissions: Property owner or admin.
+    Permissions: PropertyResponse owner or admin.
     """
     # Verify property exists
     db_property = property_crud.get(db, property_id=bulk_in.property_id)
@@ -218,7 +219,7 @@ def remove_amenities_from_property_bulk(
     return {"message": f"Removed {removed_count} amenities"}
 
 
-@router.put("/property/{property_id}/sync", response_model=List[Amenity])
+@router.put("/property/{property_id}/sync", response_model=List[AmenityResponse])
 def sync_property_amenities(
     *,
     db: Session = Depends(get_db),
@@ -233,7 +234,7 @@ def sync_property_amenities(
     Removes amenities not in list, adds amenities not already associated.
     Useful for "save all" forms where user selects amenities from checkboxes.
     
-    Permissions: Property owner or admin.
+    Permissions: PropertyResponse owner or admin.
     """
     # Verify property exists
     db_property = property_crud.get(db, property_id=property_id)
@@ -247,7 +248,7 @@ def sync_property_amenities(
     # Validate all amenities exist
     for amenity_id in amenity_ids:
         if not amenity_crud.get(db, amenity_id=amenity_id):
-            raise HTTPException(status_code=404, detail=f"Amenity {amenity_id} not found")
+            raise HTTPException(status_code=404, detail=f"AmenityResponse {amenity_id} not found")
     
     # Sync operation (CRUD handles add/remove logic)
     property_amenity_crud.sync(db, property_id=property_id, amenity_ids=amenity_ids)

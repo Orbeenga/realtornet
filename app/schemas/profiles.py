@@ -10,12 +10,13 @@ from typing import Optional
 from datetime import datetime
 from enum import Enum
 
+from app.models.profiles import ProfileStatus  # Import enum from models to ensure consistency
 
 # Enum matching DB exactly
-class ProfileStatus(str, Enum):
-    """Profile status enum - matches DB profile_status_enum"""
-    ACTIVE = "active"
-    INACTIVE = "inactive"
+# class ProfileStatus(str, Enum):
+    # """Profile status enum - matches DB profile_status_enum"""
+    # ACTIVE = "active"
+    # INACTIVE = "inactive"
 
 
 # Base Schema (shared fields for responses)
@@ -26,7 +27,7 @@ class ProfileBase(BaseModel):
     address: Optional[str] = None
     profile_picture: Optional[str] = None
     bio: Optional[str] = None
-    status: Optional[ProfileStatus] = None
+    # status: Optional[ProfileStatus] = None
 
     @field_validator('full_name')
     @classmethod
@@ -48,7 +49,7 @@ class ProfileBase(BaseModel):
 # Create Schema (for POST requests - excludes DB-controlled fields)
 class ProfileCreate(ProfileBase):
     """Schema for creating a new profile"""
-    user_id: int  # Required - must link to a user
+    # user_id comes from auth context, not request body
     full_name: str  # Required
 
 
@@ -82,8 +83,8 @@ class ProfileUpdate(BaseModel):
 # Response Schema (includes DB-controlled fields)
 class ProfileResponse(ProfileBase):
     """Schema for profile responses (includes DB-generated fields)"""
-    id: int  # Matches DB column name exactly
-    user_id: int
+    profile_id: int  # Matches DB column name exactly
+    user_id: Optional[int]
     created_at: datetime
     updated_at: datetime
 
@@ -109,4 +110,3 @@ class ProfileListResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 # fastapi alias 
-Profile = ProfileResponse

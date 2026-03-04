@@ -162,4 +162,3 @@ class UserRegister(UserCreate):
     pass
 
 # Alias for convenience
-User = UserResponse 

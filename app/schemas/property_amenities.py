@@ -93,4 +93,3 @@ class PropertyAmenityResponse(PropertyAmenityBase):
 
 
 # Alias for backward compatibility with existing endpoint code
-PropertyAmenity = PropertyAmenityResponse

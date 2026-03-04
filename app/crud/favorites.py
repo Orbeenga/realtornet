@@ -37,7 +37,8 @@ class FavoriteCRUD:
         self, 
         db: Session, 
         *, 
-        obj_in: FavoriteCreate
+        obj_in: FavoriteCreate,
+        user_id: int
     ) -> Favorite:
         """
         Create a new favorite.
@@ -47,7 +48,7 @@ class FavoriteCRUD:
         existing = db.execute(
             select(Favorite).where(
                 and_(
-                    Favorite.user_id == obj_in.user_id,
+                    Favorite.user_id == user_id,
                     Favorite.property_id == obj_in.property_id
                 )
             )
@@ -65,7 +66,7 @@ class FavoriteCRUD:
 
         # Create new favorite
         db_obj = Favorite(
-            user_id=obj_in.user_id,
+            user_id=user_id,
             property_id=obj_in.property_id
         )
         db.add(db_obj)

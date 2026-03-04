@@ -29,14 +29,17 @@ class ReviewCRUD:
         Business rule: exactly one of property_id or agent_id must be set.
         """
         # Validate mutual exclusivity
-        if (obj_in.property_id is None and obj_in.agent_id is None) or \
-           (obj_in.property_id is not None and obj_in.agent_id is not None):
+        property_id = getattr(obj_in, 'property_id', None)
+        agent_id = getattr(obj_in, 'agent_id', None)
+
+        if (property_id is None and agent_id is None) or \
+            (property_id is not None and agent_id is not None):
             raise ValueError("Exactly one of property_id or agent_id must be provided")
 
         db_obj = Review(
             user_id=user_id,
-            property_id=obj_in.property_id,
-            agent_id=obj_in.agent_id,
+            property_id=property_id,
+            agent_id=agent_id,
             rating=obj_in.rating,
             comment=obj_in.comment
             # created_at, updated_at handled by DB

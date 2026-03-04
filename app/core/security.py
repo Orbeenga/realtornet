@@ -2,12 +2,6 @@
 """
 RealtorNet Security Module - JWT Token Management & Password Hashing
 Aligned with Phase 2 canonical rules: Supabase integration, multi-tenant support
-
-Consolidated security module containing:
-- Password hashing (bcrypt)
-- JWT token generation and validation
-- Multi-tenant authentication
-- Using bcrypt directly instead of passlib (passlib has bugs)
 """
 
 from __future__ import annotations
@@ -16,146 +10,99 @@ from typing import Optional
 from uuid import UUID
 
 from jose import jwt, JWTError
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel
 import bcrypt
 
 from app.core.config import settings
 from app.core.exceptions import AuthenticationException
 
 
-# PASSWORD HASHING (Bcrypt)
+# PASSWORD HASHING
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """
-    Verify that a plain text password matches the stored hashed password.
-    UPDATED: Uses bcrypt directly to avoid passlib bugs
-    
-    Args:
-        plain_password: Plain text password from user input
-        hashed_password: Bcrypt hash from database
-        
-    Returns:
-        True if password matches, False otherwise
-    """
+    """Verify plain text password against bcrypt hash."""
     try:
-        password_bytes = plain_password.encode('utf-8')
-        hashed_bytes = hashed_password.encode('utf-8')
-        return bcrypt.checkpw(password_bytes, hashed_bytes)
+        return bcrypt.checkpw(
+            plain_password.encode('utf-8'),
+            hashed_password.encode('utf-8')
+        )
     except (ValueError, TypeError):
         return False
 
 
 def get_password_hash(password: str) -> str:
-    """
-    Generate a bcrypt hash for the provided plain text password.
-    UPDATED: Uses bcrypt directly to avoid passlib bugs
-    
-    Args:
-        password: Plain text password to hash
-        
-    Returns:
-        Bcrypt hash string (12 rounds)
-        
-    Note: 12 rounds provides strong security while maintaining performance
-    """
-    password_bytes = password.encode('utf-8')
+    """Generate bcrypt hash for password (12 rounds)."""
     salt = bcrypt.gensalt(rounds=12)
-    hashed = bcrypt.hashpw(password_bytes, salt)
+    hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
     return hashed.decode('utf-8')
 
 
-# JWT TOKEN MANAGEMENT
+# TOKEN PAYLOAD SCHEMA
+# Single definition — no duplicates
 
 class TokenPayload(BaseModel):
     """
-    Enhanced JWT token payload with Supabase integration and multi-tenant support.
-    
-    Canonical Rules Applied:
-    - supabase_id: UUID for secure public identifier (Rule #2)
-    - agency_id: Optional[int] for multi-tenant RLS enforcement
-    - Timezone-aware datetime (Rule #1)
+    JWT Token Payload Schema.
+    All UUID fields stored as strings to avoid UUID↔VARCHAR mismatch in DB queries.
+    Field names match exactly what create_token encodes into the JWT.
     """
-    sub: str  # Subject: stringified supabase_id for JWT compatibility
-    supabase_id: UUID  # Explicit Supabase auth UUID
-    user_id: int  # Internal database user_id (BigInteger)
-    exp: datetime  # Expiration time
-    iat: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    token_type: str = "access"
-    user_role: Optional[str] = None
-    agency_id: Optional[int] = None  # Multi-tenant context
-    refresh_token_id: Optional[str] = None
+    sub: Optional[str] = None           # Standard JWT subject (stringified supabase_id)
+    supabase_id: Optional[str] = None   # Explicit supabase_id for lookup
+    user_id: Optional[int] = None       # Internal DB user_id
+    role: Optional[str] = None          # User role (seeker/agent/admin)
+    token_type: Optional[str] = None    # "access" or "refresh"
+    agency_id: Optional[int] = None     # Multi-tenant context
 
-    @field_validator('exp')
-    def validate_expiration(cls, v):
-        now = datetime.now(timezone.utc)
-        if v.tzinfo is None:
-            raise ValueError("Expiration must be timezone-aware")
-        if v <= now:
-            raise ValueError("Token expiration must be in the future")
-        max_future = now + timedelta(days=30)
-        if v > max_future:
-            raise ValueError("Token expiration is too far in the future")
-        return v
 
+# TOKEN CREATION
+# Single create_token — no duplicates
 
 def create_token(
     supabase_id: UUID,
     user_id: int,
     token_type: str = "access",
-    expires_delta: Optional[timedelta] = None,
     user_role: Optional[str] = None,
     agency_id: Optional[int] = None
 ) -> str:
     """
-    Create a JWT token with enhanced security.
-    
-    Args:
-        supabase_id: User's Supabase auth UUID (public identifier)
-        user_id: Internal database user_id (BigInteger)
-        token_type: "access" or "refresh"
-        expires_delta: Custom expiration time
-        user_role: User role for authorization
-        agency_id: Agency context for multi-tenant RLS
-    
-    Returns:
-        Encoded JWT token string
+    Generate a signed JWT token.
+    Uses settings.SECRET_KEY — must match what decode_token uses.
+    Refresh tokens default to 7 days if REFRESH_TOKEN_EXPIRE_DAYS not set.
     """
-    if token_type == "access" and not expires_delta:
-        expires_delta = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    if token_type == "refresh" and not expires_delta:
-        expires_delta = timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    if token_type == "access":
+        minutes = settings.ACCESS_TOKEN_EXPIRE_MINUTES
+    else:
+        # Safe default: 7 days in minutes
+        refresh_days = getattr(settings, 'REFRESH_TOKEN_EXPIRE_DAYS', 7)
+        minutes = refresh_days * 24 * 60
 
-    expire = datetime.now(timezone.utc) + expires_delta
+    expire = datetime.now(timezone.utc) + timedelta(minutes=minutes)
 
+    # Field names MUST match TokenPayload field names above
     payload_dict = {
         "sub": str(supabase_id),
         "supabase_id": str(supabase_id),
         "user_id": user_id,
-        "exp": int(expire.timestamp()),  # ← Convert to Unix timestamp!
+        "exp": int(expire.timestamp()),
         "iat": int(datetime.now(timezone.utc).timestamp()),
         "token_type": token_type,
-        "user_role": user_role,
-        "agency_id": agency_id
+        "role": user_role,
+        "agency_id": agency_id,
     }
 
     return jwt.encode(
-        payload_dict, 
-        settings.SECRET_KEY, 
+        payload_dict,
+        settings.SECRET_KEY,
         algorithm=settings.ALGORITHM
     )
 
 
+# TOKEN DECODE
+
 def decode_token(token: str) -> TokenPayload:
     """
     Decode and validate a JWT token.
-    
-    Args:
-        token: JWT token string
-        
-    Returns:
-        Validated TokenPayload
-        
-    Raises:
-        AuthenticationException: On any validation failure (generic message for security)
+    Raises AuthenticationException on any failure.
     """
     try:
         payload_dict = jwt.decode(
@@ -163,24 +110,19 @@ def decode_token(token: str) -> TokenPayload:
             settings.SECRET_KEY,
             algorithms=[settings.ALGORITHM]
         )
-
         return TokenPayload(**payload_dict)
-    except jwt.ExpiredSignatureError:
-        raise AuthenticationException(
-            message="Token has expired",
-            details={"error_type": "TokenExpired"}
-        )
-    except jwt.JWTClaimsError:
-        raise AuthenticationException(
-            message="Invalid authentication credentials",
-            details={"error_type": "InvalidClaims"}
-        )
-    except JWTError:
-        raise AuthenticationException(
-            message="Invalid authentication credentials",
-            details={"error_type": "InvalidToken"}
-        )
 
+    except jwt.ExpiredSignatureError:
+        raise AuthenticationException(message="Token has expired")
+    except jwt.JWTClaimsError:
+        raise AuthenticationException(message="Invalid authentication credentials")
+    except JWTError:
+        raise AuthenticationException(message="Invalid authentication credentials")
+    except Exception:
+        raise AuthenticationException(message="Invalid authentication credentials")
+
+
+# CONVENIENCE WRAPPERS
 
 def generate_access_token(
     supabase_id: UUID,
@@ -188,11 +130,7 @@ def generate_access_token(
     user_role: Optional[str] = None,
     agency_id: Optional[int] = None
 ) -> str:
-    """
-    Generate a short-lived access token.
-    
-    Duration: 15 minutes (configurable via ACCESS_TOKEN_EXPIRE_MINUTES)
-    """
+    """Generate a short-lived access token."""
     return create_token(
         supabase_id=supabase_id,
         user_id=user_id,
@@ -208,11 +146,7 @@ def generate_refresh_token(
     user_role: Optional[str] = None,
     agency_id: Optional[int] = None
 ) -> str:
-    """
-    Generate a long-lived refresh token.
-    
-    Duration: 30 days (configurable via REFRESH_TOKEN_EXPIRE_DAYS)
-    """
+    """Generate a long-lived refresh token."""
     return create_token(
         supabase_id=supabase_id,
         user_id=user_id,
@@ -224,52 +158,32 @@ def generate_refresh_token(
 
 def validate_token_refresh(refresh_token: str, current_supabase_id: UUID) -> str:
     """
-    Validate a refresh token and generate a new access token if valid.
-    
-    Args:
-        refresh_token: The refresh token to validate
-        current_supabase_id: Expected supabase_id for validation
-    
-    Returns:
-        New access token string
-    
-    Raises:
-        AuthenticationException: If token invalid or type mismatch
+    Validate a refresh token and return a new access token.
+    Raises AuthenticationException if invalid.
     """
     try:
         refresh_payload = decode_token(refresh_token)
-        
-        # Validate token type
+
         if refresh_payload.token_type != "refresh":
-            raise AuthenticationException(
-                message="Invalid token type for refresh operation",
-                details={"error_type": "InvalidTokenType"}
-            )
-        
-        # Validate subject matches
-        if refresh_payload.supabase_id != current_supabase_id:
-            raise AuthenticationException(
-                message="Invalid refresh token",
-                details={"error_type": "InvalidRefreshToken"}
-            )
-        
+            raise AuthenticationException(message="Invalid token type for refresh operation")
+
+        if refresh_payload.supabase_id != str(current_supabase_id):
+            raise AuthenticationException(message="Invalid refresh token")
+
         return generate_access_token(
-            supabase_id=refresh_payload.supabase_id,
+            supabase_id=UUID(refresh_payload.supabase_id),
             user_id=refresh_payload.user_id,
-            user_role=refresh_payload.user_role,
+            user_role=refresh_payload.role,
             agency_id=refresh_payload.agency_id
         )
     except AuthenticationException:
         raise
     except Exception:
-        # SECURITY: Don't expose internal error details
-        raise AuthenticationException(
-            message="Token refresh failed",
-            details={"error_type": "RefreshFailed"}
-        )
+        raise AuthenticationException(message="Token refresh failed")
 
 
-# Export all public functions
+# EXPORTS
+
 __all__ = [
     "verify_password",
     "get_password_hash",
@@ -278,5 +192,5 @@ __all__ = [
     "decode_token",
     "generate_access_token",
     "generate_refresh_token",
-    "validate_token_refresh"
+    "validate_token_refresh",
 ]

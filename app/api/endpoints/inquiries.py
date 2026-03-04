@@ -1,3 +1,4 @@
+from app.schemas.users import UserResponse
 # app/api/endpoints/inquiries.py
 """
 Inquiries management endpoints - Canonical compliant
@@ -272,7 +273,7 @@ def read_inquiries_by_property(
             detail="Property not found"
         )
 
-    # Check authorization: property owner or admin
+    # Check authorization: PropertyResponse owner or admin
     if property.user_id != current_user.user_id and not user_crud.is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

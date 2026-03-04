@@ -8,10 +8,13 @@ Canonical Rules: Lookup table pattern, no soft delete needed
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func
+from fastapi import HTTPException
 import logging
 
 from app.models.amenities import Amenity
+from app.models.property_amenities import property_amenities  # ✅ Table object, not class
 from app.schemas.amenities import AmenityCreate, AmenityUpdate
+from app.models.properties import Property
 
 
 logger = logging.getLogger(__name__)
@@ -127,12 +130,9 @@ class AmenityCRUD:
     ) -> Amenity:
         """
         Create a new amenity.
-        
-        CRITICAL:
-        - Name must be unique (enforced by DB constraint)
-        - NO manual timestamp setting (DB handles via DEFAULT now())
+        Name must be unique (enforced by DB constraint).
+        NO manual timestamp setting (DB handles via DEFAULT now()).
         """
-        # Check for duplicate name (case-insensitive)
         existing = self.get_by_name(db, name=obj_in.name)
         if existing:
             raise ValueError(f"Amenity with name '{obj_in.name}' already exists")
@@ -143,7 +143,6 @@ class AmenityCRUD:
             name=create_data["name"],
             description=create_data.get("description"),
             category=create_data.get("category")
-            # Timestamps handled by DB DEFAULT now()
         )
         
         db.add(db_obj)
@@ -163,15 +162,11 @@ class AmenityCRUD:
     ) -> Amenity:
         """
         Update an amenity.
-        
-        Rules:
-        - Never update: amenity_id, created_at
-        - Check name uniqueness if being changed
-        - updated_at handled by DB trigger
+        Never update: amenity_id, created_at.
+        updated_at handled by DB trigger.
         """
         update_data = obj_in.dict(exclude_unset=True)
         
-        # Check name uniqueness if being updated
         if "name" in update_data and update_data["name"]:
             new_name = update_data["name"]
             if new_name.lower() != db_obj.name.lower():
@@ -179,17 +174,13 @@ class AmenityCRUD:
                 if existing and existing.amenity_id != db_obj.amenity_id:
                     raise ValueError(f"Amenity with name '{new_name}' already exists")
         
-        # Remove protected fields
         protected_fields = {"amenity_id", "created_at"}
         for field in protected_fields:
             update_data.pop(field, None)
         
-        # Apply updates
         for field, value in update_data.items():
             if hasattr(db_obj, field):
                 setattr(db_obj, field, value)
-        
-        # updated_at handled by DB trigger automatically
         
         db.add(db_obj)
         db.commit()
@@ -202,27 +193,20 @@ class AmenityCRUD:
     def delete(self, db: Session, *, amenity_id: int) -> Optional[Amenity]:
         """
         Hard delete an amenity (admin only).
-        
-        WARNING:
-        - Will cascade to property_amenities junction table (ON DELETE CASCADE)
-        - This removes amenity from all properties using it
-        - Only use for cleanup of unused/deprecated amenities
+        WARNING: Will cascade to property_amenities junction table (ON DELETE CASCADE).
         """
         db_obj = self.get(db, amenity_id=amenity_id)
         if not db_obj:
             raise ValueError(f"Amenity with id={amenity_id} not found")
         
-        # Check usage count (informational)
-        from app.models.properties import PropertyAmenity
+        # Check usage count via junction table (informational)
         usage_count = db.execute(
-            select(func.count(PropertyAmenity.property_id)).where(
-                PropertyAmenity.amenity_id == amenity_id
+            select(func.count()).select_from(property_amenities).where(
+                property_amenities.c.amenity_id == amenity_id
             )
         ).scalar()
         
         if usage_count > 0:
-            import logging
-            logger = logging.getLogger(__name__)
             logger.warning(
                 f"Deleting amenity used by {usage_count} properties (will cascade)",
                 extra={"amenity_id": amenity_id, "usage_count": usage_count}
@@ -233,10 +217,7 @@ class AmenityCRUD:
         return db_obj
     
     def remove(self, db: Session, *, amenity_id: int) -> Optional[Amenity]:
-        """
-        Alias for delete() to match endpoint naming convention.
-        Hard delete an amenity.
-        """
+        """Alias for delete() to match endpoint naming convention."""
         return self.delete(db, amenity_id=amenity_id)
     
     
@@ -251,13 +232,12 @@ class AmenityCRUD:
         limit: int = 100
     ) -> List:
         """Get all properties that have this amenity"""
-        from app.models.properties import Property, PropertyAmenity
         
         query = select(Property).join(
-            PropertyAmenity,
-            Property.property_id == PropertyAmenity.property_id
+            property_amenities,
+            Property.property_id == property_amenities.c.property_id
         ).where(
-            PropertyAmenity.amenity_id == amenity_id
+            property_amenities.c.amenity_id == amenity_id
         ).offset(skip).limit(limit)
         
         return db.execute(query).scalars().all()
@@ -269,11 +249,9 @@ class AmenityCRUD:
         amenity_id: int
     ) -> int:
         """Count how many properties have this amenity"""
-        from app.models.properties import PropertyAmenity
-        
         return db.execute(
-            select(func.count(PropertyAmenity.property_id)).where(
-                PropertyAmenity.amenity_id == amenity_id
+            select(func.count()).select_from(property_amenities).where(
+                property_amenities.c.amenity_id == amenity_id
             )
         ).scalar()
     
@@ -287,26 +265,21 @@ class AmenityCRUD:
         limit: int = 10
     ) -> List[Dict[str, Any]]:
         """
-       Get most popular amenities based on usage in properties.
-       Returns list of dicts with amenity info and usage count.
-        
-       Returns dict format (not Amenity models) for analytics/stats endpoints.
-       This is intentional to include aggregated usage_count field.
+        Get most popular amenities based on usage in properties.
+        Returns list of dicts with amenity info and usage count.
         """
-        from app.models.properties import PropertyAmenity
-        
         query = select(
             Amenity.amenity_id,
             Amenity.name,
             Amenity.category,
-            func.count(PropertyAmenity.property_id).label('usage_count')
+            func.count(property_amenities.c.property_id).label('usage_count')
         ).join(
-            PropertyAmenity,
-            Amenity.amenity_id == PropertyAmenity.amenity_id
+            property_amenities,
+            Amenity.amenity_id == property_amenities.c.amenity_id
         ).group_by(
             Amenity.amenity_id
         ).order_by(
-            func.count(PropertyAmenity.property_id).desc()
+            func.count(property_amenities.c.property_id).desc()
         ).limit(limit)
         
         results = db.execute(query).all()
@@ -332,10 +305,7 @@ class AmenityCRUD:
         description: Optional[str] = None,
         category: Optional[str] = None
     ) -> Amenity:
-        """
-        Get existing amenity or create if doesn't exist.
-        Useful for data import/seeding.
-        """
+        """Get existing amenity or create if doesn't exist. Useful for seeding."""
         existing = self.get_by_name(db, name=name)
         if existing:
             return existing
@@ -355,13 +325,7 @@ class AmenityCRUD:
     ) -> List[Amenity]:
         """
         Bulk create amenities (for seeding).
-        Skips duplicates, returns all created amenities.
-        
-        Example:
-        amenities_data = [
-            {"name": "WiFi", "description": "High-speed internet", "category": "Internet"},
-            {"name": "Parking", "description": "On-site parking", "category": "Parking"}
-        ]
+        Skips duplicates, returns all created/existing amenities.
         """
         created_amenities = []
         
@@ -375,7 +339,6 @@ class AmenityCRUD:
                 else:
                     created_amenities.append(existing)
             except HTTPException:
-                # Skip if duplicate or error
                 continue
         
         return created_amenities

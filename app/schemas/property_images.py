@@ -5,7 +5,7 @@ Follows BaseSchema/CreateSchema/UpdateSchema pattern.
 DB-controlled fields (image_id, timestamps) excluded from Create/Update.
 """
 
-from pydantic import BaseModel, HttpUrl, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 from typing import Optional
 from datetime import datetime
 
@@ -14,6 +14,8 @@ from datetime import datetime
 class PropertyImageBase(BaseModel):
     """Shared property image fields"""
     image_url: str
+    caption: Optional[str] = None      # Add this
+    display_order: Optional[int] = 0
     is_primary: Optional[bool] = False
     is_verified: Optional[bool] = False
 
@@ -37,6 +39,8 @@ class PropertyImageCreate(PropertyImageBase):
 class PropertyImageUpdate(BaseModel):
     """Schema for updating a property image"""
     image_url: Optional[str] = None
+    caption: Optional[str] = None      
+    display_order: Optional[int] = None 
     is_primary: Optional[bool] = None
     is_verified: Optional[bool] = None
 
@@ -86,4 +90,3 @@ class PropertyImageBulkCreate(BaseModel):
         return v
 
 # alias for backward compatibility
-PropertyImage = PropertyImageResponse

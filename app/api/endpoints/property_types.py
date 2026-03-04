@@ -1,3 +1,5 @@
+from app.schemas.users import UserResponse
+from app.schemas.users import UserResponse
 # app/api/endpoints/property_types.py
 """
 Property types management endpoints - Canonical compliant
@@ -21,12 +23,12 @@ from app.crud.property_types import property_type as property_type_crud
 from app.crud.properties import property as property_crud
 
 # --- DIRECT SCHEMA & MODEL IMPORTS ---
-from app.models.users import User
-from app.schemas.property_types import PropertyType, PropertyTypeCreate, PropertyTypeUpdate
+from app.models.users import User as User
+from app.schemas.property_types import PropertyTypeResponse, PropertyTypeCreate, PropertyTypeUpdate
 
 router = APIRouter()
 
-@router.get("/", response_model=List[PropertyType])
+@router.get("/", response_model=List[PropertyTypeResponse])
 def read_property_types(
     db: Session = Depends(get_db), # Updated: Direct dependency call
     skip: int = 0,
@@ -39,7 +41,7 @@ def read_property_types(
     property_types = property_type_crud.get_multi(db, skip=skip, limit=limit)
     return property_types
 
-@router.get("/{property_type_id}", response_model=PropertyType)
+@router.get("/{property_type_id}", response_model=PropertyTypeResponse)
 def read_property_type(
     *,
     db: Session = Depends(get_db), # Updated: Direct dependency call
@@ -59,12 +61,12 @@ def read_property_type(
     
     return property_type
 
-@router.post("/", response_model=PropertyType, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=PropertyTypeResponse, status_code=status.HTTP_201_CREATED)
 def create_property_type(
     *,
     db: Session = Depends(get_db), # Updated: Direct dependency call
     property_type_in: PropertyTypeCreate,
-    current_user: User = Depends(get_current_admin_user), # Updated: Direct dependency call
+    current_user: UserResponse = Depends(get_current_admin_user), # Updated: Direct dependency call
     _: None = Depends(validate_request_size) # Updated: Direct dependency call
 ) -> Any:
     """
@@ -84,13 +86,13 @@ def create_property_type(
     
     return property_type
 
-@router.put("/{property_type_id}", response_model=PropertyType)
+@router.put("/{property_type_id}", response_model=PropertyTypeResponse)
 def update_property_type(
     *,
     db: Session = Depends(get_db), # Updated: Direct dependency call
     property_type_id: int,
     property_type_in: PropertyTypeUpdate,
-    current_user: User = Depends(get_current_admin_user), # Updated: Direct dependency call
+    current_user: UserResponse = Depends(get_current_admin_user), # Updated: Direct dependency call
     _: None = Depends(validate_request_size) # Updated: Direct dependency call
 ) -> Any:
     """
@@ -124,7 +126,7 @@ def delete_property_type(
     *,
     db: Session = Depends(get_db), # Updated: Direct dependency call
     property_type_id: int,
-    current_user: User = Depends(get_current_admin_user) # Updated: Direct dependency call
+    current_user: UserResponse = Depends(get_current_admin_user) # Updated: Direct dependency call
 ) -> Any:
     """
     Hard delete a property type. Admin only.
@@ -154,7 +156,7 @@ def delete_property_type(
 @router.get("/stats/usage")
 def get_property_type_usage(
     db: Session = Depends(get_db), # Updated: Direct dependency call
-    current_user: User = Depends(get_current_admin_user) # Updated: Direct dependency call
+    current_user: UserResponse = Depends(get_current_admin_user) # Updated: Direct dependency call
 ) -> Any:
     """
     Get usage statistics for property types. Admin only.

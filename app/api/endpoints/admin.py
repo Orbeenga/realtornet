@@ -1,3 +1,4 @@
+from app.schemas.users import UserResponse
 # app/api/endpoints/admin.py
 """
 Admin management endpoints - Canonical compliant
@@ -13,7 +14,7 @@ from app.api.dependencies import (
     get_current_admin_user,
     validate_request_size
 )
-from app.models.users import User
+from app.models.users import User as User
 
 # --- DIRECT CRUD IMPORTS ---
 # We point directly to the files to avoid __init__.py circular/missing reference issues
@@ -23,9 +24,10 @@ from app.crud.inquiries import inquiry as inquiry_crud
 from app.services.analytics_services import analytics_service 
 
 # --- DIRECT SCHEMA IMPORTS ---
-from app.schemas.users import User as UserSchema, UserCreate, UserUpdate
-from app.schemas.properties import Property as PropertySchema, PropertyUpdate
-from app.schemas.inquiries import Inquiry as InquirySchema
+# from app.schemas.users import UserResponse, UserCreate, UserUpdate
+from app.schemas.users import UserResponse, UserCreate, UserUpdate
+from app.schemas.properties import PropertyResponse, PropertyUpdate
+from app.schemas.inquiries import InquiryResponse
 from app.schemas.stats import SystemStatsResponse as SystemStats
 
 # Set up logging
@@ -41,7 +43,7 @@ def get_users(
     db: Session = Depends(get_db),
     skip: int = 0,
     limit: int = 100,
-    current_user: User = Depends(get_current_admin_user)
+    current_user: UserResponse = Depends(get_current_admin_user)
 ) -> Any:
     """
     Retrieve users with pagination (admin only).
@@ -60,12 +62,12 @@ def get_users(
     }
 
 
-@router.post("/users", response_model=UserSchema)
+@router.post("/users", response_model=UserResponse)
 def create_user(
     *,
     db: Session = Depends(get_db),
     user_in: UserCreate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: UserResponse = Depends(get_current_admin_user),
     _: None = Depends(validate_request_size)
 ) -> Any:
     """
@@ -93,11 +95,11 @@ def create_user(
     return db_user
 
 
-@router.get("/users/{user_id}", response_model=UserSchema)
+@router.get("/users/{user_id}", response_model=UserResponse)
 def get_user(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: UserResponse = Depends(get_current_admin_user)
 ) -> Any:
     """
     Get user by ID (admin only).
@@ -107,7 +109,7 @@ def get_user(
     db_user = user_crud.get(db, user_id=user_id)
     
     if not db_user:
-        logger.warning(f"Failed user lookup: User {user_id} not found")
+        logger.warning(f"Failed user lookup: UserResponse {user_id} not found")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
@@ -116,13 +118,13 @@ def get_user(
     return db_user
 
 
-@router.put("/users/{user_id}", response_model=UserSchema)
+@router.put("/users/{user_id}", response_model=UserResponse)
 def update_user(
     *,
     db: Session = Depends(get_db),
     user_id: int,
     user_in: UserUpdate,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: UserResponse = Depends(get_current_admin_user),
     _: None = Depends(validate_request_size)
 ) -> Any:
     """
@@ -134,7 +136,7 @@ def update_user(
     db_user = user_crud.get(db, user_id=user_id)
     
     if not db_user:
-        logger.warning(f"Failed user update: User {user_id} not found")
+        logger.warning(f"Failed user update: UserResponse {user_id} not found")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
@@ -152,12 +154,12 @@ def update_user(
     return db_user
 
 
-@router.delete("/users/{user_id}", response_model=UserSchema)
+@router.delete("/users/{user_id}", response_model=UserResponse)
 def delete_user(
     *,
     db: Session = Depends(get_db),
     user_id: int,
-    current_user: User = Depends(get_current_admin_user)
+    current_user: UserResponse = Depends(get_current_admin_user)
 ) -> Any:
     """
     Soft delete user (admin only).
@@ -168,7 +170,7 @@ def delete_user(
     db_user = user_crud.get(db, user_id=user_id)
     
     if not db_user:
-        logger.warning(f"Failed user deletion: User {user_id} not found")
+        logger.warning(f"Failed user deletion: UserResponse {user_id} not found")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
@@ -194,12 +196,12 @@ def delete_user(
 
 
 # Activate_user function signature
-@router.post("/users/{user_id}/activate", response_model=UserSchema)
+@router.post("/users/{user_id}/activate", response_model=UserResponse)
 def activate_user(
     *,
     db: Session = Depends(get_db),
     user_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: UserResponse = Depends(get_current_admin_user),
     _: None = Depends(validate_request_size)
 ) -> Any:
     """
@@ -210,7 +212,7 @@ def activate_user(
     db_user = user_crud.get(db, user_id=user_id)
     
     if not db_user:
-        logger.warning(f"Failed user activation: User {user_id} not found")
+        logger.warning(f"Failed user activation: UserResponse {user_id} not found")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
@@ -228,12 +230,12 @@ def activate_user(
 
 
 # Deactivate_user function signature
-@router.post("/users/{user_id}/deactivate", response_model=UserSchema)
+@router.post("/users/{user_id}/deactivate", response_model=UserResponse)
 def deactivate_user(
     *,
     db: Session = Depends(get_db),
     user_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: UserResponse = Depends(get_current_admin_user),
     _: None = Depends(validate_request_size)
 ) -> Any:
     """
@@ -245,7 +247,7 @@ def deactivate_user(
     db_user = user_crud.get(db, user_id=user_id)
     
     if not db_user:
-        logger.warning(f"Failed user deactivation: User {user_id} not found")
+        logger.warning(f"Failed user deactivation: UserResponse {user_id} not found")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
@@ -278,7 +280,7 @@ def get_properties(
     db: Session = Depends(get_db),
     skip: int = 0,
     limit: int = 100,
-    current_user: User = Depends(get_current_admin_user)
+    current_user: UserResponse = Depends(get_current_admin_user)
 ) -> Any:
     """
     Retrieve properties with pagination (admin only).
@@ -297,12 +299,12 @@ def get_properties(
     }
 
 
-@router.delete("/properties/{property_id}", response_model=PropertySchema)
+@router.delete("/properties/{property_id}", response_model=PropertyResponse)
 def delete_property(
     *,
     db: Session = Depends(get_db),
     property_id: int,
-    current_user: User = Depends(get_current_admin_user)
+    current_user: UserResponse = Depends(get_current_admin_user)
 ) -> Any:
     """
     Soft delete property (admin only).
@@ -313,7 +315,7 @@ def delete_property(
     prop = property_crud.get(db, property_id=property_id)
     
     if not prop:
-        logger.warning(f"Failed property deletion: Property {property_id} not found")
+        logger.warning(f"Failed property deletion: PropertyResponse {property_id} not found")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Property not found"
@@ -331,12 +333,12 @@ def delete_property(
 
 
 # Verify_property function signature
-@router.post("/properties/{property_id}/verify", response_model=PropertySchema)
+@router.post("/properties/{property_id}/verify", response_model=PropertyResponse)
 def verify_property(
     *,
     db: Session = Depends(get_db),
     property_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: UserResponse = Depends(get_current_admin_user),
     _: None = Depends(validate_request_size)
 ) -> Any:
     """
@@ -347,7 +349,7 @@ def verify_property(
     prop = property_crud.get(db, property_id=property_id)
     
     if not prop:
-        logger.warning(f"Failed property verification: Property {property_id} not found")
+        logger.warning(f"Failed property verification: PropertyResponse {property_id} not found")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Property not found",
@@ -364,12 +366,12 @@ def verify_property(
     return prop
 
 
-@router.put("/properties/{property_id}/approve", response_model=PropertySchema)
+@router.put("/properties/{property_id}/approve", response_model=PropertyResponse)
 def approve_property(
     *,
     db: Session = Depends(get_db),
     property_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: UserResponse = Depends(get_current_admin_user),
     _: None = Depends(validate_request_size)
 ) -> Any:
     """
@@ -380,7 +382,7 @@ def approve_property(
     prop = property_crud.get(db, property_id=property_id)
     
     if not prop:
-        logger.warning(f"Failed property approval: Property {property_id} not found")
+        logger.warning(f"Failed property approval: PropertyResponse {property_id} not found")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Property not found"
@@ -405,7 +407,7 @@ def approve_property(
 @router.get("/inquiries", response_model=Dict[str, Any])
 def read_all_inquiries(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user),
+    current_user: UserResponse = Depends(get_current_admin_user),
     skip: int = 0,
     limit: int = 100,
 ) -> Any:
@@ -432,7 +434,7 @@ def read_all_inquiries(
 @router.get("/stats", response_model=SystemStats)
 def get_system_stats(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: UserResponse = Depends(get_current_admin_user)
 ) -> Any:
     """Get comprehensive system statistics."""
     # ✅ Use existing analytics service (not non-existent crud)
@@ -443,7 +445,7 @@ def get_system_stats(
 @router.get("/stats/overview")
 def get_stats_overview(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    current_user: UserResponse = Depends(get_current_admin_user)
 ) -> Any:
     """
     Get quick system overview statistics (admin only).

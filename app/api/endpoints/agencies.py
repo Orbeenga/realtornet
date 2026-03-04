@@ -1,3 +1,4 @@
+from app.schemas.users import UserResponse
 # app/api/endpoints/agencies.py
 """
 Agencies management endpoints - Canonical compliant
@@ -120,8 +121,8 @@ def create_agency(
     logger.info(
         "Agency created",
         extra={
-            "agency_id": agency.agency_id,
-            "name": agency.name,
+            "agency_id": AgencyResponse.agency_id,
+            "name": AgencyResponse.name,
             "created_by": current_user.supabase_id
         }
     )
@@ -182,7 +183,7 @@ def update_agency(
     logger.info(
         "Agency updated",
         extra={
-            "agency_id": agency.agency_id,
+            "agency_id": AgencyResponse.agency_id,
             "updated_by": current_user.supabase_id
         }
     )
@@ -251,7 +252,7 @@ def delete_agency(
         "Agency soft deleted",
         extra={
             "agency_id": agency_id,
-            "agency_name": agency.name,
+            "agency_name": AgencyResponse.name,
             "deleted_by": current_user.supabase_id
         }
     )
