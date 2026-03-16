@@ -8,6 +8,7 @@ Follows BaseSchema/CreateSchema/UpdateSchema pattern.
 from pydantic import BaseModel, ConfigDict, field_validator
 from typing import Optional, List
 from datetime import datetime
+from uuid import UUID
 from decimal import Decimal
 
 from enum import Enum
@@ -39,7 +40,7 @@ class PropertyBase(BaseModel):
     bedrooms: Optional[int] = None
     bathrooms: Optional[int] = None
     property_size: Optional[Decimal] = None
-    listing_type: ListingType  # ✅ Changed from ListingTypeEnum
+    listing_type: ListingType
     year_built: Optional[int] = None
     parking_spaces: Optional[int] = None
     has_garden: Optional[bool] = False
@@ -89,8 +90,11 @@ class PropertyBase(BaseModel):
 # Create Schema (for POST requests - excludes DB-controlled fields)
 class PropertyCreate(PropertyBase):
     """Schema for creating a new property"""
-    # user_id: int  # Required - must link to a user
     is_featured: Optional[bool] = False
+    # Multi-tenant: agent's agency assignment.
+    # Optional — if omitted, endpoint auto-assigns the agent's own agency_id.
+    # If provided and it doesn't match the agent's agency, endpoint returns 403.
+    agency_id: Optional[int] = None
     # Optional: amenity IDs to link
     amenity_ids: Optional[List[int]] = None
     # Optional: image URLs to create
@@ -99,8 +103,8 @@ class PropertyCreate(PropertyBase):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
 
-    # enum values inherited from models
     model_config = ConfigDict(use_enum_values=True)
+
 
 # Update Schema (for PATCH/PUT requests - all fields optional)
 class PropertyUpdate(BaseModel):
@@ -114,8 +118,8 @@ class PropertyUpdate(BaseModel):
     bedrooms: Optional[int] = None
     bathrooms: Optional[int] = None
     property_size: Optional[Decimal] = None
-    listing_type: Optional[ListingType] = None  # ✅ Changed
-    listing_status: Optional[ListingStatus] = None  # ✅ Changed
+    listing_type: Optional[ListingType] = None
+    listing_status: Optional[ListingStatus] = None
     is_featured: Optional[bool] = None
     is_verified: Optional[bool] = None
     year_built: Optional[int] = None
@@ -126,13 +130,11 @@ class PropertyUpdate(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
 
-    # enum values inherited from models
     model_config = ConfigDict(use_enum_values=True)
 
     @field_validator('price')
     @classmethod
     def validate_price(cls, v: Optional[Decimal]) -> Optional[Decimal]:
-        """Ensure price is positive if provided"""
         if v is not None and v <= 0:
             raise ValueError('price must be greater than 0')
         return v
@@ -140,7 +142,6 @@ class PropertyUpdate(BaseModel):
     @field_validator('bedrooms', 'bathrooms', 'parking_spaces')
     @classmethod
     def validate_non_negative(cls, v: Optional[int]) -> Optional[int]:
-        """Ensure counts are non-negative if provided"""
         if v is not None and v < 0:
             raise ValueError('value must be non-negative')
         return v
@@ -148,7 +149,6 @@ class PropertyUpdate(BaseModel):
     @field_validator('property_size')
     @classmethod
     def validate_property_size(cls, v: Optional[Decimal]) -> Optional[Decimal]:
-        """Ensure property_size is positive if provided"""
         if v is not None and v <= 0:
             raise ValueError('property_size must be greater than 0')
         return v
@@ -156,7 +156,6 @@ class PropertyUpdate(BaseModel):
     @field_validator('year_built')
     @classmethod
     def validate_year_built(cls, v: Optional[int]) -> Optional[int]:
-        """Ensure year_built is within valid range if provided"""
         from datetime import datetime
         current_year = datetime.now().year
         if v is not None and (v < 1950 or v > current_year + 2):
@@ -170,12 +169,15 @@ class PropertyResponse(PropertyBase):
     property_id: int
     user_id: int
     is_featured: bool
-    listing_status: ListingStatus  # ✅ Changed
+    listing_status: ListingStatus
     is_verified: bool
     verification_date: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime] = None
+    created_by: Optional[UUID] = None
+    updated_by: Optional[UUID] = None
+    deleted_by: Optional[UUID] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -183,14 +185,11 @@ class PropertyResponse(PropertyBase):
 # Extended Response (with nested relations)
 class PropertyExtendedResponse(PropertyResponse):
     """Extended response with related data"""
-    # Nested responses (import from respective schema files)
-    images: Optional[List[dict]] = None  # PropertyImageResponse
-    amenities: Optional[List[dict]] = None  # AmenityResponse
-    location: Optional[dict] = None  # LocationResponse
-    property_type: Optional[dict] = None  # PropertyTypeResponse
-    owner: Optional[dict] = None  # UserResponse (basic info only)
-    
-    # Distance for geo queries
+    images: Optional[List[dict]] = None
+    amenities: Optional[List[dict]] = None
+    location: Optional[dict] = None
+    property_type: Optional[dict] = None
+    owner: Optional[dict] = None
     distance_km: Optional[float] = None
 
     model_config = ConfigDict(from_attributes=True)
@@ -206,41 +205,42 @@ class PropertyFilter(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     radius_km: Optional[float] = None
-    
+    location_id: Optional[int] = None
+
     # Price filters
     min_price: Optional[Decimal] = None
     max_price: Optional[Decimal] = None
-    
+
     # Property attributes
     bedrooms: Optional[int] = None
     bathrooms: Optional[int] = None
     property_type_id: Optional[int] = None
     min_property_size: Optional[Decimal] = None
     max_property_size: Optional[Decimal] = None
-    
+
     # Listing filters
-    listing_type: Optional[ListingType] = None  # ✅ Changed
-    listing_status: Optional[ListingStatus] = None  # ✅ Changed
+    listing_type: Optional[ListingType] = None
+    listing_status: Optional[ListingStatus] = None
     is_featured: Optional[bool] = None
     is_verified: Optional[bool] = None
-    
-    # New amenity filters
+
+    # Amenity filters
     min_year_built: Optional[int] = None
     max_year_built: Optional[int] = None
     min_parking_spaces: Optional[int] = None
     has_garden: Optional[bool] = None
     has_security: Optional[bool] = None
     has_swimming_pool: Optional[bool] = None
-    
+
     # Sorting
-    sort_by: Optional[str] = "created_at_desc"  # Options: price_asc, price_desc, created_at_asc, created_at_desc, distance
-    
+    sort_by: Optional[str] = "created_at_desc"
+
     # Pagination
     page: int = 1
     page_size: int = 20
 
-    # enum values inherited from models
     model_config = ConfigDict(use_enum_values=True)
+
 
 # List Response Schema (for paginated lists)
 class PropertyListResponse(BaseModel):
@@ -252,5 +252,3 @@ class PropertyListResponse(BaseModel):
     total_pages: int
 
     model_config = ConfigDict(from_attributes=True)
-
-#  Fast API alias

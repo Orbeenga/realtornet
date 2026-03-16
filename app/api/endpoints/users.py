@@ -123,7 +123,7 @@ def update_user_me(
     logger.info(
         "User updated self",
         extra={
-            "user_id": UserResponse.user_id,
+            "user_id": current_user.user_id,
             "updated_by": current_user.supabase_id
         }
     )
@@ -164,7 +164,7 @@ def update_user(
     logger.info(
         "User updated by admin",
         extra={
-            "user_id": UserResponse.user_id,
+            "user_id": user.user_id,
             "updated_by": current_user.supabase_id
         }
     )
@@ -210,7 +210,7 @@ def delete_user(
         "User soft deleted",
         extra={
             "user_id": user_id,
-            "email": UserResponse.email,
+            "email": user.email,
             "deleted_by": current_user.supabase_id
         }
     )
@@ -287,7 +287,7 @@ async def upload_user_profile_image(
         logger.info(
             "User profile image uploaded",
             extra={
-                "user_id": UserResponse.user_id,
+                "user_id": user.user_id,
                 "image_url": url,
                 "uploaded_by": current_user.supabase_id
             }

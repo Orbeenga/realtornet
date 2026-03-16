@@ -172,7 +172,8 @@ def create_property(
     property = property_crud.create_with_owner(
         db=db, 
         obj_in=property_in, 
-        user_id=current_user.user_id  # Explicit FK reference
+        user_id=current_user.user_id,  # Explicit FK reference
+        created_by=current_user.supabase_id
     )
     
     return property
@@ -282,7 +283,7 @@ def update_property(
         db=db,
         db_obj=property,
         obj_in=property_in,
-        updated_by=current_user.supabase_id  # UUID audit trail
+        updated_by_supabase_id=current_user.supabase_id  # UUID audit trail
     )
     
     return property

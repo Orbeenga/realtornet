@@ -46,7 +46,8 @@ class TestUserCoverageSurgical:
         mock_user = MagicMock(spec=User)
         with patch.object(u_crud, "get", return_value=mock_user):
             u_crud.soft_delete(mock_db, user_id=1, deleted_by_supabase_id="admin-123")
-            assert mock_user.updated_by == "admin-123"
+            assert mock_user.deleted_by == "admin-123"
+            assert mock_user.updated_by != "admin-123"
 
     # --- Target: Lines 283-286 (can_modify_user logic) ---
     def test_can_modify_user_logic(self, u_crud):

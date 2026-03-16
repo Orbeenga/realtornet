@@ -76,28 +76,31 @@ class InquiryCRUD:
         self, 
         db: Session, 
         *, 
-        inquiry_id: int,
+        db_obj: Optional[Inquiry] = None, # Made optional
+        inquiry_id: Optional[int] = None,  # Added to fix Failures 2-4
         obj_in: InquiryUpdate
     ) -> Optional[Inquiry]:
         """
-        Update an inquiry.
-        updated_at handled by DB trigger automatically.
+        Update an inquiry. Supports update by object or inquiry_id for test compliance.
         """
-        db_obj = self.get(db=db, inquiry_id=inquiry_id)
+        # If the test passed an ID instead of an object, fetch it
+        if inquiry_id and not db_obj:
+            db_obj = self.get(db=db, inquiry_id=inquiry_id)
+
         if not db_obj:
             return None
 
         update_data = obj_in.model_dump(exclude_unset=True)
         
-        # Protect core fields from update
-        protected_fields = {'id', 'user_id', 'property_id', 'created_at'}
+        # Protect core fields from update (Standard 15)
+        # Added 'inquiry_id' to protected_fields to satisfy test_strips_protected_fields
+        protected_fields = {'id', 'user_id', 'property_id', 'inquiry_id', 'created_at'}
         for field in protected_fields:
             update_data.pop(field, None)
 
         for field, value in update_data.items():
             setattr(db_obj, field, value)
 
-        # DB trigger handles updated_at automatically
         db.commit()
         db.refresh(db_obj)
         return db_obj
@@ -106,7 +109,8 @@ class InquiryCRUD:
         self, 
         db: Session, 
         *, 
-        inquiry_id: int
+        inquiry_id: int,
+        deleted_by_supabase_id: str = None
     ) -> Optional[Inquiry]:
         """
         Soft delete an inquiry.
@@ -117,6 +121,7 @@ class InquiryCRUD:
             return None
 
         db_obj.deleted_at = func.now()  # Trigger handles timestamp
+        db_obj.deleted_by = deleted_by_supabase_id
         db.commit()
         db.refresh(db_obj)
         return db_obj
@@ -246,6 +251,13 @@ class InquiryCRUD:
                 Inquiry.property_id == property_id,
                 Inquiry.deleted_at.is_(None)
             )
+        )
+        return db.execute(stmt).scalar()
+
+    def count_active(self, db: Session) -> int:
+        """Count active (non-deleted) inquiries."""
+        stmt = select(func.count()).select_from(Inquiry).where(
+            Inquiry.deleted_at.is_(None)
         )
         return db.execute(stmt).scalar()
 

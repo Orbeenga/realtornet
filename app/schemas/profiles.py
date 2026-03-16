@@ -8,6 +8,7 @@ DB-controlled fields (id, timestamps) excluded from Create/Update.
 from pydantic import BaseModel, ConfigDict, field_validator
 from typing import Optional
 from datetime import datetime
+from uuid import UUID
 from enum import Enum
 
 from app.models.profiles import ProfileStatus  # Import enum from models to ensure consistency
@@ -87,6 +88,10 @@ class ProfileResponse(ProfileBase):
     user_id: Optional[int]
     created_at: datetime
     updated_at: datetime
+    deleted_at: Optional[datetime] = None
+    created_by: Optional[UUID] = None
+    updated_by: Optional[UUID] = None
+    deleted_by: Optional[UUID] = None
 
     model_config = ConfigDict(from_attributes=True)
 

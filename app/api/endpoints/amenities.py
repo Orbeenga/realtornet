@@ -1,4 +1,3 @@
-from app.schemas.users import UserResponse
 # app/api/endpoints/amenities.py
 """
 Amenities management endpoints - Canonical compliant
@@ -177,7 +176,7 @@ def delete_AmenityResponse(
     
     # Optional: Check if AmenityResponse is in use by active properties
     # Prevent deletion of amenities in use
-    usage_count = property_amenity_crud.count_by_AmenityResponse(db, amenity_id=amenity_id)
+    usage_count = property_amenity_crud.count_by_amenity(db, amenity_id=amenity_id)
     if usage_count > 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

@@ -1,9 +1,7 @@
-from app.schemas.users import UserResponse
-from app.schemas.users import UserResponse
 # app/api/endpoints/analytics.py
 """
 Analytics API Endpoints
-LocationResponse: app/api/endpoints/analytics.py
+Location: app/api/endpoints/analytics.py
 
 Exposes analytics views and computed statistics with security hardening:
 - RLS enforcement via get_current_active_user
@@ -44,6 +42,7 @@ from app.schemas.stats import (
     DataIntegrityResponse,
     PropertyEngagementResponse
 )
+from app.schemas.users import UserResponse
 
 # Lightweight response schemas for views (avoid heavy Pydantic overhead)
 from pydantic import BaseModel, Field, ConfigDict
@@ -107,8 +106,6 @@ class AgentPerformanceResponse(BaseModel):
 
 # ROUTER SETUP
 router = APIRouter(
-    prefix="/analytics",
-    tags=["Analytics"],
     responses={
         401: {"description": "Unauthorized - Authentication required"},
         403: {"description": "Forbidden - Insufficient permissions"},
@@ -123,7 +120,7 @@ router = APIRouter(
     "/properties/active",
     response_model=List[ActivePropertyResponse],
     summary="Get active property listings",
-    description="Returns active properties from pre-computed view with LocationResponse, owner, and engagement metrics"
+    description="Returns active properties from pre-computed view with location, owner, and engagement metrics"
 )
 async def get_active_properties(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
@@ -145,7 +142,7 @@ async def get_active_properties(
     """
     try:
         if state or city:
-            properties = analytics_service.get_active_properties_by_LocationResponse(
+            properties = analytics_service.get_active_properties_by_location(
                 db, state=state, city=city, skip=skip, limit=limit
             )
         else:
@@ -216,30 +213,6 @@ async def get_agent_performance(
         )
 
 @router.get(
-    "/agents/{user_id}",
-    response_model=AgentPerformanceResponse,
-    summary="Get single agent performance",
-    description="Returns performance metrics for specific agent"
-)
-async def get_agent_performance_by_id(
-    user_id: int,
-    db: Session = Depends(get_db),
-    current_user: UserResponse = Depends(get_current_active_user)
-):
-    """
-    Get performance metrics for a specific agent.
-    
-    Security: RLS applied, user can only see agents they have permission for
-    """
-    agent = analytics_service.get_agent_performance_by_id(db, user_id)
-    if not agent:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Agent with user_id {user_id} not found"
-        )
-    return agent
-
-@router.get(
     "/agents/top",
     response_model=List[AgentPerformanceResponse],
     summary="Get top performing agents",
@@ -276,6 +249,30 @@ async def get_top_agents(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve top agents"
         )
+
+@router.get(
+    "/agents/{user_id}",
+    response_model=AgentPerformanceResponse,
+    summary="Get single agent performance",
+    description="Returns performance metrics for specific agent"
+)
+async def get_agent_performance_by_id(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_active_user)
+):
+    """
+    Get performance metrics for a specific agent.
+    
+    Security: RLS applied, user can only see agents they have permission for
+    """
+    agent = analytics_service.get_agent_performance_by_id(db, user_id)
+    if not agent:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Agent with user_id {user_id} not found"
+        )
+    return agent
 
 # COMPUTED ANALYTICS ENDPOINTS (Admin Only)
 

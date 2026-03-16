@@ -7,6 +7,7 @@ Handles system-wide operations with proper soft delete, audit tracking, and RLS 
 import logging
 from typing import Any, Dict, List
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import (
@@ -55,7 +56,7 @@ def get_users(
     total = user_crud.count_active(db)  # Use CRUD method that filters deleted_at
     
     return {
-        "items": users,
+        "items": jsonable_encoder(users),
         "total": total,
         "page": skip // limit + 1 if limit else 1,
         "pages": (total + limit - 1) // limit if limit else 1
@@ -89,7 +90,14 @@ def create_user(
             detail="User with this email already exists in the system",
         )
     
-    db_user = user_crud.create(db, obj_in=user_in)
+    import uuid
+    supabase_id = str(uuid.uuid4())
+    db_user = user_crud.create(
+        db,
+        obj_in=user_in,
+        supabase_id=supabase_id,
+        created_by=current_user.supabase_id
+    )
     logger.info(f"User created: {db_user.user_id} by admin {current_user.user_id}")
     
     return db_user
@@ -292,7 +300,7 @@ def get_properties(
     total = property_crud.count_active(db)  # Use CRUD method that filters deleted_at
     
     return {
-        "items": properties,
+        "items": jsonable_encoder(properties),
         "total": total,
         "page": skip // limit + 1 if limit else 1,
         "pages": (total + limit - 1) // limit if limit else 1
@@ -357,9 +365,9 @@ def verify_property(
     
     # Use CRUD method with audit tracking
     prop = property_crud.verify_property(
-        db, 
+        db,
         property_id=property_id,
-        verified_by=current_user.supabase_id
+        updated_by_supabase_id=current_user.supabase_id
     )
     
     logger.info(f"Property verified: {property_id} by admin {current_user.user_id}")
@@ -389,12 +397,12 @@ def approve_property(
         )
     
     # Update with audit tracking
-    prop_update = PropertyUpdate(is_approved=True)
+    prop_update = PropertyUpdate(listing_status="active")
     updated_prop = property_crud.update(
         db, 
         db_obj=prop, 
         obj_in=prop_update,
-        updated_by=current_user.supabase_id
+        updated_by_supabase_id=current_user.supabase_id
     )
     
     logger.info(f"Property approved: {property_id} by admin {current_user.user_id}")
@@ -421,7 +429,7 @@ def read_all_inquiries(
     total = inquiry_crud.count_active(db)  # Use CRUD method that filters deleted_at
     
     return {
-        "items": inquiries,
+        "items": jsonable_encoder(inquiries),
         "total": total,
         "page": skip // limit + 1 if limit else 1,
         "pages": (total + limit - 1) // limit if limit else 1

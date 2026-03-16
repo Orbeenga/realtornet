@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.0] - 2026-03-16
+
+### Added
+- Complete audit trail implementation across all 10 entities with created_by, updated_by, deleted_by, deleted_at correctly populated in CRUD and exposed in Response schemas
+- soft_delete() method to LocationCRUD; get_by_user_id() to ProfileCRUD
+- count_by_agency(), count_by_user() to PropertyCRUD
+- count_by_agency() to UserCRUD
+- count_active(), activate(), deactivate() to UserCRUD for admin operations
+- count_active(), count_approved(), count_pending() to PropertyCRUD
+- count_active() to InquiryCRUD
+- Analytics views migration: active_properties, agent_performance
+- CLAUDE.md — canonical architectural decisions and standing rules
+- Preflight Rules.md — pre-implementation checklist
+- Full HTTP-layer test suites for all endpoint and CRUD modules (63% → 91.34% coverage)
+
+### Fixed
+- soft_delete() across favorites, inquiries, reviews, properties, users was setting updated_by instead of deleted_by — audit corruption
+- create() for properties and users was not setting created_by
+- locations CRUD create() was incorrectly setting updated_by
+- profiles endpoint was accessing profile_in.user_id (field doesn't exist on schema) and not passing user_id to CRUD
+- Logger calls in agencies.py referencing Pydantic class instead of instance
+- Agency deletion guard was counting AgentProfile records instead of users — agents without profiles could bypass the guard
+- All _by schema fields changed from Optional[str] to Optional[UUID] to match ORM type
+- saved_searches CRUD db_obj argument mismatch
+- auth.py refresh endpoint user-not-found branch was being swallowed by broad except Exception
+
+### Changed
+- ProfileCreate schema no longer accepts user_id — derived from authenticated user in endpoint
+- All Response schemas now expose full audit trail fields including deleted_at
+
 ## [0.4.0] - 2026-01-21
 
 ### Database Migration System

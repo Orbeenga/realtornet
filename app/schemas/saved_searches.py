@@ -8,6 +8,7 @@ DB-controlled fields (search_id, timestamps) excluded from Create/Update.
 from pydantic import BaseModel, ConfigDict, field_validator
 from typing import Optional, Dict, Any
 from datetime import datetime
+from uuid import UUID
 
 
 # Base Schema (shared fields for responses)
@@ -71,6 +72,7 @@ class SavedSearchResponse(SavedSearchBase):
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime] = None
+    deleted_by: Optional[UUID] = None
 
     model_config = ConfigDict(from_attributes=True)
 

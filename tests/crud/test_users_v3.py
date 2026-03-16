@@ -126,7 +126,8 @@ class TestUserSoftDelete:
                                         deleted_by_supabase_id="admin-uuid")
         assert result == obj
         assert obj.deleted_at is not None
-        assert obj.updated_by == "admin-uuid"
+        assert obj.deleted_by == "admin-uuid"
+        assert obj.updated_by != "admin-uuid"
 
     def test_not_found_returns_none(self, u_crud, mock_db):
         with patch.object(u_crud, "get", return_value=None):
