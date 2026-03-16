@@ -16,6 +16,7 @@ from app.crud.users import user as user_crud
 # --- DIRECT DEPENDENCY IMPORTS ---
 from app.api.dependencies import (
     get_db,
+    get_current_user,
     get_current_active_user,
     validate_request_size
 )
@@ -287,3 +288,236 @@ def read_inquiries_by_property(
         limit=limit
     )
     return inquiries
+
+
+@router.patch("/{inquiry_id}/status", response_model=InquiryResponse)
+def update_inquiry_status(
+    *,
+    db: Session = Depends(get_db),
+    inquiry_id: int,
+    inquiry_status: str,
+    current_user: UserResponse = Depends(get_current_active_user)
+) -> Any:
+    """
+    Update inquiry status (new, viewed, responded).
+    
+    - Property owner can update status
+    - Admins can update any inquiry status
+    """
+    inquiry = inquiry_crud.get(db=db, inquiry_id=inquiry_id)
+    if not inquiry:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Inquiry not found"
+        )
+    
+    # Check authorization: property owner or admin
+    property = property_crud.get(db=db, property_id=inquiry.property_id)
+    if not property:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Associated property not found"
+        )
+
+    if property.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough permissions to update inquiry status"
+        )
+    
+    # Validate status
+    valid_statuses = ['new', 'viewed', 'responded']
+    if inquiry_status not in valid_statuses:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}"
+        )
+    updated_inquiry = inquiry_crud.update_status(
+        db=db, 
+        inquiry_id=inquiry_id, 
+        new_status=inquiry_status
+    )
+    
+    if not updated_inquiry:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Inquiry not found during status update"
+        )
+    
+    return updated_inquiry
+
+
+@router.post("/{inquiry_id}/mark-viewed", response_model=InquiryResponse)
+def mark_inquiry_viewed(
+    *,
+    db: Session = Depends(get_db),
+    inquiry_id: int,
+    current_user: UserResponse = Depends(get_current_active_user)
+) -> Any:
+    """
+    Mark inquiry as viewed.
+    
+    - Property owner can mark as viewed
+    - Admins can mark any inquiry as viewed
+    """
+    inquiry = inquiry_crud.get(db=db, inquiry_id=inquiry_id)
+    if not inquiry:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Inquiry not found"
+        )
+    
+    # Check authorization: property owner or admin
+    property = property_crud.get(db=db, property_id=inquiry.property_id)
+    if not property:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Associated property not found"
+        )
+
+    if property.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough permissions to mark inquiry as viewed"
+        )
+    
+    updated_inquiry = inquiry_crud.mark_as_viewed(
+        db=db,
+        inquiry_id=inquiry_id
+    )
+    
+    if not updated_inquiry:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Inquiry not found during mark as viewed"
+        )
+    
+    return updated_inquiry
+
+
+@router.post("/{inquiry_id}/mark-responded", response_model=InquiryResponse)
+def mark_inquiry_responded(
+    *,
+    db: Session = Depends(get_db),
+    inquiry_id: int,
+    current_user: UserResponse = Depends(get_current_active_user)
+) -> Any:
+    """
+    Mark inquiry as responded.
+    
+    - Property owner can mark as responded
+    - Admins can mark any inquiry as responded
+    """
+    inquiry = inquiry_crud.get(db=db, inquiry_id=inquiry_id)
+    if not inquiry:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Inquiry not found"
+        )
+    
+    # Check authorization: property owner or admin
+    property = property_crud.get(db=db, property_id=inquiry.property_id)
+    if not property:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Associated property not found"
+        )
+
+    if property.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough permissions to mark inquiry as responded"
+        )
+    
+    updated_inquiry = inquiry_crud.mark_as_responded(
+        db=db,
+        inquiry_id=inquiry_id
+    )
+    
+    if not updated_inquiry:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Inquiry not found during mark as responded"
+        )
+    
+    return updated_inquiry
+
+
+@router.get("/count/{property_id}")
+def count_inquiries_for_property(
+    *,
+    db: Session = Depends(get_db),
+    property_id: int,
+    # No auth — public endpoint
+    # current_user: UserResponse = Depends(get_current_user)
+) -> dict:
+    """
+    Count total active inquiries for a property.
+    
+    - Property owner can view count
+    - Admins can view any property's count
+    - Public endpoint for basic counts (consider rate limiting)
+    """
+    # Check if property exists
+    property = property_crud.get(db=db, property_id=property_id)
+    if not property:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Property not found"
+        )
+
+    # For detailed counts, check authorization
+    # For now, allow public access but could add rate limiting
+    count = inquiry_crud.count_by_property(
+        db=db,
+        property_id=property_id
+    )
+    
+    return {"property_id": property_id, "inquiry_count": count}
+
+
+@router.get("/count/{property_id}/by-status")
+def count_inquiries_by_status(
+    *,
+    db: Session = Depends(get_db),
+    property_id: int,
+    inquiry_status: str,
+    current_user: UserResponse = Depends(get_current_user)
+) -> dict:
+    """
+    Count inquiries for a property by status.
+    
+    - Property owner can view status counts
+    - Admins can view any property's status counts
+    """
+    # Check if property exists
+    property = property_crud.get(db=db, property_id=property_id)
+    if not property:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Property not found"
+        )
+
+    # Check authorization: property owner or admin
+    if property.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough permissions to view inquiry counts for this property"
+        )
+    
+    # Validate status
+    valid_statuses = ['new', 'viewed', 'responded']
+
+    if inquiry_status not in valid_statuses:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}"
+        )
+    
+    count = inquiry_crud.count_by_status(
+        db=db, 
+        property_id=property_id, 
+        status=inquiry_status
+    )
+    
+    return {"property_id": property_id, "inquiry_status": inquiry_status, "count": count}

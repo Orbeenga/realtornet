@@ -184,6 +184,190 @@ class ReviewCRUD:
         )
         return db.execute(stmt).scalar_one_or_none()
 
+    # ------------------------------------------------------------------
+    # Compatibility methods used by reviews API endpoints
+    # ------------------------------------------------------------------
+    def get_property_review_by_user_and_property(
+        self,
+        db: Session,
+        *,
+        user_id: int,
+        property_id: int
+    ) -> Optional[Review]:
+        return self.get_user_property_review(
+            db,
+            user_id=user_id,
+            property_id=property_id,
+        )
+
+    def get_agent_review_by_user_and_agent(
+        self,
+        db: Session,
+        *,
+        user_id: int,
+        agent_id: int
+    ) -> Optional[Review]:
+        return self.get_user_agent_review(
+            db,
+            user_id=user_id,
+            agent_id=agent_id,
+        )
+
+    def create_property_ReviewResponse(
+        self,
+        db: Session,
+        *,
+        obj_in: ReviewCreate,
+        user_id: int
+    ) -> Review:
+        return self.create(db, obj_in=obj_in, user_id=user_id)
+
+    def create_agent_ReviewResponse(
+        self,
+        db: Session,
+        *,
+        obj_in: Any,
+        user_id: int
+    ) -> Review:
+        return self.create(db, obj_in=obj_in, user_id=user_id)
+
+    def get_property_ReviewResponse(
+        self,
+        db: Session,
+        *,
+        review_id: int
+    ) -> Optional[Review]:
+        stmt = select(Review).where(
+            and_(
+                Review.review_id == review_id,
+                Review.property_id.is_not(None),
+                Review.deleted_at.is_(None),
+            )
+        )
+        return db.execute(stmt).scalar_one_or_none()
+
+    def get_agent_ReviewResponse(
+        self,
+        db: Session,
+        *,
+        review_id: int
+    ) -> Optional[Review]:
+        stmt = select(Review).where(
+            and_(
+                Review.review_id == review_id,
+                Review.agent_id.is_not(None),
+                Review.deleted_at.is_(None),
+            )
+        )
+        return db.execute(stmt).scalar_one_or_none()
+
+    def update_property_ReviewResponse(
+        self,
+        db: Session,
+        *,
+        db_obj: Review,
+        obj_in: ReviewUpdate
+    ) -> Review:
+        update_data = obj_in.model_dump(exclude_unset=True)
+        if "rating" in update_data:
+            db_obj.rating = update_data["rating"]
+        if "comment" in update_data:
+            db_obj.comment = update_data["comment"]
+        db.commit()
+        db.refresh(db_obj)
+        return db_obj
+
+    def update_agent_ReviewResponse(
+        self,
+        db: Session,
+        *,
+        db_obj: Review,
+        obj_in: ReviewUpdate
+    ) -> Review:
+        return self.update_property_ReviewResponse(
+            db,
+            db_obj=db_obj,
+            obj_in=obj_in,
+        )
+
+    def soft_delete_property_ReviewResponse(
+        self,
+        db: Session,
+        *,
+        review_id: int,
+        deleted_by_supabase_id: Optional[str] = None
+    ) -> Optional[Review]:
+        db_obj = self.get_property_ReviewResponse(db=db, review_id=review_id)
+        if not db_obj:
+            return None
+        db_obj.deleted_at = func.now()
+        db_obj.deleted_by = deleted_by_supabase_id
+        db.commit()
+        db.refresh(db_obj)
+        return db_obj
+
+    def soft_delete_agent_ReviewResponse(
+        self,
+        db: Session,
+        *,
+        review_id: int,
+        deleted_by_supabase_id: Optional[str] = None
+    ) -> Optional[Review]:
+        db_obj = self.get_agent_ReviewResponse(db=db, review_id=review_id)
+        if not db_obj:
+            return None
+        db_obj.deleted_at = func.now()
+        db_obj.deleted_by = deleted_by_supabase_id
+        db.commit()
+        db.refresh(db_obj)
+        return db_obj
+
+    def get_property_reviews_by_user(
+        self,
+        db: Session,
+        *,
+        user_id: int,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[Review]:
+        stmt = (
+            select(Review)
+            .where(
+                and_(
+                    Review.user_id == user_id,
+                    Review.property_id.is_not(None),
+                    Review.deleted_at.is_(None),
+                )
+            )
+            .order_by(Review.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+        )
+        return db.execute(stmt).scalars().all()
+
+    def get_agent_reviews_by_user(
+        self,
+        db: Session,
+        *,
+        user_id: int,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[Review]:
+        stmt = (
+            select(Review)
+            .where(
+                and_(
+                    Review.user_id == user_id,
+                    Review.agent_id.is_not(None),
+                    Review.deleted_at.is_(None),
+                )
+            )
+            .order_by(Review.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+        )
+        return db.execute(stmt).scalars().all()
+
     def update(
         self, 
         db: Session, 
@@ -221,7 +405,8 @@ class ReviewCRUD:
         self, 
         db: Session, 
         *, 
-        review_id: int
+        review_id: int,
+        deleted_by_supabase_id: Optional[str] = None
     ) -> Optional[Review]:
         """
         Soft delete a review.
@@ -232,6 +417,7 @@ class ReviewCRUD:
             return None
 
         db_obj.deleted_at = func.now()  # Trigger handles timestamp
+        db_obj.deleted_by = deleted_by_supabase_id
         db.commit()
         db.refresh(db_obj)
         return db_obj

@@ -8,6 +8,7 @@ DB-controlled fields (review_id, timestamps) excluded from Create/Update.
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 from typing import Optional
 from datetime import datetime
+from uuid import UUID
 
 
 # Base Schema (shared fields for responses)
@@ -64,6 +65,7 @@ class ReviewResponse(ReviewBase):
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime] = None
+    deleted_by: Optional[UUID] = None
 
     model_config = ConfigDict(from_attributes=True)
 

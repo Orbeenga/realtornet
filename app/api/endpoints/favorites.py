@@ -1,11 +1,10 @@
-from app.schemas.users import UserResponse
 # app/api/endpoints/favorites.py
 """
 Favorites management endpoints - Canonical compliant
 Handles user property favorites with composite key, soft delete, and audit tracking
 """
 from typing import Any, List
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 # --- DIRECT CRUD IMPORTS ---
@@ -44,17 +43,10 @@ def create_favorite(
     
     Audit: Tracks creator via user_id FK (no created_by column per DB schema)
     """
-    # Ensure user is creating FavoriteResponse for themselves
-    if favorite_in.user_id != current_user.user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot create FavoriteResponse for another user"
-        )
-
     # Check if FavoriteResponse already exists (including soft-deleted)
     existing_favorite = favorite_crud.get(
         db, 
-        user_id=favorite_in.user_id,
+        user_id=current_user.user_id,
         property_id=favorite_in.property_id
     )
     
@@ -80,7 +72,7 @@ def create_favorite(
         )
     
     # Create (favorites table has no created_by column per DB schema)
-    return favorite_crud.create(db, obj_in=favorite_in)
+    return favorite_crud.create(db, obj_in=favorite_in, user_id=current_user.user_id)
 
 
 @router.delete("/", response_model=FavoriteResponse)
@@ -248,3 +240,51 @@ def count_property_favorites(
     
     count = favorite_crud.count_active_favorites(db, property_id=property_id)
     return {"property_id": property_id, "favorite_count": count}
+
+
+@router.get("/count/user/{user_id}")
+def count_user_favorites(
+    user_id: int,
+    current_user: UserResponse = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> dict:
+    """
+    Count the number of active favorites for a user.
+    
+    - Users can only check their own favorite count
+    - Admins can check any user's favorite count
+    """
+    # Ensure user can only access their own favorites (unless admin)
+    if user_id != current_user.user_id and not user_crud.is_admin(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot access another user's favorite count"
+        )
+
+    count = favorite_crud.count_user_favorites(db, user_id=user_id)
+    return {"user_id": user_id, "favorite_count": count}
+
+
+@router.delete("/bulk", status_code=200)
+def bulk_delete_favorites(
+    property_ids: List[int] = Query(..., description="List of property IDs to remove from favorites"),
+    current_user: UserResponse = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+) -> dict:
+    """
+    Bulk soft-delete multiple favorites.
+    - Users can only delete their own favorites
+    - Single atomic SQL UPDATE (not a loop)
+    - Returns count of successfully deleted favorites
+    """
+    deleted_count = favorite_crud.bulk_soft_delete(
+        db,
+        user_id=current_user.user_id,
+        property_ids=property_ids,
+        deleted_by_supabase_id=current_user.supabase_id
+    )
+    return {
+        "status": "success",
+        "deleted_count": deleted_count,
+        "total_requested": len(property_ids)
+    }

@@ -8,6 +8,7 @@ DB-controlled fields (id, timestamps) excluded from Create/Update.
 from pydantic import BaseModel, EmailStr, ConfigDict, field_validator
 from typing import Optional
 from datetime import datetime
+from uuid import UUID
 
 
 # Base Schema (shared fields for responses)
@@ -59,8 +60,14 @@ class AgencyUpdate(BaseModel):
 class AgencyResponse(AgencyBase):
     """Schema for agency responses (includes DB-generated fields)"""
     agency_id: int
+    name: str
+    is_verified: bool
     created_at: datetime
     updated_at: datetime
+    deleted_at: Optional[datetime] = None
+    created_by: Optional[UUID] = None
+    updated_by: Optional[UUID] = None
+    deleted_by: Optional[UUID] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -74,5 +81,3 @@ class AgencyListResponse(BaseModel):
     page_size: int
 
     model_config = ConfigDict(from_attributes=True)
-
-# Alias for backward compatibility

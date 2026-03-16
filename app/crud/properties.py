@@ -154,6 +154,46 @@ class PropertyCRUD:
         
         return db.execute(query).scalar()
     
+    def count_by_type(
+        self,
+        db: Session,
+        *,
+        property_type_id: int
+    ) -> int:
+        """Count non-deleted properties using a given property type."""
+        return db.execute(
+            select(func.count(Property.property_id)).where(
+                Property.property_type_id == property_type_id,
+                Property.deleted_at.is_(None)
+            )
+        ).scalar()
+
+    def count_active(self, db: Session) -> int:
+        """Count active (non-deleted) properties."""
+        return db.execute(
+            select(func.count(Property.property_id)).where(
+                Property.deleted_at.is_(None)
+            )
+        ).scalar()
+
+    def count_approved(self, db: Session) -> int:
+        """Count approved (verified) properties."""
+        return db.execute(
+            select(func.count(Property.property_id)).where(
+                Property.deleted_at.is_(None),
+                Property.is_verified.is_(True)
+            )
+        ).scalar()
+
+    def count_pending(self, db: Session) -> int:
+        """Count pending (unverified) properties."""
+        return db.execute(
+            select(func.count(Property.property_id)).where(
+                Property.deleted_at.is_(None),
+                or_(Property.is_verified.is_(False), Property.is_verified.is_(None))
+            )
+        ).scalar()
+
     def search(
         self, 
         db: Session, 
@@ -364,7 +404,7 @@ class PropertyCRUD:
         *, 
         obj_in: PropertyCreate, 
         user_id: int,
-        created_by_supabase_id: Optional[str] = None
+        created_by: Optional[str] = None
     ) -> Property:
         """
         Create a new property listing.
@@ -389,12 +429,15 @@ class PropertyCRUD:
             )
         
         create_data = obj_in.model_dump(mode='python', exclude_unset=True)
+
+        # Agency_id is schema-only (permission check), not a DB column
+        create_data.pop('agency_id', None)
         
         db_obj = Property(
             **create_data,
             user_id=user_id,
             is_verified=False,
-            updated_by=created_by_supabase_id
+            created_by=created_by
         )
         
         db.add(db_obj)
@@ -526,7 +569,50 @@ class PropertyCRUD:
         db.refresh(db_obj)
         return db_obj
     
-    
+    def count_by_agency(self, db: Session, *, agency_id: int) -> int:
+        """Count active properties for an agency via user relationship."""
+        from app.models.users import User
+        stmt = (
+            select(func.count(Property.property_id))
+            .join(User, Property.user_id == User.user_id)
+            .where(
+                User.agency_id == agency_id,
+                Property.deleted_at.is_(None)
+            )
+        )
+        return db.execute(stmt).scalar()
+
+    def get_by_agency_approved(
+        self,
+        db: Session,
+        *,
+        agency_id: int,
+        skip: int = 0,
+        limit: int = 100
+    ) -> list:
+        """Get verified, non-deleted properties for an agency via user relationship."""
+        from app.models.users import User
+        stmt = (
+            select(Property)
+            .join(User, Property.user_id == User.user_id)
+            .where(
+                User.agency_id == agency_id,
+                Property.is_verified == True,
+                Property.deleted_at.is_(None)
+            )
+            .offset(skip)
+            .limit(limit)
+        )
+        return db.execute(stmt).scalars().all()
+
+    def count_by_user(self, db: Session, *, user_id: int) -> int:
+        """Count active properties owned by a specific user."""
+        stmt = select(func.count(Property.property_id)).where(
+            Property.user_id == user_id,
+            Property.deleted_at.is_(None)
+        )
+        return db.execute(stmt).scalar()
+
     # DELETE OPERATIONS
         
     def soft_delete(
@@ -543,7 +629,7 @@ class PropertyCRUD:
         
         db_obj.deleted_at = datetime.now(timezone.utc)
         if deleted_by_supabase_id:
-            db_obj.updated_by = deleted_by_supabase_id
+            db_obj.deleted_by = deleted_by_supabase_id
         
         db.add(db_obj)
         db.flush()
@@ -826,6 +912,243 @@ class PropertyCRUD:
         db.flush()
         
         return result.rowcount
+
+    # create_with_owner  (alias for create — endpoint uses this name)
+
+    def create_with_owner(
+        self,
+        db: Session,
+        *,
+        obj_in: PropertyCreate,
+        user_id: int,
+        created_by: Optional[str] = None,
+    ) -> Property:
+        """Alias for create() — used by the API endpoint."""
+        return self.create(
+            db,
+            obj_in=obj_in,
+            user_id=user_id,
+            created_by=created_by,
+        )
+
+    # GET /  —  list with visibility variants
+
+
+    def get_multi_by_params(
+        self,
+        db: Session,
+        *,
+        skip: int = 0,
+        limit: int = 100,
+        params: Optional[PropertyFilter] = None,
+    ) -> List[Property]:
+        """Admin view — all non-deleted properties matching params."""
+        filters = params.model_dump(exclude_unset=True) if params else {}
+        return self.get_multi(db, skip=skip, limit=limit, filters=filters)
+
+    def get_multi_by_params_approved(
+        self,
+        db: Session,
+        *,
+        skip: int = 0,
+        limit: int = 100,
+        params: Optional[PropertyFilter] = None,
+    ) -> List[Property]:
+        """Public / regular-user view — only verified, non-deleted properties."""
+        filters = params.model_dump(exclude_unset=True) if params else {}
+        filters["is_verified"] = True
+        return self.get_multi(db, skip=skip, limit=limit, filters=filters)
+
+    def get_multi_by_params_for_agent(
+        self,
+        db: Session,
+        *,
+        skip: int = 0,
+        limit: int = 100,
+        params: Optional[PropertyFilter] = None,
+        agent_user_id: int,
+    ) -> List[Property]:
+        """Agent view — verified properties OR their own (any status)."""
+        filters_verified = params.model_dump(exclude_unset=True) if params else {}
+        filters_verified["is_verified"] = True
+
+        verified = self.get_multi(db, skip=0, limit=skip + limit, filters=filters_verified)
+
+        own = self.get_multi(
+            db, skip=0, limit=skip + limit,
+            user_id=agent_user_id, filters=params.model_dump(exclude_unset=True) if params else {}
+        )
+
+        # Merge, deduplicate, preserve order
+        seen: set = set()
+        merged: List[Property] = []
+        for p in list(verified) + list(own):
+            if p.property_id not in seen:
+                seen.add(p.property_id)
+                merged.append(p)
+
+        return merged[skip: skip + limit]
+
+
+    # GET /by-LocationResponse/{location_id}  —  location visibility variants
+
+    def get_by_LocationResponse(
+        self,
+        db: Session,
+        *,
+        location_id: int,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> List[Property]:
+        """Admin view — all non-deleted properties for a location."""
+        return self.get_multi(
+            db, skip=skip, limit=limit,
+            filters={"location_id": location_id},
+        )
+
+    def get_by_location_approved(
+        self,
+        db: Session,
+        *,
+        location_id: int,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> List[Property]:
+        """Public view — only verified properties for a location."""
+        return self.get_multi(
+            db, skip=skip, limit=limit,
+            filters={"location_id": location_id, "is_verified": True},
+        )
+
+    def get_by_location_for_agent(
+        self,
+        db: Session,
+        *,
+        location_id: int,
+        skip: int = 0,
+        limit: int = 100,
+        agent_user_id: int,
+    ) -> List[Property]:
+        """Agent view — verified OR their own properties for a location."""
+        verified = self.get_multi(
+            db, skip=0, limit=skip + limit,
+            filters={"location_id": location_id, "is_verified": True},
+        )
+        own = self.get_multi(
+            db, skip=0, limit=skip + limit,
+            user_id=agent_user_id,
+            filters={"location_id": location_id},
+        )
+        seen: set = set()
+        merged: List[Property] = []
+        for p in list(verified) + list(own):
+            if p.property_id not in seen:
+                seen.add(p.property_id)
+                merged.append(p)
+        return merged[skip: skip + limit]
+
+    # GET /by-agent/{agent_user_id}  —  owner visibility variants
+
+    def get_by_owner(
+        self,
+        db: Session,
+        *,
+        user_id: int,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> List[Property]:
+        """Admin / self view — all non-deleted properties by owner."""
+        return self.get_multi(db, skip=skip, limit=limit, user_id=user_id)
+
+    def get_by_owner_approved(
+        self,
+        db: Session,
+        *,
+        user_id: int,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> List[Property]:
+        """Public view — only verified properties by owner."""
+        return self.get_multi(
+            db, skip=skip, limit=limit,
+            user_id=user_id,
+            filters={"is_verified": True},
+        )
+
+    # GET /search/radius  —  radius visibility variants
+
+    def get_within_radius(
+        self,
+        db: Session,
+        *,
+        latitude: float,
+        longitude: float,
+        radius: float,
+        skip: int = 0,
+        limit: int = 100,
+        params=None,
+    ) -> List[Property]:
+        """Admin view — all non-deleted properties within radius."""
+        results = self.get_properties_near(
+            db,
+            latitude=latitude,
+            longitude=longitude,
+            radius_km=radius,
+            limit=skip + limit,   # fetch enough to slice
+        )
+        return results[skip: skip + limit]
+
+    def get_within_radius_approved(
+        self,
+        db: Session,
+        *,
+        latitude: float,
+        longitude: float,
+        radius: float,
+        skip: int = 0,
+        limit: int = 100,
+        params=None,
+    ) -> List[Property]:
+        """Public view — only verified properties within radius."""
+        results = self.get_properties_near(
+            db,
+            latitude=latitude,
+            longitude=longitude,
+            radius_km=radius,
+            limit=skip + limit * 2,   # over-fetch to allow for filtering
+        )
+        verified = [p for p in results if p.is_verified]
+        return verified[skip: skip + limit]
+
+    def get_within_radius_for_agent(
+        self,
+        db: Session,
+        *,
+        latitude: float,
+        longitude: float,
+        radius: float,
+        skip: int = 0,
+        limit: int = 100,
+        params=None,
+        agent_user_id: int,
+    ) -> List[Property]:
+        """Agent view — verified OR their own properties within radius."""
+        results = self.get_properties_near(
+            db,
+            latitude=latitude,
+            longitude=longitude,
+            radius_km=radius,
+            limit=skip + limit * 2,
+        )
+        filtered = [
+            p for p in results
+            if p.is_verified or p.user_id == agent_user_id
+        ]
+        return filtered[skip: skip + limit]
+
+    # Note: get_properties_near needs skip support — add it if not present:
+    # The existing get_properties_near only has limit, not skip.
+    # The methods above pass skip=0 and slice in Python as a safe workaround.
 
 
 # Singleton instance

@@ -13,6 +13,7 @@ from app.api.endpoints import (
     # Authentication & Authorization
     auth,
     admin,
+    analytics,
     
     # Core Entities
     users,
@@ -143,6 +144,12 @@ api_router.include_router(
     reviews.router,
     prefix="/reviews",
     tags=["reviews"]
+)
+
+api_router.include_router(
+    analytics.router,
+    prefix="/analytics",
+    tags=["analytics"]
 )
 
 

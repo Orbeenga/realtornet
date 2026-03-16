@@ -7,7 +7,7 @@ Canonical Rules: Geography(POINT, 4326), no manual timestamps, proper WKT handli
 
 from typing import List, Optional, Tuple
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, update
 from geoalchemy2.functions import ST_DWithin, ST_Distance
 from geoalchemy2.elements import WKTElement
 
@@ -33,12 +33,12 @@ class LocationCRUD:
         limit: int = 100,
         include_inactive: bool = False
     ) -> List[Location]:
-        """Get multiple locations with pagination and optional active filter"""
+        """Get multiple locations with pagination and optional deleted filter"""
         query = select(Location)
 
-        # Apply is_active filter
+        # Apply deleted filter
         if not include_inactive:
-            query = query.where(Location.is_active == True)
+            query = query.where(Location.deleted_at.is_(None))
 
         # Pagination
         query = query.offset(skip).limit(limit)
@@ -216,8 +216,7 @@ class LocationCRUD:
         self, 
         db: Session, 
         *, 
-        obj_in: LocationCreate,
-        updated_by_supabase_id: Optional[str] = None
+        obj_in: LocationCreate
     ) -> Location:
         """
         Create a new location.
@@ -234,7 +233,6 @@ class LocationCRUD:
             state=create_data["state"],
             city=create_data["city"],
             neighborhood=create_data.get("neighborhood"),
-            updated_by=updated_by_supabase_id
         )
         
         # Handle geography point if coordinates provided
@@ -258,7 +256,7 @@ class LocationCRUD:
         *, 
         db_obj: Location, 
         obj_in: LocationUpdate,
-        updated_by_supabase_id: Optional[str] = None
+        updated_by: Optional[str] = None
     ) -> Location:
         """
         Update a location.
@@ -290,8 +288,8 @@ class LocationCRUD:
             db_obj.geom = WKTElement(wkt_point, srid=4326)
         
         # Audit fields
-        if updated_by_supabase_id:
-            db_obj.updated_by = updated_by_supabase_id
+        if updated_by:
+            db_obj.updated_by = updated_by
         # updated_at handled by DB trigger automatically
         
         db.add(db_obj)
@@ -302,22 +300,35 @@ class LocationCRUD:
     
     # DELETE OPERATIONS
     
+    def soft_delete(
+        self,
+        db: Session,
+        *,
+        location_id: int,
+        deleted_by_supabase_id: Optional[str] = None
+    ) -> Optional[Location]:
+        """
+        Soft delete a location.
+        Sets deleted_at and deleted_by.
+        """
+        stmt = (
+            update(Location)
+            .where(
+                Location.location_id == location_id,
+                Location.deleted_at.is_(None)
+            )
+            .values(
+                deleted_at=func.now(),
+                deleted_by=deleted_by_supabase_id
+            )
+        )
+        db.execute(stmt)
+        db.flush()
+        return db.get(Location, location_id)
+
     def deactivate(self, db: Session, *, location_id: int) -> Optional[Location]:
-        """
-        Deactivate a location (preserves for existing property references).
-        New properties cannot use deactivated locations.
-        """
-        db_obj = self.get(db, location_id=location_id)
-        if not db_obj:
-            return None
-    
-        db_obj.is_active = False
-    # updated_at handled by trigger
-    
-        db.add(db_obj)
-        db.commit()
-        db.refresh(db_obj)
-        return db_obj
+        """Deprecated alias for soft_delete()."""
+        return self.soft_delete(db, location_id=location_id)
     
     
     # UTILITY METHODS
@@ -330,8 +341,7 @@ class LocationCRUD:
         city: str,
         neighborhood: Optional[str] = None,
         latitude: Optional[float] = None,
-        longitude: Optional[float] = None,
-        updated_by_supabase_id: Optional[str] = None
+        longitude: Optional[float] = None
     ) -> Location:
         """
         Get existing location or create if doesn't exist.
@@ -361,8 +371,7 @@ class LocationCRUD:
         
         return self.create(
             db, 
-            obj_in=location_data,
-            updated_by_supabase_id=updated_by_supabase_id
+            obj_in=location_data
         )
 
 

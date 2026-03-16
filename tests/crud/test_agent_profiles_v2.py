@@ -58,6 +58,18 @@ def ap_crud():
     return AgentProfileCRUD()
 
 
+class TestValidateAgencyExists:
+    def test_validate_agency_missing_raises(self, ap_crud, mock_db):
+        """
+        Missing agencies must raise a ValueError.
+
+        This prevents orphaned agent profiles with invalid agency references.
+        """
+        mock_db.get.return_value = None
+        with pytest.raises(ValueError):
+            ap_crud._validate_agency_exists(mock_db, agency_id=999999)
+
+
 # ─── update agency_id with active properties (line 178 — property_count > 0 branch) ─
 
 class TestAgentProfileUpdateAgencyBlock:

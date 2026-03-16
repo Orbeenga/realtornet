@@ -199,3 +199,9 @@ cython_debug/
 # Old project backup
 .git_backup_realtorconnect/
 .github_old_realtorconnect/
+debug_*.py
+test_debug_*.py
+test_diagnostics.py
+test_oauth2_direct.py
+drop_*.py
+tests/conftest_no_mock.py

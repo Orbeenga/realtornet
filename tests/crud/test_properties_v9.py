@@ -793,7 +793,8 @@ class TestSoftDeleteAndRestore:
         mock_db.refresh.return_value = None
         crud.soft_delete(mock_db, property_id=1, deleted_by_supabase_id="uid")
         assert prop.deleted_at is not None
-        assert prop.updated_by == "uid"
+        assert str(prop.deleted_by) == "uid"
+        assert prop.updated_by is None
 
     def test_restore_not_found(self, crud, mock_db):
         mock_db.get.return_value = None

@@ -10,8 +10,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select, delete, and_, func
 from sqlalchemy.exc import SQLAlchemyError
 import logging
+import json
 
-from app.models.property_amenities import property_amenities
+#from app.models.property_amenities import property_amenities
+from app.models.property_amenities import property_amenities as property_amenities_table
 from app.models.amenities import Amenity
 
 
@@ -35,10 +37,10 @@ class PropertyAmenityCRUD:
         amenity_id: int
     ) -> bool:
         """Check if a specific property-amenity association exists"""
-        query = select(property_amenities).where(
+        query = select(property_amenities_table).where(
             and_(
-                property_amenities.c.property_id == property_id,
-                property_amenities.c.amenity_id == amenity_id
+                property_amenities_table.c.property_id == property_id,
+                property_amenities_table.c.amenity_id == amenity_id
             )
         )
         return db.execute(query).first() is not None
@@ -54,10 +56,10 @@ class PropertyAmenityCRUD:
         Returns list of Amenity objects.
         """
         query = select(Amenity).join(
-            property_amenities,
-            Amenity.amenity_id == property_amenities.c.amenity_id
+            property_amenities_table,
+            Amenity.amenity_id == property_amenities_table.c.amenity_id
         ).where(
-            property_amenities.c.property_id == property_id
+            property_amenities_table.c.property_id == property_id
         ).order_by(Amenity.name.asc())
         
         return db.execute(query).scalars().all()
@@ -82,9 +84,9 @@ class PropertyAmenityCRUD:
         Useful for comparison/checking without loading full objects.
         Ordered by amenity_id for consistency.
         """
-        query = select(property_amenities.c.amenity_id).where(
-            property_amenities.c.property_id == property_id
-        ).order_by(property_amenities.c.amenity_id.asc())
+        query = select(property_amenities_table.c.amenity_id).where(
+            property_amenities_table.c.property_id == property_id
+        ).order_by(property_amenities_table.c.amenity_id.asc())
         
         return db.execute(query).scalars().all()
     
@@ -96,10 +98,10 @@ class PropertyAmenityCRUD:
         amenity_id: int
     ) -> bool:
         """Check if property has specific amenity"""
-        query = select(property_amenities).where(
+        query = select(property_amenities_table).where(
             and_(
-                property_amenities.c.property_id == property_id,
-                property_amenities.c.amenity_id == amenity_id
+                property_amenities_table.c.property_id == property_id,
+                property_amenities_table.c.amenity_id == amenity_id
             )
         )
         
@@ -113,8 +115,8 @@ class PropertyAmenityCRUD:
     ) -> int:
         """Count amenities for a property"""
         return db.execute(
-            select(func.count(property_amenities.c.amenity_id)).where(
-                property_amenities.c.property_id == property_id
+            select(func.count(property_amenities_table.c.amenity_id)).where(
+                property_amenities_table.c.property_id == property_id
             )
         ).scalar()
     
@@ -129,8 +131,8 @@ class PropertyAmenityCRUD:
         Used by endpoint to check if amenity can be deleted.
         """
         return db.execute(
-            select(func.count(property_amenities.c.property_id)).where(
-                property_amenities.c.amenity_id == amenity_id
+            select(func.count(property_amenities_table.c.property_id)).where(
+                property_amenities_table.c.amenity_id == amenity_id
             )
         ).scalar()
     
@@ -171,7 +173,7 @@ class PropertyAmenityCRUD:
             return False  # Already exists - idempotent
         
         # Create junction record using insert
-        stmt = property_amenities.insert().values(
+        stmt = property_amenities_table.insert().values(
             property_id=property_id,
             amenity_id=amenity_id
         )
@@ -246,7 +248,7 @@ class PropertyAmenityCRUD:
                 {"property_id": property_id, "amenity_id": amenity_id}
                 for amenity_id in new_amenity_ids
             ]
-            db.execute(property_amenities.insert(), values)
+            db.execute(property_amenities_table.insert(), values)
         
         if commit:
             db.commit()
@@ -299,10 +301,10 @@ class PropertyAmenityCRUD:
             # Remove old amenities
             if to_remove:
                 db.execute(
-                    delete(property_amenities).where(
+                    delete(property_amenities_table).where(
                         and_(
-                            property_amenities.c.property_id == property_id,
-                            property_amenities.c.amenity_id.in_(to_remove)
+                            property_amenities_table.c.property_id == property_id,
+                            property_amenities_table.c.amenity_id.in_(to_remove)
                         )
                     )
                 )
@@ -374,10 +376,10 @@ class PropertyAmenityCRUD:
         Returns True if removed, False if didn't exist.
         """
         result = db.execute(
-            delete(property_amenities).where(
+            delete(property_amenities_table).where(
                 and_(
-                    property_amenities.c.property_id == property_id,
-                    property_amenities.c.amenity_id == amenity_id
+                    property_amenities_table.c.property_id == property_id,
+                    property_amenities_table.c.amenity_id == amenity_id
                 )
             )
         )
@@ -411,10 +413,10 @@ class PropertyAmenityCRUD:
         Returns count of removed records.
         """
         result = db.execute(
-            delete(property_amenities).where(
+            delete(property_amenities_table).where(
                 and_(
-                    property_amenities.c.property_id == property_id,
-                    property_amenities.c.amenity_id.in_(amenity_ids)
+                    property_amenities_table.c.property_id == property_id,
+                    property_amenities_table.c.amenity_id.in_(amenity_ids)
                 )
             )
         )
@@ -447,8 +449,8 @@ class PropertyAmenityCRUD:
         Returns count of removed records.
         """
         result = db.execute(
-            delete(property_amenities).where(
-                property_amenities.c.property_id == property_id
+            delete(property_amenities_table).where(
+                property_amenities_table.c.property_id == property_id
             )
         )
         
@@ -496,4 +498,7 @@ class PropertyAmenityCRUD:
 
 
 # Singleton instance
-property_amenity = PropertyAmenityCRUD()
+property_amenities = PropertyAmenityCRUD()
+
+# Backward compatibility alias
+property_amenity = property_amenities

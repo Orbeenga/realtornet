@@ -81,7 +81,7 @@ def create_LocationResponse(
     Validates geography coordinates if provided.
     CRUD layer converts lat/lon to PostGIS Geography(POINT, 4326).
     
-    Audit: Tracks creator via created_by (Supabase UUID)
+    Audit: No created_by for locations per schema.
     """
     # Validate geography coordinates if present
     if hasattr(location_in, 'latitude') and location_in.latitude is not None:
@@ -101,8 +101,7 @@ def create_LocationResponse(
     # Create with audit tracking
     LocationResponse = location_crud.create(
         db, 
-        obj_in=location_in,
-        created_by=current_user.supabase_id  # UUID audit trail
+        obj_in=location_in
     )
     
     return LocationResponse

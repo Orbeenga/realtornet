@@ -94,7 +94,7 @@ def create_profile(
     *,
     db: Session = Depends(get_db),
     profile_in: ProfileCreate,
-    current_user: UserResponse = Depends(get_current_active_user),
+    current_user: UserResponse = Depends(get_current_user),
     _: None = Depends(validate_request_size)
 ) -> Any:
     """
@@ -114,17 +114,11 @@ def create_profile(
             detail="Profile already exists for this user"
         )
     
-    # Ensure profile_in.user_id matches current user
-    if profile_in.user_id != current_user.user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot create profile for another user"
-        )
-    
     # Create with audit tracking
     user_profile = profile_crud.create(
         db=db,
         obj_in=profile_in,
+        user_id=current_user.user_id,
         created_by=current_user.supabase_id
     )
     

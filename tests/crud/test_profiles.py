@@ -667,3 +667,57 @@ class TestProfileGetOrCreate:
         
         assert result.profile_id == existing.profile_id
         assert result.full_name == "Existing Name"  # Not the default
+
+
+class TestProfileDelete:
+    def test_delete_nonexistent_raises_404(self, db: Session):
+        """
+        Hard delete must 404 for unknown profile IDs.
+
+        This prevents silent no-ops on destructive actions.
+        """
+        with pytest.raises(HTTPException) as exc:
+            profile_crud.delete(db, profile_id=999999)
+        assert exc.value.status_code == 404
+
+
+class TestProfileSoftDelete:
+    def test_soft_delete_sets_deleted_fields(self, db: Session):
+        """
+        Soft delete must set deleted_at and deleted_by.
+
+        This enforces the audit trail for profile deletions.
+        """
+        user = user_crud.create(
+            db,
+            obj_in=UserCreate(
+                email="softdelete.profile@test.com",
+                password="Test123!",
+                first_name="Soft",
+                last_name="Delete",
+                user_role=UserRole.SEEKER
+            ),
+            supabase_id=str(uuid.uuid4())
+        )
+        profile = profile_crud.create(
+            db,
+            obj_in=ProfileCreate(full_name="Soft Delete Profile"),
+            user_id=user.user_id
+        )
+        deleted = profile_crud.soft_delete(
+            db,
+            profile_id=profile.profile_id,
+            deleted_by_supabase_id=user.supabase_id
+        )
+        assert deleted is not None
+        assert deleted.deleted_at is not None
+        assert deleted.deleted_by is not None
+
+    def test_soft_delete_nonexistent_returns_none(self, db: Session):
+        """
+        Soft delete should return None for missing profiles.
+
+        This avoids raising on idempotent delete attempts.
+        """
+        result = profile_crud.soft_delete(db, profile_id=999999)
+        assert result is None

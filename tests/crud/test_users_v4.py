@@ -33,6 +33,7 @@ def make_user(**kwargs):
         is_admin=False, is_verified=True,
         deleted_at=None, supabase_id="uuid-1",
         agency_id=None, verification_code="CODE123",
+        deleted_by=None, updated_by=None,
     )
     defaults.update(kwargs)
     obj = MagicMock(spec=User)
@@ -125,13 +126,14 @@ class TestSoftDelete:
         assert obj.deleted_at is not None
 
     def test_sets_updated_by_when_provided(self, crud, mock_db):
-        """Line 257: deleted_by_supabase_id sets updated_by."""
+        """Line 257: deleted_by_supabase_id sets deleted_by."""
         obj = make_user(deleted_at=None)
         with patch.object(crud, "get", return_value=obj):
             mock_db.commit.return_value = None
             mock_db.refresh.return_value = None
             crud.soft_delete(mock_db, user_id=1, deleted_by_supabase_id="admin-uuid")
-        assert obj.updated_by == "admin-uuid"
+        assert obj.deleted_by == "admin-uuid"
+        assert obj.updated_by != "admin-uuid"
 
     def test_no_deleted_by_skips_updated_by(self, crud, mock_db):
         """Line 257 branch: no deleted_by → updated_by not set."""
@@ -142,6 +144,7 @@ class TestSoftDelete:
             crud.soft_delete(mock_db, user_id=1)
         # updated_by should not have been assigned
         assert obj.deleted_at is not None
+        assert obj.deleted_by is None
 
 
 # ─── can_modify_user (lines 283-286) ─────────────────────────────────────────

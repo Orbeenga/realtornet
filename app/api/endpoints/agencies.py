@@ -118,14 +118,25 @@ def create_agency(
         created_by=current_user.supabase_id  # UUID Audit Trail
     )
 
-    logger.info(
-        "Agency created",
-        extra={
-            "agency_id": AgencyResponse.agency_id,
-            "name": AgencyResponse.name,
-            "created_by": current_user.supabase_id
-        }
-    )
+    # create_agency — replace logger block:
+    logger.info("Agency created", extra={
+        "agency_id": agency.agency_id,      # ← instance, not class
+        "name": agency.name,
+        "created_by": current_user.supabase_id
+    })
+
+    # update_agency — replace logger block:
+    logger.info("Agency updated", extra={
+        "agency_id": agency.agency_id,      # ← instance, not class
+        "updated_by": current_user.supabase_id
+    })
+
+    # delete_agency — replace logger block:
+    logger.warning("Agency soft deleted", extra={
+        "agency_id": agency.agency_id,
+        "agency_name": agency.name,         # ← instance, not class
+        "deleted_by": current_user.supabase_id
+    })
 
     return agency
 
@@ -180,13 +191,25 @@ def update_agency(
         updated_by=current_user.supabase_id
     )
 
-    logger.info(
-        "Agency updated",
-        extra={
-            "agency_id": AgencyResponse.agency_id,
-            "updated_by": current_user.supabase_id
-        }
-    )
+    # create_agency — replace logger block:
+    logger.info("Agency created", extra={
+        "agency_id": agency.agency_id,      # ← instance, not class
+        "name": agency.name,
+        "created_by": current_user.supabase_id
+    })
+
+    # update_agency — replace logger block:
+    logger.info("Agency updated", extra={
+        "agency_id": agency.agency_id,      # ← instance, not class
+        "updated_by": current_user.supabase_id
+    })
+
+    # delete_agency — replace logger block:
+    logger.warning("Agency soft deleted", extra={
+        "agency_id": agency_id,
+        "agency_name": agency.name,         # ← instance, not class
+        "deleted_by": current_user.supabase_id
+    })
 
     return agency
 
@@ -220,7 +243,7 @@ def delete_agency(
         )
     
     # Optional business rule: Prevent deletion if agency has active agents
-    active_agents_count = agent_profile_crud.count_by_agency(db, agency_id=agency_id)
+    active_agents_count = user_crud.count_by_agency(db, agency_id=agency_id)
     if active_agents_count > 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -248,14 +271,25 @@ def delete_agency(
             detail="Agency not found during delete attempt"
         )
 
-    logger.warning(
-        "Agency soft deleted",
-        extra={
-            "agency_id": agency_id,
-            "agency_name": AgencyResponse.name,
-            "deleted_by": current_user.supabase_id
-        }
-    )
+    # create_agency — replace logger block:
+    logger.info("Agency created", extra={
+        "agency_id": agency.agency_id,      # ← instance, not class
+        "name": agency.name,
+        "created_by": current_user.supabase_id
+    })
+
+    # update_agency — replace logger block:
+    logger.info("Agency updated", extra={
+        "agency_id": agency.agency_id,      # ← instance, not class
+        "updated_by": current_user.supabase_id
+    })
+
+    # delete_agency — replace logger block:
+    logger.warning("Agency soft deleted", extra={
+        "agency_id": agency_id,
+        "agency_name": agency.name,         # ← instance, not class
+        "deleted_by": current_user.supabase_id
+    })
 
     return agency
 

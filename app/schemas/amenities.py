@@ -5,7 +5,7 @@ Follows BaseSchema/CreateSchema/UpdateSchema pattern.
 DB-controlled fields (id, timestamps) excluded from Create/Update.
 """
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from typing import Optional
 from datetime import datetime
 
@@ -49,7 +49,15 @@ class AmenityUpdate(BaseModel):
 # Response Schema (includes DB-controlled fields)
 class AmenityResponse(AmenityBase):
     """Schema for amenity responses (includes DB-generated fields)"""
-    id: int  # Matches DB column name exactly
+    amenity_id: int          # ← matches model PK column
+    id: int = None           # ← kept for backward compat; populated via validator
+
+    @model_validator(mode='after')
+    def sync_id_fields(self) -> 'AmenityResponse':
+        if self.id is None:
+            self.id = self.amenity_id
+        return self
+
     created_at: datetime
     updated_at: datetime
 
@@ -65,5 +73,3 @@ class AmenityListResponse(BaseModel):
     page_size: int
 
     model_config = ConfigDict(from_attributes=True)
-
-# fastapi alias

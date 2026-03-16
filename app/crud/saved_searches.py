@@ -79,8 +79,9 @@ class SavedSearchCRUD:
     def update(
         self, 
         db: Session, 
-        *, 
-        search_id: int,
+        *,
+        db_obj: Optional[SavedSearch] = None,
+        search_id: Optional[int] = None,
         obj_in: SavedSearchUpdate
     ) -> Optional[SavedSearch]:
         """
@@ -88,7 +89,8 @@ class SavedSearchCRUD:
         For search_params: performs MERGE (updates nested keys).
         updated_at handled by DB trigger automatically.
         """
-        db_obj = self.get(db=db, search_id=search_id)
+        if db_obj is None and search_id is not None:
+            db_obj = self.get(db=db, search_id=search_id)
         if not db_obj:
             return None
 
@@ -117,7 +119,8 @@ class SavedSearchCRUD:
         self, 
         db: Session, 
         *, 
-        search_id: int
+        search_id: int,
+        deleted_by_supabase_id: Optional[str] = None
     ) -> Optional[SavedSearch]:
         """
         Soft delete a saved search.
@@ -128,6 +131,7 @@ class SavedSearchCRUD:
             return None
 
         db_obj.deleted_at = func.now()  # Trigger handles timestamp
+        db_obj.deleted_by = deleted_by_supabase_id
         db.commit()
         db.refresh(db_obj)
         return db_obj
