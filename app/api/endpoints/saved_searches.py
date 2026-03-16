@@ -120,7 +120,7 @@ def update_saved_search(
     """
     Update a saved search owned by the current user.
     
-    Audit: Tracks updater via updated_by (Supabase UUID).
+    Audit: No updated_by for saved_searches per schema.
     """
     # Get existing search to check ownership
     existing_saved_search = saved_search_crud.get(db=db, search_id=search_id)
@@ -142,8 +142,7 @@ def update_saved_search(
     updated_saved_search = saved_search_crud.update(
         db=db,
         db_obj=existing_saved_search,
-        obj_in=saved_search_in,
-        updated_by=current_user.supabase_id  # UUID audit trail
+        obj_in=saved_search_in
     )
 
     logger.info(

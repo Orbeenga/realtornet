@@ -8,6 +8,7 @@ Composite PK (user_id, property_id) - NO id column.
 from pydantic import BaseModel, ConfigDict
 from typing import Optional
 from datetime import datetime
+from uuid import UUID
 
 
 # Base Schema (shared fields for responses)
@@ -33,6 +34,7 @@ class FavoriteResponse(FavoriteBase):
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime] = None
+    deleted_by: Optional[UUID] = None
 
     model_config = ConfigDict(from_attributes=True)
 

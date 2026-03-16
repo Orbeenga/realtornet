@@ -30,7 +30,10 @@ class CRUDProfile:
         This is the primary lookup method for profiles.
         """
         return db.execute(
-            select(Profile).where(Profile.user_id == user_id)
+            select(Profile).where(
+                Profile.user_id == user_id,
+                Profile.deleted_at.is_(None)
+            )
         ).scalar_one_or_none()
     
     def get_multi(
@@ -90,7 +93,8 @@ class CRUDProfile:
         db: Session, 
         *, 
         obj_in: ProfileCreate, 
-        user_id: int
+        user_id: int,
+        created_by: Optional[str] = None
     ) -> Profile:
         """
         Create a new profile.
@@ -109,18 +113,11 @@ class CRUDProfile:
                 detail=f"Profile already exists for user_id={user_id}"
             )
         
-        # Create profile with data from schema
-        # create_data = obj_in.dict(exclude_unset=True)
-        
+        create_data = obj_in.model_dump(exclude_unset=True)
         db_obj = Profile(
+            **create_data,
             user_id=user_id,
-            full_name=obj_in.full_name,  # Direct access preserves types
-            phone_number=obj_in.phone_number,
-            address=obj_in.address,
-            profile_picture=obj_in.profile_picture,
-            bio=obj_in.bio,
-            # status=obj_in.status.value if obj_in.status else "active"  # Keeps Enum object
-            # Timestamps handled by DB DEFAULT now()
+            created_by=created_by,
         )
         
         db.add(db_obj)
@@ -137,7 +134,8 @@ class CRUDProfile:
         db: Session, 
         *, 
         db_obj: Profile, 
-        obj_in: ProfileUpdate
+        obj_in: ProfileUpdate,
+        updated_by: Optional[str] = None
     ) -> Profile:
         """
         Update a profile.
@@ -158,6 +156,9 @@ class CRUDProfile:
         for field, value in update_data.items():
             if hasattr(db_obj, field):
                 setattr(db_obj, field, value)
+        
+        if updated_by:
+            db_obj.updated_by = updated_by
         
         # Note: updated_at handled by DB trigger (if exists) or application logic
         # If no trigger, add: db_obj.updated_at = datetime.now(timezone.utc)
@@ -218,6 +219,25 @@ class CRUDProfile:
         db_obj.status = ProfileStatus.INACTIVE
     # updated_at handled by trigger
     
+        db.add(db_obj)
+        db.commit()
+        db.refresh(db_obj)
+        return db_obj
+
+    def soft_delete(
+        self,
+        db: Session,
+        *,
+        profile_id: int,
+        deleted_by_supabase_id: Optional[str] = None
+    ) -> Optional[Profile]:
+        """Soft delete by setting deleted_at and deleted_by."""
+        db_obj = self.get(db, profile_id=profile_id)
+        if not db_obj:
+            return None
+
+        db_obj.deleted_at = func.now()
+        db_obj.deleted_by = deleted_by_supabase_id
         db.add(db_obj)
         db.commit()
         db.refresh(db_obj)

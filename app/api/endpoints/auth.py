@@ -108,7 +108,7 @@ def refresh_access_token(
     try:
         # Decode the refresh token
         refresh_payload = decode_token(refresh_token_data.refresh_token)
-        
+
         # Ensure it's a refresh token
         if refresh_payload.token_type != "refresh":
             raise HTTPException(
@@ -116,43 +116,6 @@ def refresh_access_token(
                 detail="Invalid refresh token",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        
-        # Get user from database to verify they still exist and are active
-        # Use user_id from token payload (BIGINT)
-        user_id = refresh_payload.user_id
-        
-        # CRUD filters deleted_at IS NULL automatically
-        user = user_crud.get(db, user_id=user_id)
-        
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not found",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        
-        if not user_crud.is_active(user):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User inactive or deleted",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        
-        # Generate new access token with full user data
-        new_access_token = generate_access_token(
-            supabase_id=UUID(refresh_payload.supabase_id),
-            user_id=refresh_payload.user_id,
-            user_role=refresh_payload.role,
-            agency_id=refresh_payload.agency_id
-        )
-        
-        return {
-            "access_token": new_access_token,
-            "refresh_token": refresh_token_data.refresh_token,
-            "token_type": "bearer",
-            "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
-        }
-        
     except ValueError:
         # Handle validation errors
         raise HTTPException(
@@ -166,6 +129,42 @@ def refresh_access_token(
             detail="Invalid refresh token",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Get user from database to verify they still exist and are active
+    # Use user_id from token payload (BIGINT)
+    user_id = refresh_payload.user_id
+
+    # CRUD filters deleted_at IS NULL automatically
+    user = user_crud.get(db, user_id=user_id)
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not user_crud.is_active(user):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User inactive or deleted",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Generate new access token with full user data
+    new_access_token = generate_access_token(
+        supabase_id=UUID(refresh_payload.supabase_id),
+        user_id=refresh_payload.user_id,
+        user_role=refresh_payload.role,
+        agency_id=refresh_payload.agency_id
+    )
+
+    return {
+        "access_token": new_access_token,
+        "refresh_token": refresh_token_data.refresh_token,
+        "token_type": "bearer",
+        "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    }
 
 
 @router.post("/register", response_model=UserResponse)
@@ -204,7 +203,12 @@ def register_user(
     supabase_id = str(uuid.uuid4())  # In production, this would come from Supabase Auth callback
     
     # Pass supabase_id to create
-    user = user_crud.create(db, obj_in=user_in, supabase_id=supabase_id)
+    user = user_crud.create(
+        db,
+        obj_in=user_in,
+        supabase_id=supabase_id,
+        created_by=supabase_id
+    )
     
     # Send welcome email as a background task
     send_welcome_email.delay(

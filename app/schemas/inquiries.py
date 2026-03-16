@@ -8,6 +8,7 @@ DB-controlled fields (id, timestamps) excluded from Create/Update.
 from pydantic import BaseModel, ConfigDict, field_validator
 from typing import Optional
 from datetime import datetime
+from uuid import UUID
 from enum import Enum
 
 
@@ -74,6 +75,7 @@ class InquiryResponse(InquiryBase):
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime] = None
+    deleted_by: Optional[UUID] = None
 
     model_config = ConfigDict(from_attributes=True)
 

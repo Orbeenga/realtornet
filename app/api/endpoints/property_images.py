@@ -1,5 +1,4 @@
-from app.schemas.users import UserResponse
-# FILE 1: app/api/endpoints/property_images.py
+# app/api/endpoints/property_images.py
 """
 Property images management endpoints - Canonical compliant
 Handles property photo uploads with Supabase Storage, ordering, and hard delete
@@ -167,7 +166,7 @@ async def upload_property_image_endpoint(
                 "property_id": property_id,
                 "is_primary": is_primary,
                 "uploaded_by_user": current_user.user_id,
-                "filename": file.filename
+                "image_filename": file.filename  # ← renamed
             }
         )
         
@@ -180,7 +179,7 @@ async def upload_property_image_endpoint(
             "Failed to upload property image",
             extra={
                 "property_id": property_id,
-                "filename": file.filename,
+                "image_filename": file.filename,  # ← Avoid collision
                 "user_id": current_user.user_id,
                 "error_type": type(e).__name__
             },

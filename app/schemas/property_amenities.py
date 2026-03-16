@@ -90,6 +90,3 @@ class PropertyAmenityResponse(PropertyAmenityBase):
     This schema exists for completeness.
     """
     model_config = ConfigDict(from_attributes=True)
-
-
-# Alias for backward compatibility with existing endpoint code

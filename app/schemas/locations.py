@@ -8,6 +8,7 @@ DB-controlled fields (location_id, timestamps) excluded from Create/Update.
 from pydantic import BaseModel, ConfigDict, field_validator
 from typing import Optional
 from datetime import datetime
+from uuid import UUID
 
 
 # Base Schema (shared fields for responses)
@@ -103,6 +104,9 @@ class LocationResponse(LocationBase):
     # Optional: Include lat/long if geom exists
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    deleted_at: Optional[datetime] = None
+    updated_by: Optional[UUID] = None
+    deleted_by: Optional[UUID] = None
 
     model_config = ConfigDict(from_attributes=True)
 

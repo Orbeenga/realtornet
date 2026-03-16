@@ -379,6 +379,32 @@ class TestReviewRatingDistribution:
 
 # ─── singleton ────────────────────────────────
 
+class TestReviewSoftDeleteEdgeCases:
+    def test_soft_delete_property_returns_none_when_missing(self, rev_crud, mock_db):
+        """
+        Missing property reviews should return None on soft delete.
+
+        This avoids silent commits when the review does not exist.
+        """
+        with patch.object(rev_crud, "get_property_ReviewResponse", return_value=None):
+            result = rev_crud.soft_delete_property_ReviewResponse(
+                mock_db, review_id=999999, deleted_by_supabase_id="uid"
+            )
+        assert result is None
+
+    def test_soft_delete_agent_returns_none_when_missing(self, rev_crud, mock_db):
+        """
+        Missing agent reviews should return None on soft delete.
+
+        This ensures not-found behavior is explicit.
+        """
+        with patch.object(rev_crud, "get_agent_ReviewResponse", return_value=None):
+            result = rev_crud.soft_delete_agent_ReviewResponse(
+                mock_db, review_id=999999, deleted_by_supabase_id="uid"
+            )
+        assert result is None
+
+
 class TestReviewSingleton:
     def test_is_instance(self):
         assert isinstance(review_singleton, ReviewCRUD)

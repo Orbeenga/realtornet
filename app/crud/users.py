@@ -7,7 +7,7 @@ Canonical Rules: No manual timestamps, no phantom fields, RLS-aware
 
 from typing import List, Optional, Dict, Any, Union
 from sqlalchemy.orm import Session
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, func
 from datetime import datetime, timezone
 
 from app.core.security import get_password_hash, verify_password
@@ -80,6 +80,19 @@ class UserCRUD:
             query.offset(skip).limit(limit)
         ).scalars().all()
     
+    def count_by_agency(self, db: Session, *, agency_id: int) -> int:
+        """Count active users belonging to an agency."""
+        stmt = select(func.count(User.user_id)).where(
+            User.agency_id == agency_id,
+            User.deleted_at.is_(None)
+        )
+        return db.execute(stmt).scalar()
+
+    def count_active(self, db: Session) -> int:
+        """Count active (non-deleted) users."""
+        stmt = select(func.count(User.user_id)).where(User.deleted_at.is_(None))
+        return db.execute(stmt).scalar()
+
     def search(
         self,
         db: Session,
@@ -106,7 +119,14 @@ class UserCRUD:
     
     # CREATE OPERATIONS
         
-    def create(self, db: Session, *, obj_in: UserCreate, supabase_id: str) -> User:
+    def create(
+        self,
+        db: Session,
+        *,
+        obj_in: UserCreate,
+        supabase_id: str,
+        created_by: Optional[str] = None
+    ) -> User:
         """
         Create a new user.
         
@@ -126,7 +146,8 @@ class UserCRUD:
             user_role=obj_in.user_role,
             is_verified=False,  # Always start unverified
             is_admin=False,  # Never allow admin creation via API
-            profile_image_url=obj_in.profile_image_url
+            profile_image_url=obj_in.profile_image_url,
+            created_by=created_by
             # Timestamps handled by DB DEFAULT now()
             # created_at, updated_at auto-set by DB
         )
@@ -145,7 +166,8 @@ class UserCRUD:
         *, 
         db_obj: User, 
         obj_in: Union[UserUpdate, Dict[str, Any]],
-        updated_by_supabase_id: Optional[str] = None
+        updated_by_supabase_id: Optional[str] = None,
+        updated_by: Optional[str] = None
     ) -> User:
         """
         Update a user.
@@ -179,8 +201,9 @@ class UserCRUD:
                 setattr(db_obj, field, value)
         
         # Set audit fields
-        if updated_by_supabase_id:
-            db_obj.updated_by = updated_by_supabase_id
+        updater = updated_by_supabase_id or updated_by
+        if updater:
+            db_obj.updated_by = updater
         # updated_at handled by DB trigger automatically
         
         db.add(db_obj)
@@ -216,6 +239,50 @@ class UserCRUD:
             db_obj.last_login = datetime.now(timezone.utc)
             db.add(db_obj)
             db.commit()
+
+    def activate(
+        self,
+        db: Session,
+        *,
+        user_id: int,
+        updated_by: Optional[str] = None
+    ) -> Optional[User]:
+        """Restore a soft-deleted user (reactivate account)."""
+        db_obj = self.get(db, user_id=user_id)
+        if not db_obj:
+            return None
+
+        db_obj.deleted_at = None
+        db_obj.deleted_by = None
+        if updated_by:
+            db_obj.updated_by = updated_by
+
+        db.add(db_obj)
+        db.commit()
+        db.refresh(db_obj)
+        return db_obj
+
+    def deactivate(
+        self,
+        db: Session,
+        *,
+        user_id: int,
+        updated_by: Optional[str] = None
+    ) -> Optional[User]:
+        """Soft-deactivate a user by setting deleted_at and audit fields."""
+        db_obj = self.get(db, user_id=user_id)
+        if not db_obj:
+            return None
+
+        db_obj.deleted_at = datetime.now(timezone.utc)
+        if updated_by:
+            db_obj.updated_by = updated_by
+            db_obj.deleted_by = updated_by
+
+        db.add(db_obj)
+        db.commit()
+        db.refresh(db_obj)
+        return db_obj
     
     
     # DELETE OPERATIONS
@@ -237,7 +304,7 @@ class UserCRUD:
     
         db_obj.deleted_at = datetime.now(timezone.utc)
         if deleted_by_supabase_id:
-            db_obj.updated_by = deleted_by_supabase_id
+            db_obj.deleted_by = deleted_by_supabase_id
     
         db.add(db_obj)
         db.commit()
@@ -305,6 +372,10 @@ class UserCRUD:
         """Check if user has admin privileges"""
         return user.is_admin or user.user_role == UserRole.ADMIN
     
+    def is_agent_or_admin(self, user) -> bool:
+        """Check if user has agent or admin role"""
+        return self.is_agent(user) or self.is_admin(user)
+    
     def is_verified(self, user: User) -> bool:
         """Check if user email is verified"""
         return user.is_verified
@@ -312,6 +383,25 @@ class UserCRUD:
     def is_active(self, user: User) -> bool:
         """Check if user is active (not soft deleted)"""
         return user.deleted_at is None
+
+    def get_realtors(
+        self,
+        db: Session,
+        *,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[User]:
+        """Public realtor list: active agent accounts."""
+        query = (
+            select(User)
+            .where(
+                User.user_role == UserRole.AGENT,
+                User.deleted_at.is_(None)
+            )
+            .offset(skip)
+            .limit(limit)
+        )
+        return db.execute(query).scalars().all()
 
     def remove(
         self,

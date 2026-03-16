@@ -21,13 +21,12 @@ def sample_location_in():
 
 def test_locations_lifecycle_master(db: Session, sample_location_in: LocationCreate, valid_uuid: str):
     # 1. Create - Using valid UUID for database integrity
-    db_obj = location_crud.create(db, obj_in=sample_location_in, updated_by_supabase_id=valid_uuid)
+    db_obj = location_crud.create(db, obj_in=sample_location_in)
     assert db_obj.city == "Lekki"
-    assert str(db_obj.updated_by) == valid_uuid
     
     # 2. Update - Passing Pydantic object
     update_data = LocationUpdate(city="Lekki Updated", latitude=6.45, longitude=3.48)
-    updated_obj = location_crud.update(db, db_obj=db_obj, obj_in=update_data, updated_by_supabase_id=valid_uuid)
+    updated_obj = location_crud.update(db, db_obj=db_obj, obj_in=update_data, updated_by=valid_uuid)
     assert updated_obj.city == "Lekki Updated"
 
     # 3. Get or Create (Triggering the "Get" branch)

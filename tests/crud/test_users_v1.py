@@ -101,6 +101,12 @@ class TestUserCRUD:
         user_ids = [u.user_id for u in users]
         assert normal_user.user_id in user_ids
         assert agent_user.user_id in user_ids
+
+    def test_search_users_by_term(self, db: Session, normal_user: User, agent_user: User):
+        """Search should match email, first_name, or last_name (case-insensitive)."""
+        results = user_crud.search(db, search_term="AGENT")
+        result_ids = [u.user_id for u in results]
+        assert agent_user.user_id in result_ids
     
     
     # UPDATE OPERATIONS
@@ -170,6 +176,23 @@ class TestUserCRUD:
         )
         
         assert user is None
+
+    def test_authenticate_handles_verify_error(self, db: Session, normal_user: User, monkeypatch):
+        """Authentication should return None when password verify raises."""
+        import app.crud.users as users_module
+
+        def _raise(*_args, **_kwargs):
+            raise ValueError("bad hash")
+
+        monkeypatch.setattr(users_module, "verify_password", _raise)
+
+        user = user_crud.authenticate(
+            db,
+            email=normal_user.email,
+            password="password"
+        )
+
+        assert user is None
     
     
     # ROLE CHECKS
@@ -234,3 +257,9 @@ class TestUserCRUD:
         
         # Should not find soft-deleted user
         assert user is None or user.deleted_at is not None
+
+    def test_hard_delete_admin_only_removes_user(self, db: Session, normal_user: User):
+        """Hard delete should remove the user record."""
+        deleted = user_crud.hard_delete_admin_only(db, user_id=normal_user.user_id)
+        assert deleted is not None
+        assert user_crud.get(db, user_id=normal_user.user_id) is None

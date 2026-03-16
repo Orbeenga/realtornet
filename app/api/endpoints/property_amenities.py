@@ -1,11 +1,10 @@
-from app.schemas.users import UserResponse
 #app/api/endpoints/property_amenities.py
 """
 Property amenities management endpoints - Canonical compliant
 Handles property-AmenityResponse associations (junction table) with ownership validation
 """
 from typing import Any, List
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 # --- DIRECT CRUD IMPORTS ---
@@ -57,7 +56,7 @@ def read_property_amenities(
     return amenities
 
 
-@router.post("/", response_model=PropertyAmenityResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=AmenityResponse, status_code=status.HTTP_201_CREATED)
 def add_amenity_to_property(
     *,
     db: Session = Depends(get_db),
@@ -110,11 +109,15 @@ def add_amenity_to_property(
         )
     
     # Create association
-    db_obj = property_amenity_crud.create(db, obj_in=property_amenity_in)
-    return db_obj
+    property_amenity_crud.create(
+        db,
+        property_id=property_amenity_in.property_id,
+        amenity_id=property_amenity_in.amenity_id,
+    )
+    return amenity_crud.get(db, amenity_id=property_amenity_in.amenity_id)
 
 
-@router.post("/bulk", response_model=List[PropertyAmenityResponse], status_code=status.HTTP_201_CREATED)
+@router.post("/bulk", response_model=List[AmenityResponse], status_code=status.HTTP_201_CREATED)
 def add_amenities_to_property_bulk(
     *,
     db: Session = Depends(get_db),
@@ -145,10 +148,13 @@ def add_amenities_to_property_bulk(
             raise HTTPException(status_code=404, detail=f"AmenityResponse {amenity_id} not found")
     
     # Bulk create (CRUD handles duplicate detection)
-    return property_amenity_crud.create_bulk(
-        db, 
-        property_id=bulk_in.property_id, 
-        amenity_ids=bulk_in.amenity_ids
+    property_amenity_crud.create_bulk(
+        db,
+        property_id=bulk_in.property_id,
+        amenity_ids=bulk_in.amenity_ids,
+    )
+    return property_amenity_crud.get_amenities_for_property(
+        db, property_id=bulk_in.property_id
     )
 
 
@@ -191,7 +197,8 @@ def remove_amenity_from_property(
 def remove_amenities_from_property_bulk(
     *,
     db: Session = Depends(get_db),
-    bulk_in: PropertyAmenityBulkCreate,
+    property_id: int,
+    amenity_ids: List[int] = Query(...),
     current_user: UserResponse = Depends(get_current_active_user)
 ) -> Any:
     """
@@ -202,7 +209,7 @@ def remove_amenities_from_property_bulk(
     Permissions: PropertyResponse owner or admin.
     """
     # Verify property exists
-    db_property = property_crud.get(db, property_id=bulk_in.property_id)
+    db_property = property_crud.get(db, property_id=property_id)
     if not db_property:
         raise HTTPException(status_code=404, detail="Property not found")
     
@@ -213,8 +220,8 @@ def remove_amenities_from_property_bulk(
     # Bulk remove
     removed_count = property_amenity_crud.remove_bulk(
         db, 
-        property_id=bulk_in.property_id, 
-        amenity_ids=bulk_in.amenity_ids
+        property_id=property_id, 
+        amenity_ids=amenity_ids
     )
     return {"message": f"Removed {removed_count} amenities"}
 

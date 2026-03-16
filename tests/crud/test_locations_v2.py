@@ -116,6 +116,38 @@ class TestLocationFilterEdgeCases:
         assert len(results) == 1
         assert results[0].city == "Ibadan"
 
+    def test_get_by_filters_with_neighborhood(self, db: Session):
+        """
+        Neighborhood filter must narrow results.
+
+        This targets the neighborhood branch in get_by_filters.
+        """
+        location_crud.create(
+            db,
+            obj_in=LocationCreate(
+                state="Lagos",
+                city="Lekki",
+                neighborhood="Phase 1"
+            )
+        )
+        location_crud.create(
+            db,
+            obj_in=LocationCreate(
+                state="Lagos",
+                city="Lekki",
+                neighborhood="Phase 2"
+            )
+        )
+
+        results = location_crud.get_by_filters(
+            db,
+            state="Lagos",
+            city="Lekki",
+            neighborhood="Phase 1"
+        )
+        assert len(results) == 1
+        assert results[0].neighborhood == "Phase 1"
+
 
 class TestLocationAggregationFunctions:
     """Target lines 149-152, 161-169, 179-191: Aggregation functions"""
@@ -223,18 +255,27 @@ class TestLocationDeactivateEdgeCases:
         assert result is None
     
     def test_deactivate_already_inactive(self, db: Session):
-        """Test deactivating an already inactive location"""
+        """Test soft-deleting an already soft-deleted location returns the object."""
         # Create and deactivate
         loc = location_crud.create(
             db,
             obj_in=LocationCreate(state="Bauchi", city="Bauchi")
         )
-        location_crud.deactivate(db, location_id=loc.location_id)
+        deleted_by = str(uuid.uuid4())
+        location_crud.soft_delete(
+            db,
+            location_id=loc.location_id,
+            deleted_by_supabase_id=deleted_by
+        )
         
-        # Deactivate again (should succeed, is_active already False)
-        result = location_crud.deactivate(db, location_id=loc.location_id)
+        # Soft delete again (should return object, already deleted)
+        result = location_crud.soft_delete(
+            db,
+            location_id=loc.location_id,
+            deleted_by_supabase_id=deleted_by
+        )
         assert result is not None
-        assert result.is_active is False
+        assert result.deleted_at is not None
 
 
 class TestLocationGetOrCreate:

@@ -334,6 +334,142 @@ class AnalyticsService:
             average_property_price=avg_price,
             generated_at=now
         )
+
+    def get_usage_metrics(self, db: Session) -> UsageMetricsResponse:
+        """
+        Compute time-series usage metrics for admin monitoring.
+        Uses last_login and created_at timestamps to track activity.
+        """
+        now = datetime.now(timezone.utc)
+        day_ago = now - timedelta(days=1)
+        week_ago = now - timedelta(days=7)
+        month_ago = now - timedelta(days=30)
+
+        user_logins = TimeSeriesMetric(
+            last_24_hours=db.scalar(
+                select(func.count()).select_from(User)
+                .where(and_(User.deleted_at.is_(None), User.last_login >= day_ago))
+            ) or 0,
+            last_7_days=db.scalar(
+                select(func.count()).select_from(User)
+                .where(and_(User.deleted_at.is_(None), User.last_login >= week_ago))
+            ) or 0,
+            last_30_days=db.scalar(
+                select(func.count()).select_from(User)
+                .where(and_(User.deleted_at.is_(None), User.last_login >= month_ago))
+            ) or 0
+        )
+
+        new_properties = TimeSeriesMetric(
+            last_24_hours=db.scalar(
+                select(func.count()).select_from(Property)
+                .where(and_(Property.deleted_at.is_(None), Property.created_at >= day_ago))
+            ) or 0,
+            last_7_days=db.scalar(
+                select(func.count()).select_from(Property)
+                .where(and_(Property.deleted_at.is_(None), Property.created_at >= week_ago))
+            ) or 0,
+            last_30_days=db.scalar(
+                select(func.count()).select_from(Property)
+                .where(and_(Property.deleted_at.is_(None), Property.created_at >= month_ago))
+            ) or 0
+        )
+
+        new_inquiries = TimeSeriesMetric(
+            last_24_hours=db.scalar(
+                select(func.count()).select_from(Inquiry)
+                .where(and_(Inquiry.deleted_at.is_(None), Inquiry.created_at >= day_ago))
+            ) or 0,
+            last_7_days=db.scalar(
+                select(func.count()).select_from(Inquiry)
+                .where(and_(Inquiry.deleted_at.is_(None), Inquiry.created_at >= week_ago))
+            ) or 0,
+            last_30_days=db.scalar(
+                select(func.count()).select_from(Inquiry)
+                .where(and_(Inquiry.deleted_at.is_(None), Inquiry.created_at >= month_ago))
+            ) or 0
+        )
+
+        new_users = TimeSeriesMetric(
+            last_24_hours=db.scalar(
+                select(func.count()).select_from(User)
+                .where(and_(User.deleted_at.is_(None), User.created_at >= day_ago))
+            ) or 0,
+            last_7_days=db.scalar(
+                select(func.count()).select_from(User)
+                .where(and_(User.deleted_at.is_(None), User.created_at >= week_ago))
+            ) or 0,
+            last_30_days=db.scalar(
+                select(func.count()).select_from(User)
+                .where(and_(User.deleted_at.is_(None), User.created_at >= month_ago))
+            ) or 0
+        )
+
+        return UsageMetricsResponse(
+            user_logins=user_logins,
+            new_properties=new_properties,
+            new_inquiries=new_inquiries,
+            new_users=new_users,
+            generated_at=now
+        )
+
+    def get_data_integrity_report(self, db: Session) -> DataIntegrityResponse:
+        """
+        Validate audit trail integrity for admin diagnostics.
+        Counts records missing required audit fields.
+        """
+        properties_missing_created_by = db.scalar(
+            select(func.count()).select_from(Property)
+            .where(and_(Property.deleted_at.is_(None), Property.created_by.is_(None)))
+        ) or 0
+
+        users_missing_created_by = db.scalar(
+            select(func.count()).select_from(User)
+            .where(and_(User.deleted_at.is_(None), User.created_by.is_(None)))
+        ) or 0
+
+        soft_deleted_missing_deleted_by = db.scalar(
+            select(func.count()).select_from(Property)
+            .where(and_(Property.deleted_at.is_not(None), Property.deleted_by.is_(None)))
+        ) or 0
+
+        issues = [
+            DataIntegrityIssue(
+                category="properties",
+                issue_type="missing_created_by",
+                count=properties_missing_created_by,
+                description="Active properties with missing created_by",
+                severity="high"
+            ),
+            DataIntegrityIssue(
+                category="users",
+                issue_type="missing_created_by",
+                count=users_missing_created_by,
+                description="Active users with missing created_by",
+                severity="high"
+            ),
+            DataIntegrityIssue(
+                category="properties",
+                issue_type="missing_deleted_by",
+                count=soft_deleted_missing_deleted_by,
+                description="Soft-deleted properties with missing deleted_by",
+                severity="high"
+            ),
+        ]
+
+        total_issues = sum(issue.count for issue in issues)
+        high_severity_count = sum(
+            issue.count for issue in issues if issue.severity == "high"
+        )
+        health_score = max(0.0, 100.0 - min(100.0, float(total_issues)))
+
+        return DataIntegrityResponse(
+            issues=issues,
+            total_issues=total_issues,
+            high_severity_count=high_severity_count,
+            health_score=health_score,
+            generated_at=datetime.now(timezone.utc)
+        )
     
     
     def get_property_engagement(

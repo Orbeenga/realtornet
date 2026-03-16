@@ -149,7 +149,7 @@ def delete_property_type(
         )
     
     # Updated: Using property_type_crud alias
-    property_type_crud.remove(db, id=property_type_id)
+    property_type_crud.remove(db, property_type_id=property_type_id)
     
     return {"message": "Property type deleted successfully"}
 
