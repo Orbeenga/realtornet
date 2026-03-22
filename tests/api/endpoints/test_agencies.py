@@ -3,7 +3,9 @@
 Surgical API-layer tests for /agencies endpoints.
 """
 from fastapi.testclient import TestClient
+import uuid
 from app.api.endpoints import agencies as agencies_api
+from app.models.users import User, UserRole
 
 
 class TestReadAgencies:
@@ -231,6 +233,26 @@ class TestDeleteAgency:
         assert data["deleted_at"] is not None
         assert data["deleted_by"] is not None
 
+    def test_soft_deleted_agency_not_returned_by_get(
+        self, client: TestClient, admin_token_headers, db
+    ):
+        from app.models.agencies import Agency
+
+        agency_obj = Agency(name="Agency Hidden After Delete")
+        db.add(agency_obj)
+        db.flush()
+        db.refresh(agency_obj)
+
+        delete_response = client.delete(
+            f"/api/v1/agencies/{agency_obj.agency_id}",
+            headers=admin_token_headers
+        )
+        assert delete_response.status_code == 200
+
+        response = client.get(f"/api/v1/agencies/{agency_obj.agency_id}")
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Agency not found"
+
     def test_cannot_delete_agency_with_active_properties_returns_400(
         self, client: TestClient, admin_token_headers, agency, monkeypatch
     ):
@@ -318,3 +340,26 @@ class TestReadAgencyStats:
         data = response.json()
         assert "agent_count" in data
         assert "property_count" in data
+
+    def test_agency_stats_counts_users_not_profiles(
+        self, client: TestClient, admin_token_headers, db, agency
+    ):
+        agent_without_profile = User(
+            email=f"agency_stats_agent_{uuid.uuid4().hex[:6]}@example.com",
+            password_hash="hashed_placeholder",
+            first_name="NoProfile",
+            last_name="Agent",
+            user_role=UserRole.AGENT,
+            supabase_id=uuid.uuid4(),
+            agency_id=agency.agency_id,
+        )
+        db.add(agent_without_profile)
+        db.flush()
+        db.refresh(agent_without_profile)
+
+        response = client.get(
+            f"/api/v1/agencies/{agency.agency_id}/stats",
+            headers=admin_token_headers
+        )
+        assert response.status_code == 200
+        assert response.json()["agent_count"] >= 1

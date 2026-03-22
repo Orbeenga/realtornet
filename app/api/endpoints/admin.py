@@ -1,4 +1,3 @@
-from app.schemas.users import UserResponse
 # app/api/endpoints/admin.py
 """
 Admin management endpoints - Canonical compliant

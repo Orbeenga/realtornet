@@ -1,5 +1,3 @@
-from app.schemas.users import UserResponse
-from app.schemas.users import UserResponse
 # app/api/endpoints/property_types.py
 """
 Property types management endpoints - Canonical compliant
@@ -23,7 +21,7 @@ from app.crud.property_types import property_type as property_type_crud
 from app.crud.properties import property as property_crud
 
 # --- DIRECT SCHEMA & MODEL IMPORTS ---
-from app.models.users import User as User
+from app.schemas.users import UserResponse
 from app.schemas.property_types import PropertyTypeResponse, PropertyTypeCreate, PropertyTypeUpdate
 
 router = APIRouter()

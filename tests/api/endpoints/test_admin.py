@@ -645,6 +645,13 @@ class TestAdminVerifyProperty:
         db.refresh(prop)
         assert prop.is_verified is True
 
+        response2 = client.post(
+            f"/api/v1/admin/properties/{prop.property_id}/verify",
+            headers=admin_token_headers
+        )
+        assert response2.status_code == 200
+        assert response2.json()["is_verified"] is True
+
     def test_admin_verify_nonexistent_property_returns_404(
         self, client: TestClient, admin_token_headers
     ):

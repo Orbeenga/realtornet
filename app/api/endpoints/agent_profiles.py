@@ -1,4 +1,3 @@
-from app.schemas.users import UserResponse
 # app/api/endpoints/agent_profiles.py
 """
 Agent profiles management endpoints - Canonical compliant
@@ -240,12 +239,18 @@ def update_agent_profile(
             )
     
     # Update with audit tracking - Updated: Using agent_profile_crud alias
-    agent_profile = agent_profile_crud.update(
-        db, 
-        db_obj=agent_profile, 
-        obj_in=agent_profile_in,
-        updated_by=current_user.supabase_id
-    )
+    try:
+        agent_profile = agent_profile_crud.update(
+            db, 
+            db_obj=agent_profile, 
+            obj_in=agent_profile_in,
+            updated_by=current_user.supabase_id
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc)
+        ) from exc
     
     logger.info(
         "Agent profile updated", 

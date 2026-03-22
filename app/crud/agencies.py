@@ -146,17 +146,6 @@ class AgencyCRUD:
         - is_verified defaults to False
         - Timestamps handled by DB DEFAULT now()
         """
-        # Check for duplicate email if provided
-        if obj_in.email:
-            existing = self.get_by_email(db, email=obj_in.email)
-            if existing:
-                raise ValueError(f"Agency with email '{obj_in.email}' already exists")
-        
-        # Check for duplicate name
-        existing_name = self.get_by_name(db, name=obj_in.name)
-        if existing_name:
-            raise ValueError(f"Agency with name '{obj_in.name}' already exists")
-        
         # Create agency object
         create_data = obj_in.dict(exclude_unset=True)
         
@@ -174,7 +163,7 @@ class AgencyCRUD:
         )
         
         db.add(db_obj)
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         
         logger.info(
@@ -245,7 +234,7 @@ class AgencyCRUD:
         # updated_at handled by DB trigger automatically
         
         db.add(db_obj)
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         
         logger.info(
@@ -266,25 +255,22 @@ class AgencyCRUD:
         db: Session, 
         *, 
         agency_id: int,
-        deleted_by_supabase_id: Optional[str] = None
+        deleted_by_supabase_id: str
     ) -> Optional[Agency]:
         """
         Soft delete an agency by setting deleted_at timestamp.
         Agency data preserved for audit trail, agent relationships intact.
         """
-        db_obj = self.get(db, agency_id=agency_id, include_deleted=True)
+        db_obj = self.get(db, agency_id=agency_id)
         if not db_obj:
-            raise ValueError(f"Agency with id={agency_id} not found")
-        
-        # Check if already deleted
-        if db_obj.deleted_at is not None:
-            raise ValueError(f"Agency with id={agency_id} is already deleted")
+            return None
     
         db_obj.deleted_at = datetime.now(timezone.utc)
         db_obj.deleted_by = deleted_by_supabase_id
+        db_obj.updated_by = deleted_by_supabase_id
         
         db.add(db_obj)
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         
         logger.warning(
@@ -308,12 +294,13 @@ class AgencyCRUD:
         """
         from app.models.agent_profiles import AgentProfile
         from app.models.properties import Property
+        from app.models.users import User
         
         # Count agents
         agent_count = db.execute(
-            select(func.count(AgentProfile.profile_id)).where(
-                AgentProfile.agency_id == agency_id,
-                AgentProfile.deleted_at.is_(None)
+            select(func.count(User.user_id)).where(
+                User.agency_id == agency_id,
+                User.deleted_at.is_(None)
             )
         ).scalar()
         

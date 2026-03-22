@@ -1,4 +1,3 @@
-from app.schemas.users import UserResponse
 # app/api/endpoints/agencies.py
 """
 Agencies management endpoints - Canonical compliant

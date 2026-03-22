@@ -1,4 +1,3 @@
-from app.schemas.users import UserResponse
 # app/api/endpoints/inquiries.py
 """
 Inquiries management endpoints - Canonical compliant

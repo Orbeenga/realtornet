@@ -1,4 +1,3 @@
-from app.schemas.users import UserResponse
 # app/api/endpoints/properties.py
 """
 Property management endpoints - Canonical compliant
