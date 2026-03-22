@@ -396,7 +396,7 @@ class TestUpdateListingStatus:
 
     def test_not_found_returns_none(self, crud, mock_db):
         """Line 489: property_id doesn't exist → returns None."""
-        mock_db.get.return_value = None
+        crud.get = MagicMock(return_value=None)
         result = crud.update_listing_status(
             mock_db, property_id=999, listing_status=ListingStatus.sold
         )
@@ -405,7 +405,7 @@ class TestUpdateListingStatus:
     def test_updates_status_successfully(self, crud, mock_db):
         """Happy path: status updated."""
         prop = make_property()
-        mock_db.get.return_value = prop
+        crud.get = MagicMock(return_value=prop)
         mock_db.add.return_value = None
         mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
@@ -421,7 +421,7 @@ class TestUpdateListingStatus:
 
     def test_updates_without_supabase_id(self, crud, mock_db):
         prop = make_property()
-        mock_db.get.return_value = prop
+        crud.get = MagicMock(return_value=prop)
         mock_db.add.return_value = None
         mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
@@ -441,14 +441,14 @@ class TestVerifyProperty:
 
     def test_not_found_returns_none(self, crud, mock_db):
         """Line 516: property not found."""
-        mock_db.get.return_value = None
+        crud.get = MagicMock(return_value=None)
         result = crud.verify_property(mock_db, property_id=999)
         assert result is None
 
     def test_verify_sets_verification_date(self, crud, mock_db):
         """Happy path: is_verified=True sets verification_date."""
         prop = make_property()
-        mock_db.get.return_value = prop
+        crud.get = MagicMock(return_value=prop)
         mock_db.add.return_value = None
         mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
@@ -463,7 +463,7 @@ class TestVerifyProperty:
             is_verified=True,
             verification_date=datetime.now(timezone.utc)
         )
-        mock_db.get.return_value = prop
+        crud.get = MagicMock(return_value=prop)
         mock_db.add.return_value = None
         mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
@@ -474,7 +474,7 @@ class TestVerifyProperty:
 
     def test_verify_with_updated_by(self, crud, mock_db):
         prop = make_property()
-        mock_db.get.return_value = prop
+        crud.get = MagicMock(return_value=prop)
         mock_db.add.return_value = None
         mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
@@ -495,13 +495,13 @@ class TestToggleFeatured:
 
     def test_not_found_returns_none(self, crud, mock_db):
         """Line 537: property not found."""
-        mock_db.get.return_value = None
+        crud.get = MagicMock(return_value=None)
         result = crud.toggle_featured(mock_db, property_id=999, is_featured=True)
         assert result is None
 
     def test_feature_property(self, crud, mock_db):
         prop = make_property(is_featured=False)
-        mock_db.get.return_value = prop
+        crud.get = MagicMock(return_value=prop)
         mock_db.add.return_value = None
         mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
@@ -511,7 +511,7 @@ class TestToggleFeatured:
 
     def test_unfeature_property(self, crud, mock_db):
         prop = make_property(is_featured=True)
-        mock_db.get.return_value = prop
+        crud.get = MagicMock(return_value=prop)
         mock_db.add.return_value = None
         mock_db.flush.return_value = None
         mock_db.refresh.return_value = None

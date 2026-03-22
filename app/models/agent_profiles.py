@@ -1,9 +1,7 @@
 # app/models/agent_profiles.py
-"""
-AgentProfile model - strictly matching database schema.
-DB Table: agent_profiles
-Phase 2 Aligned: Canonical agent data, soft delete, audit trail
-"""
+# AgentProfile model - strictly matching database schema.
+# DB Table: agent_profiles.
+# Phase 2 Aligned: Canonical agent data, soft delete, audit trail.
 # from __future__ import annotations # <--- Added for string forward ref support
 # from typing import TYPE_CHECKING
 
@@ -18,16 +16,14 @@ from app.models.base import Base, AuditMixin, SoftDeleteMixin
    # from app.models.agencies import Agency
 
 class AgentProfile(Base, AuditMixin, SoftDeleteMixin):
-    """
-    Agent profile model for real estate agents.
-    Matches DB table: agent_profiles
-    Primary Key: profile_id (bigint GENERATED ALWAYS AS IDENTITY)
-    
-    Canonical Compliance:
-    - BigInteger PK/FK with proper naming
-    - AuditMixin for updated_by tracking
-    - SoftDeleteMixin for deleted_at
-    """
+    # Agent profile model for real estate agents.
+    # Matches DB table: agent_profiles.
+    # Primary Key: profile_id (bigint GENERATED ALWAYS AS IDENTITY).
+    #
+    # Canonical Compliance:
+    # - BigInteger PK/FK with proper naming
+    # - AuditMixin for updated_by tracking
+    # - SoftDeleteMixin for deleted_at
     __tablename__ = "agent_profiles"
     
     # Primary key

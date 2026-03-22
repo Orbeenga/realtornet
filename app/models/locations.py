@@ -1,5 +1,5 @@
 # app/models/locations.py
-"""Location model - 100% fidelity to database schema."""
+# Location model - 100% fidelity to database schema.
 from sqlalchemy.dialects.postgresql import UUID
 
 from sqlalchemy import Column, BigInteger, String, text, Boolean
@@ -10,10 +10,8 @@ from app.models.base import Base, TimestampMixin, SoftDeleteMixin
 
 
 class Location(Base, TimestampMixin, SoftDeleteMixin):
-    """
-    Location model for property addresses.
-    Primary Key: location_id (bigint GENERATED ALWAYS AS IDENTITY)
-    """
+    # Location model for property addresses.
+    # Primary Key: location_id (bigint GENERATED ALWAYS AS IDENTITY).
     __tablename__ = "locations"
 
     location_id = Column(BigInteger, primary_key=True, autoincrement=True)

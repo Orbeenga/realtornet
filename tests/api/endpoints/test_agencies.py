@@ -210,6 +210,7 @@ class TestDeleteAgency:
             headers=admin_token_headers
         )
         assert response.status_code == 400
+        assert response.json()["detail"] == "Cannot delete agency with active agents. Reassign or remove agents first."
 
     def test_delete_empty_agency_success(
         self, client: TestClient, admin_token_headers, db
@@ -228,6 +229,7 @@ class TestDeleteAgency:
         assert response.status_code == 200
         data = response.json()
         assert data["deleted_at"] is not None
+        assert data["deleted_by"] is not None
 
     def test_cannot_delete_agency_with_active_properties_returns_400(
         self, client: TestClient, admin_token_headers, agency, monkeypatch
@@ -240,6 +242,7 @@ class TestDeleteAgency:
             headers=admin_token_headers
         )
         assert response.status_code == 400
+        assert response.json()["detail"] == "Cannot delete agency with active properties. Remove properties first."
 
     def test_delete_agency_soft_delete_returns_none(
         self, client: TestClient, admin_token_headers, agency, monkeypatch

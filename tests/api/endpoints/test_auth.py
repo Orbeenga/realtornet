@@ -203,7 +203,7 @@ class TestRefreshTokenBranches:
             json={"refresh_token": refresh_token}
         )
         assert response.status_code == 401
-        assert "inactive" in response.json()["detail"].lower()
+        assert "user not found" in response.json()["detail"].lower()
 
 
 class TestRegisterBranches:

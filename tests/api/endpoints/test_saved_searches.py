@@ -121,6 +121,7 @@ class TestReadSavedSearch:
             headers=other_headers
         )
         assert response.status_code == 403
+        assert response.json()["detail"] == "Not enough permissions to access this saved search"
 
     def test_read_saved_search_success(
         self, client: TestClient, normal_user_token_headers, db, normal_user
@@ -273,6 +274,7 @@ class TestDeleteSavedSearch:
             headers=other_headers
         )
         assert response.status_code == 403
+        assert response.json()["detail"] == "Not enough permissions to delete this saved search"
 
     def test_delete_saved_search_success(
         self, client: TestClient, normal_user_token_headers, db, normal_user
@@ -293,6 +295,7 @@ class TestDeleteSavedSearch:
         assert response.status_code == 200
         data = response.json()
         assert data["deleted_at"] is not None
+        assert data["deleted_by"] is not None
 
     def test_soft_delete_returns_404_when_crud_returns_none(
         self, client: TestClient, normal_user_token_headers, db, normal_user, monkeypatch

@@ -90,6 +90,7 @@ class TestReadUserById:
             headers=normal_user_token_headers,
         )
         assert response.status_code == 403
+        assert response.json()["detail"] == "Not enough permissions"
 
     def test_admin_reads_any_user(
         self, client: TestClient, agent_user, admin_token_headers
@@ -205,6 +206,7 @@ class TestDeleteUser:
             headers=admin_token_headers,
         )
         assert response.status_code == 400
+        assert response.json()["detail"] == "Cannot delete your own account"
 
     def test_admin_deletes_other_user_success(
         self, client: TestClient, normal_user, admin_token_headers
@@ -215,6 +217,22 @@ class TestDeleteUser:
         )
         assert response.status_code == 200
         assert response.json()["user_id"] == normal_user.user_id
+
+    def test_deleted_user_not_returned_by_get(
+        self, client: TestClient, normal_user, admin_token_headers
+    ):
+        delete_response = client.delete(
+            f"/api/v1/users/{normal_user.user_id}",
+            headers=admin_token_headers,
+        )
+        assert delete_response.status_code == 200
+
+        response = client.get(
+            f"/api/v1/users/{normal_user.user_id}",
+            headers=admin_token_headers,
+        )
+        assert response.status_code == 404
+        assert response.json()["detail"] == "User not found"
 
 
 class TestUploadUserProfileImage:
