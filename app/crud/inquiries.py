@@ -33,7 +33,7 @@ class InquiryCRUD:
             # created_at, updated_at handled by DB
         )
         db.add(db_obj)
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         return db_obj
 
@@ -101,7 +101,7 @@ class InquiryCRUD:
         for field, value in update_data.items():
             setattr(db_obj, field, value)
 
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         return db_obj
 
@@ -114,15 +114,15 @@ class InquiryCRUD:
     ) -> Optional[Inquiry]:
         """
         Soft delete an inquiry.
-        deleted_at set by DB trigger.
+        ORM sets deleted_at; DB trigger handles updated_at only.
         """
         db_obj = self.get(db=db, inquiry_id=inquiry_id)
         if not db_obj:
             return None
 
-        db_obj.deleted_at = func.now()  # Trigger handles timestamp
+        db_obj.deleted_at = func.now()  # ORM sets deleted_at; DB trigger handles updated_at only
         db_obj.deleted_by = deleted_by_supabase_id
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         return db_obj
 
@@ -217,7 +217,7 @@ class InquiryCRUD:
 
         db_obj.inquiry_status = new_status
         # DB trigger handles updated_at
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         return db_obj
 

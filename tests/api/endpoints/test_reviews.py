@@ -102,6 +102,21 @@ class TestReadPropertyReviews:
         response = client.get("/api/v1/reviews/property/by-property/999999")
         assert response.status_code == 404
 
+    def test_reviews_for_deleted_property_returns_404(
+        self, client: TestClient, verified_property, admin_token_headers
+    ):
+        delete_response = client.delete(
+            f"/api/v1/admin/properties/{verified_property.property_id}",
+            headers=admin_token_headers,
+        )
+        assert delete_response.status_code == 200
+
+        response = client.get(
+            f"/api/v1/reviews/property/by-property/{verified_property.property_id}"
+        )
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Property not found"
+
     def test_returns_reviews_for_property(
         self, client: TestClient, db, normal_user, verified_property
     ):

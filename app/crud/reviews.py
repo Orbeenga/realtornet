@@ -9,6 +9,7 @@ Soft delete default, no manual timestamps, DB-first canonical alignment.
 from typing import List, Optional, Dict, Any
 from sqlalchemy import select, func, and_, or_
 from sqlalchemy.orm import Session
+from fastapi import HTTPException
 
 from app.models.reviews import Review
 from app.schemas.reviews import ReviewCreate, ReviewUpdate
@@ -34,7 +35,10 @@ class ReviewCRUD:
 
         if (property_id is None and agent_id is None) or \
             (property_id is not None and agent_id is not None):
-            raise ValueError("Exactly one of property_id or agent_id must be provided")
+            raise HTTPException(
+                status_code=400,
+                detail="Exactly one of property_id or agent_id must be set."
+            )
 
         db_obj = Review(
             user_id=user_id,
@@ -45,7 +49,7 @@ class ReviewCRUD:
             # created_at, updated_at handled by DB
         )
         db.add(db_obj)
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         return db_obj
 
@@ -273,7 +277,7 @@ class ReviewCRUD:
             db_obj.rating = update_data["rating"]
         if "comment" in update_data:
             db_obj.comment = update_data["comment"]
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         return db_obj
 
@@ -302,7 +306,7 @@ class ReviewCRUD:
             return None
         db_obj.deleted_at = func.now()
         db_obj.deleted_by = deleted_by_supabase_id
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         return db_obj
 
@@ -318,7 +322,7 @@ class ReviewCRUD:
             return None
         db_obj.deleted_at = func.now()
         db_obj.deleted_by = deleted_by_supabase_id
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         return db_obj
 
@@ -397,7 +401,7 @@ class ReviewCRUD:
             setattr(db_obj, field, value)
 
         # DB trigger handles updated_at
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         return db_obj
 
@@ -410,15 +414,15 @@ class ReviewCRUD:
     ) -> Optional[Review]:
         """
         Soft delete a review.
-        deleted_at set by DB trigger.
+        ORM sets deleted_at; DB trigger handles updated_at only.
         """
         db_obj = self.get(db=db, review_id=review_id)
         if not db_obj:
             return None
 
-        db_obj.deleted_at = func.now()  # Trigger handles timestamp
+        db_obj.deleted_at = func.now()  # ORM sets deleted_at; DB trigger handles updated_at only
         db_obj.deleted_by = deleted_by_supabase_id
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         return db_obj
 

@@ -118,6 +118,35 @@ class TestReadReceivedInquiries:
         assert response.status_code == 200
         assert isinstance(response.json(), list)
 
+    def test_received_inquiries_excludes_deleted_property(
+        self, client: TestClient, normal_user_token_headers, agent_token_headers,
+        unverified_property_owned_by_agent, admin_token_headers
+    ):
+        inquiry_data = {
+            "property_id": unverified_property_owned_by_agent.property_id,
+            "message": "Interested in this property"
+        }
+        create_response = client.post(
+            "/api/v1/inquiries/",
+            json=inquiry_data,
+            headers=normal_user_token_headers
+        )
+        assert create_response.status_code == 201
+
+        delete_response = client.delete(
+            f"/api/v1/admin/properties/{unverified_property_owned_by_agent.property_id}",
+            headers=admin_token_headers
+        )
+        assert delete_response.status_code == 200
+
+        response = client.get(
+            "/api/v1/inquiries/received",
+            headers=agent_token_headers
+        )
+        assert response.status_code == 200
+        property_ids = [inquiry_obj["property_id"] for inquiry_obj in response.json()]
+        assert unverified_property_owned_by_agent.property_id not in property_ids
+
 
 class TestReadInquiry:
 

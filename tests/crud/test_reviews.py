@@ -9,6 +9,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
+from fastapi import HTTPException
 
 from app.crud.reviews import ReviewCRUD, review as review_singleton
 from app.models.reviews import Review
@@ -78,18 +79,18 @@ class TestReviewCreate:
     def test_create_property_review(self, rev_crud, mock_db):
         """Lines 32-47: property_id set — happy path."""
         mock_db.add.return_value = None
-        mock_db.commit.return_value = None
+        mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
         rev_crud.create(mock_db,
                         obj_in=ReviewCreate(property_id=10, rating=5, comment="Lovely"),
                         user_id=1)
         mock_db.add.assert_called_once()
-        mock_db.commit.assert_called_once()
+        mock_db.flush.assert_called_once()
 
     def test_create_sets_user_id(self, rev_crud, mock_db):
         """user_id comes from parameter, not schema."""
         mock_db.add.return_value = None
-        mock_db.commit.return_value = None
+        mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
         rev_crud.create(mock_db,
                         obj_in=ReviewCreate(property_id=10, rating=3, comment="OK"),
@@ -100,7 +101,7 @@ class TestReviewCreate:
     def test_create_with_agent_id(self, rev_crud, mock_db):
         """agent_id branch in CRUD — pass via MagicMock to bypass schema."""
         mock_db.add.return_value = None
-        mock_db.commit.return_value = None
+        mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
         obj_in = MagicMock()
         obj_in.property_id = None
@@ -117,7 +118,7 @@ class TestReviewCreate:
         obj_in.agent_id = None
         obj_in.rating = 4
         obj_in.comment = "x"
-        with pytest.raises(ValueError, match="Exactly one"):
+        with pytest.raises(HTTPException, match="Exactly one"):
             rev_crud.create(mock_db, obj_in=obj_in, user_id=1)
 
     def test_both_set_raises(self, rev_crud, mock_db):
@@ -127,7 +128,7 @@ class TestReviewCreate:
         obj_in.agent_id = 5
         obj_in.rating = 4
         obj_in.comment = "x"
-        with pytest.raises(ValueError, match="Exactly one"):
+        with pytest.raises(HTTPException, match="Exactly one"):
             rev_crud.create(mock_db, obj_in=obj_in, user_id=1)
 
 
@@ -261,7 +262,7 @@ class TestReviewUpdate:
     def test_update_comment(self, rev_crud, mock_db):
         obj = make_review(comment="Old")
         with patch.object(rev_crud, "get", return_value=obj):
-            mock_db.commit.return_value = None
+            mock_db.flush.return_value = None
             mock_db.refresh.return_value = None
             rev_crud.update(mock_db, review_id=1, obj_in=ReviewUpdate(comment="New"))
         assert obj.comment == "New"
@@ -269,7 +270,7 @@ class TestReviewUpdate:
     def test_update_rating(self, rev_crud, mock_db):
         obj = make_review(rating=3)
         with patch.object(rev_crud, "get", return_value=obj):
-            mock_db.commit.return_value = None
+            mock_db.flush.return_value = None
             mock_db.refresh.return_value = None
             rev_crud.update(mock_db, review_id=1, obj_in=ReviewUpdate(rating=5))
         assert obj.rating == 5
@@ -277,7 +278,7 @@ class TestReviewUpdate:
     def test_strips_protected_fields(self, rev_crud, mock_db):
         obj = make_review(review_id=1, user_id=5, property_id=10)
         with patch.object(rev_crud, "get", return_value=obj):
-            mock_db.commit.return_value = None
+            mock_db.flush.return_value = None
             mock_db.refresh.return_value = None
             rev_crud.update(mock_db, review_id=1, obj_in=ReviewUpdate(comment="safe"))
         assert obj.review_id == 1
@@ -291,7 +292,7 @@ class TestReviewSoftDelete:
     def test_soft_delete_found(self, rev_crud, mock_db):
         obj = make_review()
         with patch.object(rev_crud, "get", return_value=obj):
-            mock_db.commit.return_value = None
+            mock_db.flush.return_value = None
             mock_db.refresh.return_value = None
             result = rev_crud.soft_delete(mock_db, review_id=1)
         assert result == obj
@@ -301,7 +302,7 @@ class TestReviewSoftDelete:
         with patch.object(rev_crud, "get", return_value=None):
             result = rev_crud.soft_delete(mock_db, review_id=999)
         assert result is None
-        mock_db.commit.assert_not_called()
+        mock_db.flush.assert_not_called()
 
 
 # ─── get_property_rating_stats (lines 243-257) ─

@@ -65,17 +65,17 @@ def make_search(**kwargs) -> MagicMock:
 class TestSavedSearchCreate:
     def test_create(self, ss_crud, mock_db):
         mock_db.add.return_value = None
-        mock_db.commit.return_value = None
+        mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
         ss_crud.create(mock_db,
                        obj_in=SavedSearchCreate(name="Test", search_params={"city": "Abuja"}),
                        user_id=1)
         mock_db.add.assert_called_once()
-        mock_db.commit.assert_called_once()
+        mock_db.flush.assert_called_once()
 
     def test_create_sets_user_id(self, ss_crud, mock_db):
         mock_db.add.return_value = None
-        mock_db.commit.return_value = None
+        mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
         # Change {} to a non-empty dict like {"type": "apartment"}
         ss_crud.create(
@@ -132,7 +132,7 @@ class TestSavedSearchUpdate:
     def test_update_name(self, ss_crud, mock_db):
         obj = make_search(name="Old Name")
         with patch.object(ss_crud, "get", return_value=obj):
-            mock_db.commit.return_value = None
+            mock_db.flush.return_value = None
             mock_db.refresh.return_value = None
             ss_crud.update(mock_db, search_id=1, obj_in=SavedSearchUpdate(name="New Name"))
         assert obj.name == "New Name"
@@ -141,7 +141,7 @@ class TestSavedSearchUpdate:
         """search_params dict → merged, not replaced."""
         obj = make_search(search_params={"city": "Lagos", "bedrooms": 2})
         with patch.object(ss_crud, "get", return_value=obj):
-            mock_db.commit.return_value = None
+            mock_db.flush.return_value = None
             mock_db.refresh.return_value = None
             ss_crud.update(mock_db, search_id=1,
                            obj_in=SavedSearchUpdate(search_params={"price_max": 5000000}))
@@ -152,7 +152,7 @@ class TestSavedSearchUpdate:
     def test_update_strips_protected_fields(self, ss_crud, mock_db):
         obj = make_search(search_id=1, user_id=5)
         with patch.object(ss_crud, "get", return_value=obj):
-            mock_db.commit.return_value = None
+            mock_db.flush.return_value = None
             mock_db.refresh.return_value = None
             ss_crud.update(mock_db, search_id=1,
                            obj_in=SavedSearchUpdate(name="Safe"))
@@ -166,22 +166,22 @@ class TestSavedSearchSoftDelete:
     def test_soft_delete_found(self, ss_crud, mock_db):
         obj = make_search()
         with patch.object(ss_crud, "get", return_value=obj):
-            mock_db.commit.return_value = None
+            mock_db.flush.return_value = None
             mock_db.refresh.return_value = None
             result = ss_crud.soft_delete(mock_db, search_id=1)
         assert result == obj
-        mock_db.commit.assert_called_once()
+        mock_db.flush.assert_called_once()
 
     def test_soft_delete_not_found(self, ss_crud, mock_db):
         with patch.object(ss_crud, "get", return_value=None):
             result = ss_crud.soft_delete(mock_db, search_id=999)
         assert result is None
-        mock_db.commit.assert_not_called()
+        mock_db.flush.assert_not_called()
 
     def test_sets_deleted_at(self, ss_crud, mock_db):
         obj = make_search(deleted_at=None)
         with patch.object(ss_crud, "get", return_value=obj):
-            mock_db.commit.return_value = None
+            mock_db.flush.return_value = None
             mock_db.refresh.return_value = None
             ss_crud.soft_delete(mock_db, search_id=1)
         # deleted_at assigned (func.now() object, not None)
