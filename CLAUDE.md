@@ -91,6 +91,24 @@ class AgencyResponse(AgencyBase):
 **Rule:** `deleted_at` missing from a Response schema is always a bug.
 Soft-delete is a business event and must be observable in the API response.
 
+### 1.6 Cascade Soft Delete Policy
+
+When a parent entity is soft-deleted, children are NOT automatically
+soft-deleted. Children remain in DB with their FK intact (audit trail).
+The following cascade behaviors are enforced at the query layer:
+
+- User deleted -> properties invisible via get() (deleted_at filter)
+- Property deleted -> favorites excluded from get_user_favorites(),
+  is_favorited(), count_user_favorites() via Property join
+- Property deleted -> inquiries excluded from get_by_property_owner()
+  via Property join
+- Property deleted -> reviews endpoint returns 404 (property_crud.get()
+  returns None, endpoint guard fires before CRUD query)
+- Agency deleted -> agent users remain active (user.agency_id FK preserved)
+
+Children are never hard-deleted on parent soft-delete.
+Restoration of a parent does not automatically restore children.
+
 ---
 
 ## 2. SQLAlchemy Rules
@@ -309,6 +327,28 @@ pytest tests/api/endpoints/test_admin.py -q
 
 The `--no-cov` flag is mandatory on all targeted runs.
 Coverage measurement is only valid on the full test suite.
+
+### 5.11 Never Revert Logic Fixes to Satisfy Tests
+
+If a test fails after a logic fix, fix the test - never revert the logic.
+A comment like `# Changed from flush() to commit() for the test` is a
+violation of §5.1 and must be treated as a bug. The test was wrong.
+
+### 5.12 Targeted Test Runs Must Use --no-cov
+
+Running pytest on a subset of tests without --no-cov triggers the global
+--cov-fail-under threshold against partial coverage, producing false failures.
+
+```bash
+# CORRECT
+pytest tests/api/endpoints/test_admin.py -v --no-cov
+
+# CORRECT
+pytest tests/ --cov=app --cov-report=term-missing
+
+# WRONG - false failure on partial coverage
+pytest tests/api/endpoints/test_admin.py -q
+```
 
 ---
 
