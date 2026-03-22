@@ -409,7 +409,7 @@ class TestAgentProfileValidation:
             deleted_by_supabase_id=str(uuid.uuid4())
         )
         
-        with pytest.raises(ValueError, match="is deleted"):
+        with pytest.raises(ValueError, match="inactive"):
             agent_profile_crud._validate_agency_exists(db, agency_id=agency.agency_id)
 
 

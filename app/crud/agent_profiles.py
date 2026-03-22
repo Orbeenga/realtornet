@@ -159,9 +159,14 @@ class AgentProfileCRUD:
         Validate that user exists and has agent role.
         Raises ValueError if validation fails.
         """
-        user = db.get(User, user_id)
+        user = db.execute(
+            select(User).where(
+                User.user_id == user_id,
+                User.deleted_at.is_(None)
+            )
+        ).scalar_one_or_none()
         if not user:
-            raise ValueError(f"User with id={user_id} not found")
+            raise ValueError("User not found or is inactive")
         
         if user.user_role != UserRole.AGENT:
             raise ValueError(f"User must have agent role (current role: {user.user_role})")
@@ -175,10 +180,10 @@ class AgentProfileCRUD:
         """
         agency = db.get(Agency, agency_id)
         if not agency:
-            raise ValueError(f"Agency with id={agency_id} not found")
+            raise ValueError("Agency not found")
         
         if agency.deleted_at is not None:
-            raise ValueError(f"Agency with id={agency_id} is deleted")
+            raise ValueError("Agency is inactive")
         
         return agency
     
@@ -237,7 +242,7 @@ class AgentProfileCRUD:
         )
         
         db.add(db_obj)
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         
         logger.info(
@@ -292,8 +297,8 @@ class AgentProfileCRUD:
             
             if property_count > 0:
                 raise ValueError(
-                    f"Cannot change agency: agent has {property_count} active properties. "
-                    "Transfer or delete properties first."
+                    "Cannot change agency while agent has active properties. "
+                    "Transfer or remove properties first."
                 )
         
         # Validate agency if being updated
@@ -322,7 +327,7 @@ class AgentProfileCRUD:
         # updated_at handled by DB trigger automatically
         
         db.add(db_obj)
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         
         logger.info(
@@ -363,7 +368,7 @@ class AgentProfileCRUD:
         db_obj.deleted_by = deleted_by_supabase_id
 
         db.add(db_obj)
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         
         logger.warning(

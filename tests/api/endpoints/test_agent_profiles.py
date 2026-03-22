@@ -3,7 +3,9 @@
 Surgical API-layer tests for /agent-profiles endpoints.
 """
 from fastapi.testclient import TestClient
+import uuid
 from app.api.endpoints import agent_profiles as agent_profiles_api
+from app.crud.users import user as user_crud
 
 
 class TestReadAgentProfiles:
@@ -124,6 +126,25 @@ class TestCreateAgentProfile:
             headers=admin_token_headers
         )
         assert response.status_code == 404
+
+    def test_cannot_create_agent_profile_for_deleted_user(
+        self, client: TestClient, admin_token_headers, db, agent_user, agency
+    ):
+        user_crud.soft_delete(
+            db,
+            user_id=agent_user.user_id,
+            deleted_by_supabase_id=str(uuid.uuid4())
+        )
+        response = client.post(
+            "/api/v1/agent-profiles/",
+            json={
+                "user_id": agent_user.user_id,
+                "agency_id": agency.agency_id,
+                "license_number": f"LIC-TEST-{uuid.uuid4().hex[:6]}"
+            },
+            headers=admin_token_headers
+        )
+        assert response.status_code in (400, 404)
 
     def test_create_profile_success(
         self, client: TestClient, admin_token_headers, db, agency
@@ -368,6 +389,42 @@ class TestUpdateAgentProfile:
             headers=admin_token_headers
         )
         assert response.status_code == 404
+
+    def test_cannot_change_agency_with_active_properties(
+        self, client: TestClient, agent_token_headers, db, agency, agent_user, monkeypatch
+    ):
+        from app.models.agent_profiles import AgentProfile
+        from app.models.agencies import Agency
+
+        profile = AgentProfile(
+            user_id=agent_user.user_id,
+            agency_id=agency.agency_id,
+            license_number=f"LIC-STATE-{uuid.uuid4().hex[:6]}"
+        )
+        db.add(profile)
+        db.flush()
+        db.refresh(profile)
+
+        second_agency = Agency(name=f"Agency-{uuid.uuid4().hex[:6]}")
+        db.add(second_agency)
+        db.flush()
+        db.refresh(second_agency)
+
+        monkeypatch.setattr(
+            agent_profiles_api.agent_profile_crud,
+            "update",
+            lambda *args, **kwargs: (_ for _ in ()).throw(
+                ValueError("Cannot change agency while agent has active properties. Transfer or remove properties first.")
+            )
+        )
+
+        response = client.put(
+            f"/api/v1/agent-profiles/{profile.profile_id}",
+            json={"agency_id": second_agency.agency_id},
+            headers=agent_token_headers
+        )
+        assert response.status_code == 400
+        assert "active properties" in response.json()["detail"]
 
 
 class TestDeleteAgentProfile:

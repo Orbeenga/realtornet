@@ -1,4 +1,3 @@
-from app.schemas.users import UserResponse
 # app/api/endpoints/locations.py
 """
 LocationResponse management endpoints - Canonical compliant

@@ -1,4 +1,3 @@
-from app.schemas.users import UserResponse
 # app/api/endpoints/profiles.py
 """
 Profile management endpoints - Canonical compliant

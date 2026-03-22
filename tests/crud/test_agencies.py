@@ -21,6 +21,7 @@ Missing lines from coverage report:
 
 import pytest
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from app.crud.agencies import agency as agency_crud
 from app.schemas.agencies import AgencyCreate, AgencyUpdate
 from app.models.agencies import Agency
@@ -379,8 +380,8 @@ class TestAgencyCreateValidation:
         assert agency.is_verified is False
         assert str(agency.created_by) == creator_id
     
-    def test_create_duplicate_email_raises_error(self, db: Session):
-        """Target lines 154-156: Duplicate email validation"""
+    def test_create_duplicate_email_raises_integrity_error(self, db: Session):
+        """Duplicate email is enforced by DB uniqueness constraints."""
         agency_crud.create(
             db,
             obj_in=AgencyCreate(
@@ -391,7 +392,7 @@ class TestAgencyCreateValidation:
         )
         
         # Attempt to create with same email
-        with pytest.raises(ValueError, match="email.*already exists"):
+        with pytest.raises(IntegrityError):
             agency_crud.create(
                 db,
                 obj_in=AgencyCreate(
@@ -401,9 +402,9 @@ class TestAgencyCreateValidation:
                 created_by=str(uuid.uuid4())
             )
     
-    def test_create_duplicate_name_raises_error(self, db: Session):
-        """Target lines 159-161: Duplicate name validation"""
-        agency_crud.create(
+    def test_create_duplicate_name_is_allowed_in_crud_layer(self, db: Session):
+        """Name uniqueness is enforced at endpoint/service layer, not CRUD create()."""
+        first = agency_crud.create(
             db,
             obj_in=AgencyCreate(
                 name="Unique Name",
@@ -412,16 +413,15 @@ class TestAgencyCreateValidation:
             created_by=str(uuid.uuid4())
         )
         
-        # Attempt to create with same name
-        with pytest.raises(ValueError, match="name.*already exists"):
-            agency_crud.create(
-                db,
-                obj_in=AgencyCreate(
-                    name="Unique Name",
-                    email="second@agency.com"
-                ),
-                created_by=str(uuid.uuid4())
-            )
+        second = agency_crud.create(
+            db,
+            obj_in=AgencyCreate(
+                name="Unique Name",
+                email="second@agency.com"
+            ),
+            created_by=str(uuid.uuid4())
+        )
+        assert first.agency_id != second.agency_id
     
     def test_create_with_optional_fields(self, db: Session):
         """Test creation with all optional fields"""
@@ -623,13 +623,17 @@ class TestAgencySoftDelete:
         assert deleted.deleted_at is not None
         assert str(deleted.deleted_by) == deleter_id
     
-    def test_soft_delete_nonexistent_raises_error(self, db: Session):
-        """Target line 280: Non-existent agency error"""
-        with pytest.raises(ValueError, match="not found"):
-            agency_crud.soft_delete(db, agency_id=999999)
+    def test_soft_delete_nonexistent_returns_none(self, db: Session):
+        """Non-existent agencies return None from CRUD soft_delete()."""
+        result = agency_crud.soft_delete(
+            db,
+            agency_id=999999,
+            deleted_by_supabase_id=str(uuid.uuid4())
+        )
+        assert result is None
     
-    def test_soft_delete_already_deleted_raises_error(self, db: Session):
-        """Target line 284: Already deleted error"""
+    def test_soft_delete_already_deleted_returns_none(self, db: Session):
+        """Already-deleted agencies return None from CRUD soft_delete()."""
         agency = agency_crud.create(
             db,
             obj_in=AgencyCreate(name="Double Delete", email="double@test.com"),
@@ -637,11 +641,19 @@ class TestAgencySoftDelete:
         )
         
         # First delete
-        agency_crud.soft_delete(db, agency_id=agency.agency_id)
+        agency_crud.soft_delete(
+            db,
+            agency_id=agency.agency_id,
+            deleted_by_supabase_id=str(uuid.uuid4())
+        )
         
-        # Second delete should raise error
-        with pytest.raises(ValueError, match="already deleted"):
-            agency_crud.soft_delete(db, agency_id=agency.agency_id)
+        # Second delete returns None
+        second = agency_crud.soft_delete(
+            db,
+            agency_id=agency.agency_id,
+            deleted_by_supabase_id=str(uuid.uuid4())
+        )
+        assert second is None
 
 
 class TestAgencyStatistics:

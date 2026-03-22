@@ -1,4 +1,3 @@
-from app.schemas.users import UserResponse
 # app/api/endpoints/reviews.py
 """
 Reviews management endpoints - Canonical compliant

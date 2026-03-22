@@ -1,4 +1,3 @@
-from app.schemas.users import UserResponse
 # app/api/endpoints/saved_searches.py
 """
 Saved searches management endpoints - Canonical compliant
