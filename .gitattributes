@@ -1,0 +1,6 @@
+# Normalize line endings for source files
+.gitattributes text eol=lf
+*.py  text eol=lf
+*.sql text eol=lf
+*.sh  text eol=lf
+*.env text eol=lf

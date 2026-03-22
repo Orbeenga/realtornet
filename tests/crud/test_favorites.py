@@ -82,7 +82,7 @@ class TestFavoriteCreate:
         """No existing record → creates new."""
         scalar_one_or_none(mock_db, None)
         mock_db.add.return_value = None
-        mock_db.commit.return_value = None
+        mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
         
         # FIX: Pass property_id in the schema, and user_id as a separate keyword argument
@@ -92,12 +92,10 @@ class TestFavoriteCreate:
             user_id=1
         )
 
-    def test_restore_soft_deleted(self, fav_crud, mock_db):
+    def test_returns_soft_deleted_without_restoring(self, fav_crud, mock_db):
         """Existing but soft-deleted → restores it."""
         existing = make_favorite(deleted_at=datetime.now(timezone.utc))
         scalar_one_or_none(mock_db, existing)
-        mock_db.commit.return_value = None
-        mock_db.refresh.return_value = None
 
         # FIX: Separate the schema and the user_id
         result = fav_crud.create(
@@ -105,7 +103,7 @@ class TestFavoriteCreate:
             obj_in=FavoriteCreate(property_id=10), 
             user_id=1
         )
-        assert result.deleted_at is None
+        assert result.deleted_at is not None
 
     def test_returns_existing_active(self, fav_crud, mock_db):
         """Already active → returns it without creating duplicate."""
@@ -128,18 +126,18 @@ class TestFavoriteSoftDelete:
         """Found → triggers commit + refresh."""
         obj = make_favorite()
         with patch.object(fav_crud, "get", return_value=obj):
-            mock_db.commit.return_value = None
+            mock_db.flush.return_value = None
             mock_db.refresh.return_value = None
             result = fav_crud.soft_delete(mock_db, user_id=1, property_id=10)
         assert result == obj
-        mock_db.commit.assert_called_once()
+        mock_db.flush.assert_called_once()
 
     def test_soft_delete_not_found_returns_none(self, fav_crud, mock_db):
         """Not found → returns None, no commit."""
         with patch.object(fav_crud, "get", return_value=None):
             result = fav_crud.soft_delete(mock_db, user_id=1, property_id=999)
         assert result is None
-        mock_db.commit.assert_not_called()
+        mock_db.flush.assert_not_called()
 
 
 # ─── get_user_favorites (lines 106-118) ──────

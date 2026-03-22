@@ -76,17 +76,17 @@ def make_inquiry(**kwargs) -> MagicMock:
 class TestInquiryCreate:
     def test_create(self, inq_crud, mock_db):
         mock_db.add.return_value = None
-        mock_db.commit.return_value = None
+        mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
         inq_crud.create(mock_db,
                         obj_in=InquiryCreate(property_id=10, message="Interested"),
                         user_id=1)
         mock_db.add.assert_called_once()
-        mock_db.commit.assert_called_once()
+        mock_db.flush.assert_called_once()
 
     def test_sets_user_id(self, inq_crud, mock_db):
         mock_db.add.return_value = None
-        mock_db.commit.return_value = None
+        mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
         inq_crud.create(mock_db,
                         obj_in=InquiryCreate(property_id=10, message="Hello"),
@@ -137,7 +137,7 @@ class TestInquiryUpdate:
     def test_update_message(self, inq_crud, mock_db):
         obj = make_inquiry(message="Old message")
         with patch.object(inq_crud, "get", return_value=obj):
-            mock_db.commit.return_value = None
+            mock_db.flush.return_value = None
             mock_db.refresh.return_value = None
             inq_crud.update(mock_db, inquiry_id=1,
                             obj_in=InquiryUpdate(message="New message"))
@@ -146,7 +146,7 @@ class TestInquiryUpdate:
     def test_strips_protected_fields(self, inq_crud, mock_db):
         obj = make_inquiry(inquiry_id=1, user_id=5, property_id=10)
         with patch.object(inq_crud, "get", return_value=obj):
-            mock_db.commit.return_value = None
+            mock_db.flush.return_value = None
             mock_db.refresh.return_value = None
             inq_crud.update(mock_db, inquiry_id=1,
                             obj_in=InquiryUpdate(message="safe"))
@@ -160,7 +160,7 @@ class TestInquirySoftDelete:
     def test_found(self, inq_crud, mock_db):
         obj = make_inquiry()
         with patch.object(inq_crud, "get", return_value=obj):
-            mock_db.commit.return_value = None
+            mock_db.flush.return_value = None
             mock_db.refresh.return_value = None
             result = inq_crud.soft_delete(mock_db, inquiry_id=1)
         assert result == obj
@@ -170,7 +170,7 @@ class TestInquirySoftDelete:
         with patch.object(inq_crud, "get", return_value=None):
             result = inq_crud.soft_delete(mock_db, inquiry_id=999)
         assert result is None
-        mock_db.commit.assert_not_called()
+        mock_db.flush.assert_not_called()
 
 
 # ─── get_by_property (lines 133-145) ─────────
@@ -237,7 +237,7 @@ class TestInquiryUpdateStatus:
     def test_updates_status(self, inq_crud, mock_db):
         obj = make_inquiry(inquiry_status="new")
         with patch.object(inq_crud, "get", return_value=obj):
-            mock_db.commit.return_value = None
+            mock_db.flush.return_value = None
             mock_db.refresh.return_value = None
             inq_crud.update_status(mock_db, inquiry_id=1, new_status="viewed")
         assert obj.inquiry_status == "viewed"

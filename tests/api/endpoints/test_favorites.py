@@ -191,6 +191,27 @@ class TestGetUserFavorites:
         )
         assert response.status_code == 200
 
+    def test_favorites_list_excludes_deleted_property(
+        self, client: TestClient, normal_user_token_headers, normal_user, sample_property, admin_token_headers
+    ):
+        client.post(
+            "/api/v1/favorites/",
+            json={"property_id": sample_property.property_id},
+            headers=normal_user_token_headers
+        )
+        client.delete(
+            f"/api/v1/admin/properties/{sample_property.property_id}",
+            headers=admin_token_headers
+        )
+
+        response = client.get(
+            f"/api/v1/favorites/user/{normal_user.user_id}",
+            headers=normal_user_token_headers
+        )
+        assert response.status_code == 200
+        property_ids = [favorite_obj["property_id"] for favorite_obj in response.json()]
+        assert sample_property.property_id not in property_ids
+
 
 class TestRestoreFavorite:
 
@@ -251,6 +272,26 @@ class TestCheckIsFavorited:
         data = response.json()
         assert "is_favorited" in data
         assert isinstance(data["is_favorited"], bool)
+
+    def test_is_favorited_returns_false_for_deleted_property(
+        self, client: TestClient, normal_user_token_headers, sample_property, admin_token_headers
+    ):
+        client.post(
+            "/api/v1/favorites/",
+            json={"property_id": sample_property.property_id},
+            headers=normal_user_token_headers
+        )
+        client.delete(
+            f"/api/v1/admin/properties/{sample_property.property_id}",
+            headers=admin_token_headers
+        )
+
+        response = client.get(
+            f"/api/v1/favorites/is-favorited?property_id={sample_property.property_id}",
+            headers=normal_user_token_headers
+        )
+        assert response.status_code == 200
+        assert response.json()["is_favorited"] is False
 
 
 class TestCountPropertyFavorites:

@@ -64,6 +64,23 @@ class Settings(BaseSettings):
     ENV: str = "development"
     DEBUG: bool = False
     TESTING: bool = False
+
+    @field_validator("DEBUG", mode="before")
+    @classmethod
+    def normalize_debug(cls, v: Union[bool, str]) -> bool:
+        """
+        Normalize non-boolean DEBUG values from shells/CI.
+        Accepts common truthy/falsey strings and maps legacy `release` to False.
+        """
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, str):
+            value = v.strip().lower()
+            if value in {"1", "true", "yes", "on", "debug", "development"}:
+                return True
+            if value in {"0", "false", "no", "off", "release", "prod", "production"}:
+                return False
+        raise ValueError("Invalid DEBUG value. Use true/false.")
     
     # Logging
     LOG_LEVEL: str = "INFO"

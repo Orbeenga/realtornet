@@ -10,6 +10,7 @@ from sqlalchemy import select, func, and_
 from sqlalchemy.orm import Session
 
 from app.models.favorites import Favorite
+from app.models.properties import Property
 from app.schemas.favorites import FavoriteCreate
 
 
@@ -42,7 +43,8 @@ class FavoriteCRUD:
     ) -> Favorite:
         """
         Create a new favorite.
-        If previously soft-deleted, restore it instead.
+        If a soft-deleted record exists, return it unchanged and let the endpoint
+        enforce restore flow.
         """
         # Check if soft-deleted record exists
         existing = db.execute(
@@ -56,10 +58,8 @@ class FavoriteCRUD:
 
         if existing:
             if existing.deleted_at is not None:
-                # Restore soft-deleted favorite
-                existing.deleted_at = None
-                db.commit()
-                db.refresh(existing)
+                # Return existing soft-deleted favorite without restoring.
+                # Endpoint decides whether to raise or call restore endpoint.
                 return existing
             # Already exists and active
             return existing
@@ -70,7 +70,7 @@ class FavoriteCRUD:
             property_id=obj_in.property_id
         )
         db.add(db_obj)
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         return db_obj
 
@@ -84,7 +84,6 @@ class FavoriteCRUD:
     ) -> Optional[Favorite]:
         """
         Soft delete a favorite.
-        Added db.commit() to satisfy test expectations (Failure 1).
         """
         obj = self.get(db=db, user_id=user_id, property_id=property_id)
         if obj:
@@ -94,7 +93,7 @@ class FavoriteCRUD:
                 obj.deleted_by = deleted_by_supabase_id
             
             db.add(obj)
-            db.commit()  # <-- Changed from .flush() to .commit() for the test
+            db.flush()
             db.refresh(obj)
         return obj
 
@@ -138,10 +137,12 @@ class FavoriteCRUD:
         """
         stmt = (
             select(Favorite)
+            .join(Property, Favorite.property_id == Property.property_id)
             .where(
                 and_(
                     Favorite.user_id == user_id,
-                    Favorite.deleted_at.is_(None)
+                    Favorite.deleted_at.is_(None),
+                    Property.deleted_at.is_(None)
                 )
             )
             .order_by(Favorite.created_at.desc())
@@ -158,13 +159,18 @@ class FavoriteCRUD:
         property_id: int
     ) -> bool:
         """Check if a property is actively favorited by a user"""
-        stmt = select(func.count()).select_from(Favorite).where(
+        stmt = (
+            select(func.count())
+            .select_from(Favorite)
+            .join(Property, Favorite.property_id == Property.property_id)
+            .where(
             and_(
                 Favorite.user_id == user_id,
                 Favorite.property_id == property_id,
-                Favorite.deleted_at.is_(None)
+                Favorite.deleted_at.is_(None),
+                Property.deleted_at.is_(None),
             )
-        )
+        ))
         count = db.execute(stmt).scalar()
         return count > 0
 
@@ -190,10 +196,16 @@ class FavoriteCRUD:
         user_id: int
     ) -> int:
         """Count total active favorites for a user"""
-        stmt = select(func.count()).select_from(Favorite).where(
-            and_(
-                Favorite.user_id == user_id,
-                Favorite.deleted_at.is_(None)
+        stmt = (
+            select(func.count())
+            .select_from(Favorite)
+            .join(Property, Favorite.property_id == Property.property_id)
+            .where(
+                and_(
+                    Favorite.user_id == user_id,
+                    Favorite.deleted_at.is_(None),
+                    Property.deleted_at.is_(None),
+                )
             )
         )
         return db.execute(stmt).scalar()
@@ -222,7 +234,7 @@ class FavoriteCRUD:
         
         if obj:
             obj.deleted_at = None
-            db.commit()
+            db.flush()
             db.refresh(obj)
         
         return obj

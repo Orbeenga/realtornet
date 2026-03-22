@@ -31,7 +31,7 @@ class SavedSearchCRUD:
             # created_at, updated_at handled by DB
         )
         db.add(db_obj)
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         return db_obj
 
@@ -111,7 +111,7 @@ class SavedSearchCRUD:
                 setattr(db_obj, field, value)
 
         # DB trigger handles updated_at
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         return db_obj
 
@@ -124,15 +124,15 @@ class SavedSearchCRUD:
     ) -> Optional[SavedSearch]:
         """
         Soft delete a saved search.
-        deleted_at set by DB trigger.
+        ORM sets deleted_at; DB trigger handles updated_at only.
         """
         db_obj = self.get(db=db, search_id=search_id)
         if not db_obj:
             return None
 
-        db_obj.deleted_at = func.now()  # Trigger handles timestamp
+        db_obj.deleted_at = func.now()  # ORM sets deleted_at; DB trigger handles updated_at only
         db_obj.deleted_by = deleted_by_supabase_id
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         return db_obj
 
