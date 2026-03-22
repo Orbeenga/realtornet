@@ -26,8 +26,18 @@ class PropertyCRUD:
     # READ OPERATIONS
         
     def get(self, db: Session, property_id: int) -> Optional[Property]:
-        """Get a property by property_id (PK)"""
-        # CHANGE 1: Guard against None PK — fixes SAWarning on line 30
+        """Get a property by property_id (PK)."""
+        # FIX: Default read path excludes soft-deleted rows.
+        if property_id is None:
+            return None
+        stmt = select(Property).where(
+            Property.property_id == property_id,
+            Property.deleted_at.is_(None)
+        )
+        return db.execute(stmt).scalar_one_or_none()
+
+    def get_including_deleted(self, db: Session, property_id: int) -> Optional[Property]:
+        # FIX: Bypass soft-delete filter for restore/hard-delete operations only.
         if property_id is None:
             return None
         return db.get(Property, property_id)
@@ -158,15 +168,29 @@ class PropertyCRUD:
         self,
         db: Session,
         *,
-        property_type_id: int
+        property_type_id: int,
+        include_deleted: bool = False
     ) -> int:
-        """Count non-deleted properties using a given property type."""
-        return db.execute(
-            select(func.count(Property.property_id)).where(
-                Property.property_type_id == property_type_id,
-                Property.deleted_at.is_(None)
-            )
-        ).scalar()
+        """
+        Count properties using a given property type.
+
+        include_deleted=True is required for deletion guards, because
+        soft-deleted properties still hold FK references.
+        """
+        stmt = select(func.count(Property.property_id)).where(
+            Property.property_type_id == property_type_id
+        )
+        if not include_deleted:
+            stmt = stmt.where(Property.deleted_at.is_(None))
+        return db.execute(stmt).scalar()
+
+    def count_by_location(self, db: Session, *, location_id: int) -> int:
+        """Count non-deleted properties for a location."""
+        stmt = select(func.count(Property.property_id)).where(
+            Property.location_id == location_id,
+            Property.deleted_at.is_(None)
+        )
+        return db.execute(stmt).scalar()
 
     def count_active(self, db: Session) -> int:
         """Count active (non-deleted) properties."""
@@ -454,7 +478,8 @@ class PropertyCRUD:
         *, 
         db_obj: Property, 
         obj_in: Union[PropertyUpdate, Dict[str, Any]],
-        updated_by_supabase_id: Optional[str] = None
+        updated_by_supabase_id: Optional[str] = None,
+        updated_by: Optional[str] = None
     ) -> Property:
         """
         Update a property.
@@ -490,8 +515,10 @@ class PropertyCRUD:
             if hasattr(db_obj, field):
                 setattr(db_obj, field, value)
         
-        if updated_by_supabase_id:
-            db_obj.updated_by = updated_by_supabase_id
+        # FIX: Support canonical `updated_by` and keep backward compatibility.
+        actor_supabase_id = updated_by if updated_by is not None else updated_by_supabase_id
+        if actor_supabase_id:
+            db_obj.updated_by = actor_supabase_id
         
         db.add(db_obj)
         db.flush()
@@ -504,7 +531,8 @@ class PropertyCRUD:
         *,
         property_id: int,
         listing_status: ListingStatus,
-        updated_by_supabase_id: Optional[str] = None
+        updated_by_supabase_id: Optional[str] = None,
+        updated_by: Optional[str] = None
     ) -> Optional[Property]:
         """Update property listing status (e.g., available → sold)."""
         db_obj = self.get(db, property_id=property_id)
@@ -512,8 +540,10 @@ class PropertyCRUD:
             return None
         
         db_obj.listing_status = listing_status
-        if updated_by_supabase_id:
-            db_obj.updated_by = updated_by_supabase_id
+        # FIX: Support canonical `updated_by` and keep backward compatibility.
+        actor_supabase_id = updated_by if updated_by is not None else updated_by_supabase_id
+        if actor_supabase_id:
+            db_obj.updated_by = actor_supabase_id
         
         db.add(db_obj)
         db.flush()
@@ -526,21 +556,34 @@ class PropertyCRUD:
         *,
         property_id: int,
         is_verified: bool = True,
-        updated_by_supabase_id: Optional[str] = None
+        updated_by_supabase_id: Optional[str] = None,
+        updated_by: Optional[str] = None
     ) -> Optional[Property]:
         """Verify property (admin operation)"""
         db_obj = self.get(db, property_id=property_id)
         if not db_obj:
             return None
-        
+
+        # FIX: Idempotent verify/unverify to avoid timestamp churn on no-op calls.
+        if db_obj.is_verified == is_verified:
+            actor_supabase_id = updated_by if updated_by is not None else updated_by_supabase_id
+            if actor_supabase_id:
+                db_obj.updated_by = actor_supabase_id
+                db.add(db_obj)
+                db.flush()
+                db.refresh(db_obj)
+            return db_obj
+
         db_obj.is_verified = is_verified
         if is_verified:
             db_obj.verification_date = datetime.now(timezone.utc)
         else:
             db_obj.verification_date = None
-        
-        if updated_by_supabase_id:
-            db_obj.updated_by = updated_by_supabase_id
+
+        # FIX: Support canonical `updated_by` and keep backward compatibility.
+        actor_supabase_id = updated_by if updated_by is not None else updated_by_supabase_id
+        if actor_supabase_id:
+            db_obj.updated_by = actor_supabase_id
         
         db.add(db_obj)
         db.flush()
@@ -553,7 +596,8 @@ class PropertyCRUD:
         *,
         property_id: int,
         is_featured: bool,
-        updated_by_supabase_id: Optional[str] = None
+        updated_by_supabase_id: Optional[str] = None,
+        updated_by: Optional[str] = None
     ) -> Optional[Property]:
         """Toggle featured status (admin operation)"""
         db_obj = self.get(db, property_id=property_id)
@@ -561,8 +605,10 @@ class PropertyCRUD:
             return None
         
         db_obj.is_featured = is_featured
-        if updated_by_supabase_id:
-            db_obj.updated_by = updated_by_supabase_id
+        # FIX: Support canonical `updated_by` and keep backward compatibility.
+        actor_supabase_id = updated_by if updated_by is not None else updated_by_supabase_id
+        if actor_supabase_id:
+            db_obj.updated_by = actor_supabase_id
         
         db.add(db_obj)
         db.flush()
@@ -626,10 +672,13 @@ class PropertyCRUD:
         db_obj = self.get(db, property_id=property_id)
         if not db_obj:
             return None
-        
+
+        # FIX: deleted_at and deleted_by must be written together for full audit trail.
+        if not deleted_by_supabase_id:
+            raise HTTPException(status_code=400, detail="deleted_by_supabase_id is required")
+
         db_obj.deleted_at = datetime.now(timezone.utc)
-        if deleted_by_supabase_id:
-            db_obj.deleted_by = deleted_by_supabase_id
+        db_obj.deleted_by = deleted_by_supabase_id
         
         db.add(db_obj)
         db.flush()
@@ -644,11 +693,17 @@ class PropertyCRUD:
         restored_by_supabase_id: Optional[str] = None
     ) -> Optional[Property]:
         """Restore a soft-deleted property"""
-        db_obj = self.get(db, property_id=property_id)
+        # FIX: Restore path must fetch deleted rows too.
+        db_obj = self.get_including_deleted(db, property_id=property_id)
         if not db_obj:
             return None
-        
+
+        # FIX: Keep restore idempotent when property is already active.
+        if db_obj.deleted_at is None:
+            return db_obj
+
         db_obj.deleted_at = None
+        # FIX: Preserve deleted_by history on restore (immutable delete audit event).
         if restored_by_supabase_id:
             db_obj.updated_by = restored_by_supabase_id
         
@@ -668,7 +723,8 @@ class PropertyCRUD:
         Only for GDPR/legal compliance requests.
         WARNING: Cascades to images, amenities, favorites, reviews, inquiries.
         """
-        db_obj = self.get(db, property_id=property_id)
+        # FIX: Hard delete can target both active and soft-deleted records.
+        db_obj = self.get_including_deleted(db, property_id=property_id)
         if not db_obj:
             return None
         
@@ -700,6 +756,7 @@ class PropertyCRUD:
         latitude: float,
         longitude: float,
         radius_km: float,
+        skip: int = 0,
         limit: int = 20
     ) -> List[Property]:
         """
@@ -719,6 +776,7 @@ class PropertyCRUD:
                 )
             )
             .order_by(ST_Distance(Property.geom, point))
+            .offset(skip)  # FIX: SQL-side pagination avoids Python slicing drift.
             .limit(limit)
         )
         
@@ -814,17 +872,19 @@ class PropertyCRUD:
         *,
         property_ids: List[int],
         is_verified: bool = True,
-        updated_by_supabase_id: Optional[str] = None
+        updated_by_supabase_id: Optional[str] = None,
+        updated_by: Optional[str] = None
     ) -> int:
         """Bulk verify/unverify properties."""
         values = {
             "is_verified": is_verified,
             "verification_date": func.now() if is_verified else None,
-            "updated_at": func.now()
         }
-        
-        if updated_by_supabase_id:
-            values["updated_by"] = updated_by_supabase_id
+
+        # FIX: DB trigger owns updated_at; only set updated_by actor here.
+        actor_supabase_id = updated_by if updated_by is not None else updated_by_supabase_id
+        if actor_supabase_id:
+            values["updated_by"] = actor_supabase_id
         
         stmt = (
             update(Property)
@@ -851,16 +911,18 @@ class PropertyCRUD:
         *,
         property_ids: List[int],
         new_status: str,
-        updated_by_supabase_id: Optional[str] = None
+        updated_by_supabase_id: Optional[str] = None,
+        updated_by: Optional[str] = None
     ) -> int:
         """Bulk update listing status."""
         values = {
             "listing_status": new_status,
-            "updated_at": func.now()
         }
-        
-        if updated_by_supabase_id:
-            values["updated_by"] = updated_by_supabase_id
+
+        # FIX: DB trigger owns updated_at; only set updated_by actor here.
+        actor_supabase_id = updated_by if updated_by is not None else updated_by_supabase_id
+        if actor_supabase_id:
+            values["updated_by"] = actor_supabase_id
         
         stmt = (
             update(Property)
@@ -889,13 +951,14 @@ class PropertyCRUD:
         deleted_by_supabase_id: Optional[str] = None
     ) -> int:
         """Bulk soft delete properties."""
+        # FIX: deleted_at and deleted_by must be written together for full audit trail.
+        if not deleted_by_supabase_id:
+            raise HTTPException(status_code=400, detail="deleted_by_supabase_id is required")
+
         values = {
             "deleted_at": func.now(),
-            "updated_at": func.now()
+            "deleted_by": deleted_by_supabase_id
         }
-        
-        if deleted_by_supabase_id:
-            values["deleted_by"] = deleted_by_supabase_id
         
         stmt = (
             update(Property)
@@ -969,25 +1032,49 @@ class PropertyCRUD:
         agent_user_id: int,
     ) -> List[Property]:
         """Agent view — verified properties OR their own (any status)."""
-        filters_verified = params.model_dump(exclude_unset=True) if params else {}
-        filters_verified["is_verified"] = True
-
-        verified = self.get_multi(db, skip=0, limit=skip + limit, filters=filters_verified)
-
-        own = self.get_multi(
-            db, skip=0, limit=skip + limit,
-            user_id=agent_user_id, filters=params.model_dump(exclude_unset=True) if params else {}
+        # FIX: Use one SQL query so skip/limit semantics stay correct.
+        filters = params.model_dump(exclude_unset=True) if params else {}
+        query = select(Property).where(
+            Property.deleted_at.is_(None),
+            or_(
+                Property.is_verified.is_(True),
+                Property.user_id == agent_user_id
+            )
         )
 
-        # Merge, deduplicate, preserve order
-        seen: set = set()
-        merged: List[Property] = []
-        for p in list(verified) + list(own):
-            if p.property_id not in seen:
-                seen.add(p.property_id)
-                merged.append(p)
+        if filters.get("min_price") is not None:
+            query = query.where(Property.price >= filters["min_price"])
+        if filters.get("max_price") is not None:
+            query = query.where(Property.price <= filters["max_price"])
+        if filters.get("bedrooms") is not None:
+            query = query.where(Property.bedrooms == filters["bedrooms"])
+        if filters.get("min_bedrooms") is not None:
+            query = query.where(Property.bedrooms >= filters["min_bedrooms"])
+        if filters.get("bathrooms") is not None:
+            query = query.where(Property.bathrooms == filters["bathrooms"])
+        if filters.get("property_type_id") is not None:
+            query = query.where(Property.property_type_id == filters["property_type_id"])
+        if filters.get("location_id") is not None:
+            query = query.where(Property.location_id == filters["location_id"])
+        if filters.get("listing_type") is not None:
+            query = query.where(
+                func.lower(cast(Property.listing_type, String)) == str(filters["listing_type"]).lower()
+            )
+        if filters.get("listing_status") is not None:
+            query = query.where(
+                func.lower(cast(Property.listing_status, String)) == str(filters["listing_status"]).lower()
+            )
+        if filters.get("is_featured") is not None:
+            query = query.where(Property.is_featured == filters["is_featured"])
+        if filters.get("has_swimming_pool") is not None:
+            query = query.where(Property.has_swimming_pool == filters["has_swimming_pool"])
+        if filters.get("has_garden") is not None:
+            query = query.where(Property.has_garden == filters["has_garden"])
+        if filters.get("has_security") is not None:
+            query = query.where(Property.has_security == filters["has_security"])
 
-        return merged[skip: skip + limit]
+        query = query.order_by(Property.created_at.desc()).offset(skip).limit(limit)
+        return db.execute(query).scalars().all()
 
 
     # GET /by-LocationResponse/{location_id}  —  location visibility variants
@@ -1094,9 +1181,10 @@ class PropertyCRUD:
             latitude=latitude,
             longitude=longitude,
             radius_km=radius,
-            limit=skip + limit,   # fetch enough to slice
+            skip=skip,  # FIX: Use SQL offset pagination directly.
+            limit=limit,
         )
-        return results[skip: skip + limit]
+        return results
 
     def get_within_radius_approved(
         self,
@@ -1110,15 +1198,24 @@ class PropertyCRUD:
         params=None,
     ) -> List[Property]:
         """Public view — only verified properties within radius."""
-        results = self.get_properties_near(
-            db,
-            latitude=latitude,
-            longitude=longitude,
-            radius_km=radius,
-            limit=skip + limit * 2,   # over-fetch to allow for filtering
+        # FIX: Filter verified rows in SQL so pagination remains correct.
+        point = ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)
+        radius_meters = radius * 1000
+        query = (
+            select(Property)
+            .where(
+                and_(
+                    Property.deleted_at.is_(None),
+                    Property.is_verified.is_(True),
+                    Property.geom.isnot(None),
+                    ST_DWithin(Property.geom, point, radius_meters)
+                )
+            )
+            .order_by(ST_Distance(Property.geom, point))
+            .offset(skip)
+            .limit(limit)
         )
-        verified = [p for p in results if p.is_verified]
-        return verified[skip: skip + limit]
+        return db.execute(query).scalars().all()
 
     def get_within_radius_for_agent(
         self,
@@ -1153,3 +1250,4 @@ class PropertyCRUD:
 
 # Singleton instance
 property = PropertyCRUD()
+

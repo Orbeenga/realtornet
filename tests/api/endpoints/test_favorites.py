@@ -67,6 +67,7 @@ class TestCreateFavorite:
             headers=normal_user_token_headers
         )
         assert response.status_code == 400
+        assert response.json()["detail"] == "Favorite already exists for this property."
 
     def test_create_favorite_success(
         self, client: TestClient, normal_user_token_headers, normal_user, sample_property
@@ -89,23 +90,31 @@ class TestCreateFavorite:
 class TestDeleteFavorite:
 
     def test_unauthenticated_returns_401(self, client: TestClient):
-        response = client.delete("/api/v1/favorites/?user_id=1&property_id=1")
+        response = client.delete("/api/v1/favorites/?property_id=1")
         assert response.status_code == 401
 
-    def test_delete_other_user_favorite_returns_403(
-        self, client: TestClient, normal_user_token_headers, agent_user, sample_property
+    def test_delete_favorite_uses_auth_user_not_param(
+        self, client: TestClient, normal_user_token_headers, sample_property
     ):
-        response = client.delete(
-            f"/api/v1/favorites/?user_id={agent_user.user_id}&property_id={sample_property.property_id}",
+        client.post(
+            "/api/v1/favorites/",
+            json={"property_id": sample_property.property_id},
             headers=normal_user_token_headers
         )
-        assert response.status_code == 403
+
+        response = client.delete(
+            f"/api/v1/favorites/?property_id={sample_property.property_id}",
+            headers=normal_user_token_headers
+        )
+        assert response.status_code == 200
+        assert response.json()["deleted_at"] is not None
+        assert response.json()["deleted_by"] is not None
 
     def test_delete_nonexistent_favorite_returns_404(
         self, client: TestClient, normal_user_token_headers, normal_user
     ):
         response = client.delete(
-            f"/api/v1/favorites/?user_id={normal_user.user_id}&property_id=999999",
+            "/api/v1/favorites/?property_id=999999",
             headers=normal_user_token_headers
         )
         assert response.status_code == 404
@@ -126,7 +135,7 @@ class TestDeleteFavorite:
 
         # Now delete it
         response = client.delete(
-            f"/api/v1/favorites/?user_id={normal_user.user_id}&property_id={sample_property.property_id}",
+            f"/api/v1/favorites/?property_id={sample_property.property_id}",
             headers=normal_user_token_headers
         )
         assert response.status_code == 200
@@ -150,6 +159,7 @@ class TestGetUserFavorites:
             headers=normal_user_token_headers
         )
         assert response.status_code == 403
+        assert response.json()["detail"] == "Cannot access another user's favorites"
 
     def test_admin_can_get_other_user_favorites(
         self, client: TestClient, admin_token_headers, normal_user
@@ -187,25 +197,15 @@ class TestRestoreFavorite:
     def test_unauthenticated_returns_401(self, client: TestClient):
         # No fixtures needed — just hit the endpoint without auth
         response = client.post(
-            "/api/v1/favorites/restore?user_id=1&property_id=1"
+            "/api/v1/favorites/restore?property_id=1"
         )
         assert response.status_code == 401
-
-    def test_restore_other_user_favorite_returns_403(
-        self, client: TestClient, normal_user_token_headers,
-        agent_user, sample_property
-    ):
-        response = client.post(
-            f"/api/v1/favorites/restore?user_id={agent_user.user_id}&property_id={sample_property.property_id}",
-            headers=normal_user_token_headers
-        )
-        assert response.status_code == 403
 
     def test_restore_nonexistent_favorite_returns_404(
         self, client: TestClient, normal_user_token_headers, normal_user
     ):
         response = client.post(
-            f"/api/v1/favorites/restore?user_id={normal_user.user_id}&property_id=999999",
+            "/api/v1/favorites/restore?property_id=999999",
             headers=normal_user_token_headers
         )
         assert response.status_code == 404
@@ -221,12 +221,12 @@ class TestRestoreFavorite:
         )
         # Delete it
         client.delete(
-            f"/api/v1/favorites/?user_id={normal_user.user_id}&property_id={sample_property.property_id}",
+            f"/api/v1/favorites/?property_id={sample_property.property_id}",
             headers=normal_user_token_headers
         )
         # Restore it
         response = client.post(
-            f"/api/v1/favorites/restore?user_id={normal_user.user_id}&property_id={sample_property.property_id}",
+            f"/api/v1/favorites/restore?property_id={sample_property.property_id}",
             headers=normal_user_token_headers
         )
         assert response.status_code == 200
@@ -237,23 +237,14 @@ class TestRestoreFavorite:
 class TestCheckIsFavorited:
 
     def test_unauthenticated_returns_401(self, client: TestClient):
-        response = client.get("/api/v1/favorites/is-favorited?user_id=1&property_id=1")
+        response = client.get("/api/v1/favorites/is-favorited?property_id=1")
         assert response.status_code == 401
-
-    def test_check_other_user_favorite_returns_403(
-        self, client: TestClient, normal_user_token_headers, agent_user, sample_property
-    ):
-        response = client.get(
-            f"/api/v1/favorites/is-favorited?user_id={agent_user.user_id}&property_id={sample_property.property_id}",
-            headers=normal_user_token_headers
-        )
-        assert response.status_code == 403
 
     def test_check_is_favorited_success(
         self, client: TestClient, normal_user_token_headers, normal_user, sample_property
     ):
         response = client.get(
-            f"/api/v1/favorites/is-favorited?user_id={normal_user.user_id}&property_id={sample_property.property_id}",
+            f"/api/v1/favorites/is-favorited?property_id={sample_property.property_id}",
             headers=normal_user_token_headers
         )
         assert response.status_code == 200
@@ -267,6 +258,11 @@ class TestCountPropertyFavorites:
     def test_property_not_found_returns_404(self, client: TestClient):
         response = client.get("/api/v1/favorites/count/999999")
         assert response.status_code == 404
+
+    def test_favorite_count_is_public(self, client: TestClient, sample_property):
+        response = client.get(f"/api/v1/favorites/count/{sample_property.property_id}")
+        assert response.status_code == 200
+        assert "favorite_count" in response.json()
 
     def test_count_property_favorites_success(self, client: TestClient, sample_property):
         response = client.get(f"/api/v1/favorites/count/{sample_property.property_id}")

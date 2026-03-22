@@ -1,7 +1,7 @@
 # app/models/analytics.py
-"""
-Analytics ORM Models - Read-Only Views
-Maps to DB views: active_properties, agent_performance
+""" 
+Analytics ORM Models - Read-Only Views.
+Maps to DB views: active_properties, agent_performance.
 These are NOT tables - they are pre-computed views with SECURITY INVOKER enabled.
 
 Usage:
@@ -17,19 +17,17 @@ from app.models.base import Base
 
 
 class ActivePropertiesView(Base):
-    """
-    Read-only ORM model for active_properties view.
-    
-    This view pre-computes property listings with:
-    - Location data (state, city, neighborhood)
-    - Property type name
-    - Owner information
-    - Aggregated counts (images, amenities, reviews)
-    - Average rating
-    
-    Filters: deleted_at IS NULL (only active properties)
-    RLS: security_invoker = true (caller's permissions apply)
-    """
+    # Read-only ORM model for active_properties view.
+    #
+    # This view pre-computes property listings with:
+    # - Location data (state, city, neighborhood)
+    # - Property type name
+    # - Owner information
+    # - Aggregated counts (images, amenities, reviews)
+    # - Average rating
+    #
+    # Filters: deleted_at IS NULL (only active properties)
+    # RLS: security_invoker = true (caller's permissions apply)
     __tablename__ = "active_properties"
     __table_args__ = {
         "info": {"is_view": True},
@@ -87,17 +85,15 @@ class ActivePropertiesView(Base):
 
 
 class AgentPerformanceView(Base):
-    """
-    Read-only ORM model for agent_performance view.
-    
-    This view pre-computes agent metrics:
-    - Total/active/sold listings
-    - Review count and average rating
-    - Agency affiliation
-    
-    Filters: user_role = 'agent'
-    RLS: security_invoker = true (caller's permissions apply)
-    """
+    # Read-only ORM model for agent_performance view.
+    #
+    # This view pre-computes agent metrics:
+    # - Total/active/sold listings
+    # - Review count and average rating
+    # - Agency affiliation
+    #
+    # Filters: user_role = 'agent'
+    # RLS: security_invoker = true (caller's permissions apply)
     __tablename__ = "agent_performance"
     __table_args__ = {
         "info": {"is_view": True},

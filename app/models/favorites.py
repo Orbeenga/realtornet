@@ -1,18 +1,15 @@
 # app/models/favorites.py
-"""Favorite model - 100% fidelity to database schema."""
+# Favorite model - 100% fidelity to database schema.
 
-from sqlalchemy import Column, BigInteger, ForeignKey, DateTime
+from sqlalchemy import Column, BigInteger, ForeignKey
 from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
 
 from app.models.base import Base, TimestampMixin, SoftDeleteMixin
 
 
 class Favorite(Base, TimestampMixin, SoftDeleteMixin):
-    """
-    Favorite properties model with composite primary key.
-    Primary Key: (user_id, property_id)
-    """
+    # Favorite properties model with composite primary key.
+    # Primary Key: (user_id, property_id).
     __tablename__ = "favorites"
 
     user_id = Column(BigInteger, ForeignKey("users.user_id"), primary_key=True, nullable=False)

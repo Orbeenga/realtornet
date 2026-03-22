@@ -133,7 +133,7 @@ class TestSoftDelete:
             mock_db.refresh.return_value = None
             crud.soft_delete(mock_db, user_id=1, deleted_by_supabase_id="admin-uuid")
         assert obj.deleted_by == "admin-uuid"
-        assert obj.updated_by != "admin-uuid"
+        assert obj.updated_by == "admin-uuid"
 
     def test_no_deleted_by_skips_updated_by(self, crud, mock_db):
         """Line 257 branch: no deleted_by → updated_by not set."""

@@ -451,13 +451,14 @@ class TestScatteredMissingLines:
     
     def test_soft_delete_with_flush(self, db: Session, sample_property):
         """Ensure soft_delete uses flush not commit"""
-        deleted = property_crud.soft_delete(db, property_id=sample_property.property_id)
+        deleted = property_crud.soft_delete(db, property_id=sample_property.property_id, deleted_by_supabase_id="550e8400-e29b-41d4-a716-446655440001")
         # Should be deleted in transaction
         assert deleted.deleted_at is not None
     
     def test_restore_with_flush(self, db: Session, sample_property):
         """Ensure restore uses flush not commit"""
-        property_crud.soft_delete(db, property_id=sample_property.property_id)
+        property_crud.soft_delete(db, property_id=sample_property.property_id, deleted_by_supabase_id="550e8400-e29b-41d4-a716-446655440001")
         restored = property_crud.restore(db, property_id=sample_property.property_id)
         # Should be restored in transaction
         assert restored.deleted_at is None
+

@@ -259,7 +259,7 @@ async def upload_user_profile_image(
     if file.content_type not in allowed_types:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"File type not allowed. Supported types: {', '.join(allowed_types)}"
+            detail="File type not allowed. Supported formats: JPEG, PNG, GIF."
         )
     
     try:
@@ -297,13 +297,10 @@ async def upload_user_profile_image(
     
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         logger.error(
             "Profile image upload failed",
-            extra={
-                "user_id": user_id,
-                "error": str(e)
-            },
+            extra={"user_id": user_id},
             exc_info=True
         )
         raise HTTPException(

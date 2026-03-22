@@ -1,5 +1,5 @@
 # app/models/property_types.py
-"""PropertyType model - 100% fidelity to database schema."""
+# PropertyType model - 100% fidelity to database schema.
 
 from sqlalchemy import Column, BigInteger, String, Text
 from sqlalchemy.orm import relationship
@@ -8,10 +8,8 @@ from app.models.base import Base, TimestampMixin
 
 
 class PropertyType(Base, TimestampMixin):
-    """
-    Property type model (e.g., apartment, house, land).
-    Primary Key: property_type_id (bigint GENERATED ALWAYS AS IDENTITY)
-    """
+    # Property type model (e.g., apartment, house, land).
+    # Primary Key: property_type_id (bigint GENERATED ALWAYS AS IDENTITY).
     __tablename__ = "property_types"
 
     property_type_id = Column(BigInteger, primary_key=True, autoincrement=True)

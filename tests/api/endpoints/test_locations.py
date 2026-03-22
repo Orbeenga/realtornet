@@ -250,13 +250,14 @@ class TestDeleteLocation:
         db.refresh(loc)
 
         from app.crud.properties import property as property_crud
-        monkeypatch.setattr(property_crud, "count_by_LocationResponse", lambda *args, **kwargs: 1, raising=False)
+        monkeypatch.setattr(property_crud, "count_by_location", lambda *args, **kwargs: 1)
 
         response = client.delete(
             f"/api/v1/locations/{loc.location_id}",
             headers=admin_token_headers
         )
         assert response.status_code == 400
+        assert response.json()["detail"] == "Cannot delete location with active properties. Remove properties first."
 
     def test_delete_location_success(self, client: TestClient, admin_token_headers, db, monkeypatch):
         loc = Location(state="Lagos", city="Ikeja")
@@ -265,13 +266,14 @@ class TestDeleteLocation:
         db.refresh(loc)
 
         from app.crud.properties import property as property_crud
-        monkeypatch.setattr(property_crud, "count_by_LocationResponse", lambda *args, **kwargs: 0, raising=False)
+        monkeypatch.setattr(property_crud, "count_by_location", lambda *args, **kwargs: 0)
 
         response = client.delete(
             f"/api/v1/locations/{loc.location_id}",
             headers=admin_token_headers
         )
         assert response.status_code == 200
+        assert response.json()["deleted_at"] is not None
 
 
 class TestReadLocationsByCoordinates:

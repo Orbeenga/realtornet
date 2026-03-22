@@ -1,8 +1,8 @@
 # app/models/agencies.py
-"""
+""" 
 Agency model - strictly matching database schema.
-DB Table: agencies
-Phase 2 Aligned: Canonical location, soft delete, audit trail
+DB Table: agencies.
+Phase 2 Aligned: Canonical location, soft delete, audit trail.
 """
 
 from sqlalchemy import Column, BigInteger, String, Text, Boolean, CheckConstraint, text
@@ -12,17 +12,15 @@ from app.models.base import Base, AuditMixin, SoftDeleteMixin
 
 
 class Agency(Base, AuditMixin, SoftDeleteMixin):
-    """
-    Agency model for real estate companies.
-    Matches DB table: agencies
-    Primary Key: agency_id (bigint GENERATED ALWAYS AS IDENTITY)
-    
-    Canonical Compliance:
-    - BigInteger PK with proper naming (agency_id, not id)
-    - AuditMixin for updated_by tracking (Rule #12)
-    - SoftDeleteMixin for deleted_at (Rule #10)
-    - Proper relationship naming (agents per Option A)
-    """
+    # Agency model for real estate companies.
+    # Matches DB table: agencies.
+    # Primary Key: agency_id (bigint GENERATED ALWAYS AS IDENTITY).
+    #
+    # Canonical Compliance:
+    # - BigInteger PK with proper naming (agency_id, not id)
+    # - AuditMixin for updated_by tracking (Rule #12)
+    # - SoftDeleteMixin for deleted_at (Rule #10)
+    # - Proper relationship naming (agents per Option A)
     __tablename__ = "agencies"
     
     # Primary key

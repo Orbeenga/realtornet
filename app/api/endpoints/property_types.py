@@ -141,11 +141,15 @@ def delete_property_type(
         )
     
     # Updated: Using property_crud alias to check usage
-    properties_count = property_crud.count_by_type(db, property_type_id=property_type_id)
+    properties_count = property_crud.count_by_type(
+        db,
+        property_type_id=property_type_id,
+        include_deleted=True
+    )
     if properties_count > 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot delete property type that is used by {properties_count} properties"
+            detail="Cannot delete property type that is in use by existing properties."
         )
     
     # Updated: Using property_type_crud alias

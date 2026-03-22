@@ -105,7 +105,7 @@ class TestPropertyFinalConquest:
         
         assert property_crud.bulk_verify(db, property_ids=ids) == 2
         assert property_crud.bulk_update_status(db, property_ids=ids, new_status=ListingStatus.sold) == 2
-        assert property_crud.bulk_soft_delete(db, property_ids=ids) == 2
+        assert property_crud.bulk_soft_delete(db, property_ids=ids, deleted_by_supabase_id="550e8400-e29b-41d4-a716-446655440001") == 2
 
     def test_update_exception_handling(self, db: Session, sample_property):
         """Targets 404 error branches (Lines 280-305)."""
@@ -122,7 +122,7 @@ class TestPropertyFinalConquest:
     def test_restore_and_hard_delete(self, db: Session, sample_property):
         """Targets cleanup logic."""
         pid = sample_property.property_id
-        property_crud.soft_delete(db, property_id=pid)
+        property_crud.soft_delete(db, property_id=pid, deleted_by_supabase_id="550e8400-e29b-41d4-a716-446655440001")
         
         # Restore logic
         restored = property_crud.restore(db, property_id=pid)
@@ -131,3 +131,4 @@ class TestPropertyFinalConquest:
         # Hard delete logic
         property_crud.hard_delete_admin_only(db, property_id=pid)
         assert property_crud.get(db, pid) is None
+

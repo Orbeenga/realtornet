@@ -330,7 +330,7 @@ def update_inquiry_status(
     if inquiry_status not in valid_statuses:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}"
+            detail="Invalid inquiry status provided."
         )
     updated_inquiry = inquiry_crud.update_status(
         db=db, 
@@ -448,15 +448,14 @@ def count_inquiries_for_property(
     *,
     db: Session = Depends(get_db),
     property_id: int,
-    # No auth — public endpoint
-    # current_user: UserResponse = Depends(get_current_user)
+    current_user: UserResponse = Depends(get_current_active_user)
 ) -> dict:
     """
     Count total active inquiries for a property.
     
     - Property owner can view count
     - Admins can view any property's count
-    - Public endpoint for basic counts (consider rate limiting)
+    - Requires active authenticated user
     """
     # Check if property exists
     property = property_crud.get(db=db, property_id=property_id)
@@ -466,8 +465,13 @@ def count_inquiries_for_property(
             detail="Property not found"
         )
 
-    # For detailed counts, check authorization
-    # For now, allow public access but could add rate limiting
+    # Check authorization: property owner or admin
+    if property.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough permissions to view inquiry count for this property"
+        )
+
     count = inquiry_crud.count_by_property(
         db=db,
         property_id=property_id
@@ -511,7 +515,7 @@ def count_inquiries_by_status(
     if inquiry_status not in valid_statuses:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, 
-            detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}"
+            detail="Invalid inquiry status provided."
         )
     
     count = inquiry_crud.count_by_status(

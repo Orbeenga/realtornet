@@ -355,13 +355,13 @@ class TestPropertyErrorPaths:
     def test_soft_delete_already_deleted(self, db: Session, sample_property):
         """Test soft deleting an already soft-deleted property"""
         # First delete
-        property_crud.soft_delete(db, property_id=sample_property.property_id)
+        property_crud.soft_delete(db, property_id=sample_property.property_id, deleted_by_supabase_id="550e8400-e29b-41d4-a716-446655440001")
         
         # Try to delete again (idempotent check)
-        result = property_crud.soft_delete(db, property_id=sample_property.property_id)
+        result = property_crud.soft_delete(db, property_id=sample_property.property_id, deleted_by_supabase_id="550e8400-e29b-41d4-a716-446655440001")
         
-        assert result is not None
-        assert result.deleted_at is not None
+        # Default get() excludes deleted rows, so second soft_delete returns None.
+        assert result is None
     
     def test_restore_never_deleted(self, db: Session, sample_property):
         """Test restoring a property that was never deleted"""
@@ -470,7 +470,8 @@ class TestPropertyBatchOperations:
             property_ids = [p.property_id for p in multiple_properties[:2]]
             result = property_crud.bulk_soft_delete(
                 db,
-                property_ids=property_ids
+                property_ids=property_ids,
+                deleted_by_supabase_id="550e8400-e29b-41d4-a716-446655440001"
             )
             assert result is not None
         except AttributeError:
@@ -558,3 +559,4 @@ class TestPropertyValidation:
             results = property_crud.search(db, search_term=term, skip=0, limit=10)
             # Should return empty or safe results, not crash
             assert isinstance(results, list)
+

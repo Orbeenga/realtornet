@@ -1,5 +1,5 @@
 # app/models/properties.py
-"""Property model - 100% fidelity to database schema."""
+# Property model - 100% fidelity to database schema.
 
 from sqlalchemy import Column, BigInteger, ForeignKey, String, Text, Numeric, Boolean, CheckConstraint, DateTime, Integer, text
 from sqlalchemy.dialects.postgresql import ENUM
@@ -11,14 +11,14 @@ from app.models.base import Base, AuditMixin, SoftDeleteMixin
 
 
 class ListingType(str, enum.Enum):  
-    """Listing type enum matching DB listing_type_enum"""
+    # Listing type enum matching DB listing_type_enum.
     sale = "sale"
     rent = "rent"
     lease = "lease"
 
 
 class ListingStatus(str, enum.Enum):   
-    """Listing status enum - Fully lowercase for consistency"""
+    # Listing status enum - fully lowercase for consistency.
     available = "available"
     active = "active"
     pending = "pending"
@@ -27,10 +27,8 @@ class ListingStatus(str, enum.Enum):
     unavailable = "unavailable"
 
 class Property(Base, AuditMixin, SoftDeleteMixin):
-    """
-    Property listing model.
-    Primary Key: property_id (bigint GENERATED ALWAYS AS IDENTITY)
-    """
+    # Property listing model.
+    # Primary Key: property_id (bigint GENERATED ALWAYS AS IDENTITY).
     __tablename__ = "properties"
 
     property_id = Column(BigInteger, primary_key=True, autoincrement=True)

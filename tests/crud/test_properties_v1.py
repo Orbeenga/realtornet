@@ -239,7 +239,9 @@ class TestPropertyRead:
     def test_get_multi_excludes_deleted(self, db: Session, sample_property):
         """Test get_multi excludes soft-deleted properties by default"""
         # Soft delete the property
-        property_crud.soft_delete(db, property_id=sample_property.property_id)
+        property_crud.soft_delete(
+            db, property_id=sample_property.property_id, deleted_by_supabase_id="550e8400-e29b-41d4-a716-446655440001"
+        )
         
         # Get all properties
         props = property_crud.get_multi(db, skip=0, limit=100)
@@ -370,7 +372,8 @@ class TestPropertyDelete:
         """Test soft deleting a property"""
         deleted = property_crud.soft_delete(
             db,
-            property_id=sample_property.property_id
+            property_id=sample_property.property_id,
+            deleted_by_supabase_id="550e8400-e29b-41d4-a716-446655440001"
         )
         
         assert deleted is not None
@@ -379,7 +382,9 @@ class TestPropertyDelete:
     def test_soft_deleted_excluded_from_queries(self, db: Session, sample_property):
         """Test soft-deleted properties are excluded from get_multi"""
         # Soft delete
-        property_crud.soft_delete(db, property_id=sample_property.property_id)
+        property_crud.soft_delete(
+            db, property_id=sample_property.property_id, deleted_by_supabase_id="550e8400-e29b-41d4-a716-446655440001"
+        )
         
         # Try to get all properties
         props = property_crud.get_multi(db, skip=0, limit=100)
@@ -391,7 +396,9 @@ class TestPropertyDelete:
     def test_restore_soft_deleted_property(self, db: Session, sample_property):
         """Test restoring a soft-deleted property"""
         # Soft delete first
-        property_crud.soft_delete(db, property_id=sample_property.property_id)
+        property_crud.soft_delete(
+            db, property_id=sample_property.property_id, deleted_by_supabase_id="550e8400-e29b-41d4-a716-446655440001"
+        )
         
         # Restore
         restored = property_crud.restore(
@@ -439,3 +446,4 @@ class TestPropertyAuthorization:
         )
         
         assert can_modify is True
+

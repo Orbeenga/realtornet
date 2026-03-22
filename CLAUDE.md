@@ -4,6 +4,10 @@ This file is the authoritative reference for all architectural decisions, standi
 and hard-won lessons from the RealtorNet build and test campaign. Claude must consult this
 file before making any recommendation that touches models, CRUD, schemas, endpoints, or tests.
 
+Script lookup workflow:
+- Read `scriptReferences.md` first when locating scripts or command files.
+- Update `scriptReferences.md` immediately after adding, renaming, or refactoring any script.
+
 ---
 
 ## 1. Audit Trail Architecture
@@ -286,6 +290,26 @@ Use inline comments and short docstrings liberally where they clarify decisions,
 business rules, or non-obvious implementation details. The goal is explicit intent,
 not boilerplate.
 
+### 5.10 Targeted Test Runs Must Disable Coverage
+
+Never run pytest on a subset of tests with coverage enabled.
+The global `--cov-fail-under` threshold will fire against partial
+coverage and produce a false failure.
+
+```bash
+# CORRECT — targeted run, no coverage measurement
+pytest tests/api/endpoints/test_admin.py -v --no-cov
+
+# CORRECT — full suite with coverage
+pytest tests/ --cov=app --cov-report=term-missing
+
+# WRONG — triggers global threshold on partial coverage
+pytest tests/api/endpoints/test_admin.py -q
+```
+
+The `--no-cov` flag is mandatory on all targeted runs.
+Coverage measurement is only valid on the full test suite.
+
 ---
 
 ## 6. Logging Rules
@@ -342,7 +366,77 @@ unless explicitly re-evaluated with the full cascade impact considered.
 
 ---
 
-## 9. Coverage Campaign Status (as of 2026-03-10)
+## 9. Inline Commenting Standard (Enforced Architecture)
+
+### 9.1 Tool Hierarchy
+
+Four commenting tools exist. Each has exactly one role:
+
+1. **File header** - `# app/models/properties.py` - always the first line of every file.
+2. **Section heading** - `# --- SECTION NAME ---` - block breaks in long files (CRUD, endpoints).
+   Use sparingly in short files.
+3. **Inline comment** - `# explanation` - the primary tool. Used beside a line, above a line,
+   or below a line to explain decisions, constraints, and non-obvious logic.
+4. **Docstring** - `"""..."""` - restricted. Only inside `def` blocks where IDE hover or
+   Sphinx generation is the explicit goal. Never on class bodies. Never as a substitute
+   for inline comments.
+
+### 9.2 Prohibited Patterns
+
+```python
+# WRONG - docstring on class body
+class Property(Base, AuditMixin, SoftDeleteMixin):
+    """Property listing model."""
+
+# CORRECT - inline comment on class body
+class Property(Base, AuditMixin, SoftDeleteMixin):
+    # Property listing model.
+    # Primary Key: property_id (bigint GENERATED ALWAYS AS IDENTITY)
+
+# WRONG - docstring substituting for inline decision comment
+listing_status = Column(...)
+"""Soft enum reference, create_type=False"""
+
+# CORRECT - inline comment beside the line
+listing_status = Column(...)  # soft enum ref, create_type=False - PREFLIGHT section 4
+
+# WRONG - bland uncommented column block
+property_id = Column(BigInteger, primary_key=True, autoincrement=True)
+user_id = Column(BigInteger, ForeignKey("users.user_id"), nullable=True)
+
+# CORRECT - each non-obvious line carries its reason
+property_id = Column(BigInteger, primary_key=True, autoincrement=True)  # PK - bigint GENERATED ALWAYS AS IDENTITY
+user_id = Column(BigInteger, ForeignKey("users.user_id"), nullable=True)  # FK - agency resolved through User, not direct
+```
+
+### 9.3 Long File Structure (CRUD and Endpoints)
+
+Files over ~100 lines use section headings to break logical blocks:
+
+```python
+# app/crud/properties.py
+
+# --- QUERY METHODS ---
+
+# --- WRITE METHODS ---
+
+# --- SOFT DELETE & RESTORE ---
+
+# --- BULK OPERATIONS ---
+
+# --- ADMIN METHODS ---
+```
+
+### 9.4 Enforcement Rule
+
+If a `"""docstring"""` appears outside a `def` block, it is a violation.
+If a column, relationship, or constraint has no inline comment explaining
+a non-obvious decision, it is incomplete.
+The analyst must apply the four-tool hierarchy on every file touched.
+
+---
+
+## 10. Coverage Campaign Status (as of 2026-03-10)
 
 - **Coverage:** 81.88% — threshold 80% met
 - **Tests:** 1368 passed, 1 skipped, 0 failed

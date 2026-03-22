@@ -463,12 +463,12 @@ class TestUpdateValidation:
 
 class TestUpdateListingStatus:
     def test_not_found_returns_none(self, crud, mock_db):
-        mock_db.get.return_value = None
+        crud.get = MagicMock(return_value=None)
         assert crud.update_listing_status(mock_db, property_id=999, listing_status=ListingStatus.sold) is None
 
     def test_updates_status(self, crud, mock_db):
         prop = make_property()
-        mock_db.get.return_value = prop
+        crud.get = MagicMock(return_value=prop)
         mock_db.add.return_value = None
         mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
@@ -479,7 +479,7 @@ class TestUpdateListingStatus:
 
     def test_updates_without_supabase_id(self, crud, mock_db):
         prop = make_property()
-        mock_db.get.return_value = prop
+        crud.get = MagicMock(return_value=prop)
         mock_db.add.return_value = None
         mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
@@ -493,12 +493,12 @@ class TestUpdateListingStatus:
 
 class TestVerifyProperty:
     def test_not_found_returns_none(self, crud, mock_db):
-        mock_db.get.return_value = None
+        crud.get = MagicMock(return_value=None)
         assert crud.verify_property(mock_db, property_id=999) is None
 
     def test_verify_sets_date(self, crud, mock_db):
         prop = make_property()
-        mock_db.get.return_value = prop
+        crud.get = MagicMock(return_value=prop)
         mock_db.add.return_value = None
         mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
@@ -508,7 +508,7 @@ class TestVerifyProperty:
 
     def test_unverify_clears_date(self, crud, mock_db):
         prop = make_property(is_verified=True, verification_date=datetime.now(timezone.utc))
-        mock_db.get.return_value = prop
+        crud.get = MagicMock(return_value=prop)
         mock_db.add.return_value = None
         mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
@@ -518,7 +518,7 @@ class TestVerifyProperty:
 
     def test_updated_by_set(self, crud, mock_db):
         prop = make_property()
-        mock_db.get.return_value = prop
+        crud.get = MagicMock(return_value=prop)
         mock_db.add.return_value = None
         mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
@@ -532,12 +532,12 @@ class TestVerifyProperty:
 
 class TestToggleFeatured:
     def test_not_found_returns_none(self, crud, mock_db):
-        mock_db.get.return_value = None
+        crud.get = MagicMock(return_value=None)
         assert crud.toggle_featured(mock_db, property_id=999, is_featured=True) is None
 
     def test_feature_property(self, crud, mock_db):
         prop = make_property(is_featured=False)
-        mock_db.get.return_value = prop
+        crud.get = MagicMock(return_value=prop)
         mock_db.add.return_value = None
         mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
@@ -546,7 +546,7 @@ class TestToggleFeatured:
 
     def test_unfeature_with_updated_by(self, crud, mock_db):
         prop = make_property(is_featured=True)
-        mock_db.get.return_value = prop
+        crud.get = MagicMock(return_value=prop)
         mock_db.add.return_value = None
         mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
@@ -719,7 +719,9 @@ class TestBulkSoftDelete:
     def test_bulk_soft_delete(self, crud, mock_db):
         mock_db.execute.return_value.rowcount = 5
         mock_db.flush.return_value = None
-        count = crud.bulk_soft_delete(mock_db, property_ids=[1, 2, 3, 4, 5])
+        count = crud.bulk_soft_delete(
+            mock_db, property_ids=[1, 2, 3, 4, 5], deleted_by_supabase_id="admin-uuid"
+        )
         assert count == 5
 
     def test_bulk_soft_delete_with_deleted_by(self, crud, mock_db):
@@ -734,7 +736,9 @@ class TestBulkSoftDelete:
     def test_bulk_soft_delete_empty(self, crud, mock_db):
         mock_db.execute.return_value.rowcount = 0
         mock_db.flush.return_value = None
-        count = crud.bulk_soft_delete(mock_db, property_ids=[])
+        count = crud.bulk_soft_delete(
+            mock_db, property_ids=[], deleted_by_supabase_id="admin-uuid"
+        )
         assert count == 0
 
 
@@ -782,12 +786,12 @@ class TestCalculateDistance:
 
 class TestSoftDeleteAndRestore:
     def test_soft_delete_not_found(self, crud, mock_db):
-        mock_db.get.return_value = None
+        crud.get = MagicMock(return_value=None)
         assert crud.soft_delete(mock_db, property_id=999) is None
 
     def test_soft_delete_sets_deleted_at(self, crud, mock_db):
         prop = make_property()
-        mock_db.get.return_value = prop
+        crud.get = MagicMock(return_value=prop)
         mock_db.add.return_value = None
         mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
