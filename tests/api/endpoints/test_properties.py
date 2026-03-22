@@ -5,8 +5,12 @@ Covers all routes, all visibility branches, all error paths.
 Uses real HTTP client (TestClient) — conftest.py wires auth + db.
 """
 import pytest
+import uuid
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
+
+from app.core.security import generate_access_token, get_password_hash
+from app.models.users import User, UserRole
 
 
 # ---------------------------------------------------------------------------
@@ -101,6 +105,17 @@ class TestCreateProperty:
         assert response.status_code == 403
         assert "agents and admins" in response.json()["detail"].lower()
 
+    def test_seeker_cannot_create_property_exact_error(
+        self, client: TestClient, normal_user_token_headers, property_create_payload
+    ):
+        response = client.post(
+            "/api/v1/properties/",
+            json=property_create_payload,
+            headers=normal_user_token_headers
+        )
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Only agents and admins can create property listings"
+
     def test_unauthenticated_forbidden(
         self, client: TestClient, property_create_payload
     ):
@@ -190,6 +205,7 @@ class TestReadProperty:
         """Non-existent ID → 404."""
         response = client.get("/api/v1/properties/999999")
         assert response.status_code == 404
+        assert response.json()["detail"] == "Property not found"
 
     def test_anonymous_verified_property_visible(
         self, client: TestClient, verified_property
@@ -205,6 +221,7 @@ class TestReadProperty:
         """Anonymous user → unverified property intentionally returns 404 (security obfuscation)."""
         response = client.get(f"/api/v1/properties/{unverified_property.property_id}")
         assert response.status_code == 404
+        assert response.json()["detail"] == "Property not found"
 
     def test_owner_can_see_own_unverified(
         self, client: TestClient, owner_token_headers, unverified_property_owned_by_agent
@@ -324,6 +341,37 @@ class TestUpdateProperty:
         )
         assert response.status_code == 200
 
+    def test_agent_cannot_update_other_agents_property(
+        self, client: TestClient, db, agent_user, unverified_property_owned_by_agent
+    ):
+        other_agent = User(
+            email=f"other_agent_{uuid.uuid4().hex[:6]}@example.com",
+            password_hash=get_password_hash("password"),
+            first_name="Other",
+            last_name="Agent",
+            user_role=UserRole.AGENT,
+            supabase_id=uuid.uuid4(),
+            agency_id=agent_user.agency_id,
+        )
+        db.add(other_agent)
+        db.flush()
+        db.refresh(other_agent)
+
+        other_agent_token = generate_access_token(
+            supabase_id=other_agent.supabase_id,
+            user_id=other_agent.user_id,
+            user_role=other_agent.user_role.value,
+        )
+        other_agent_headers = {"Authorization": f"Bearer {other_agent_token}"}
+
+        response = client.put(
+            f"/api/v1/properties/{unverified_property_owned_by_agent.property_id}",
+            json={"title": "hacked"},
+            headers=other_agent_headers
+        )
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Not enough permissions to update this property"
+
 
 # ===========================================================================
 # DELETE /{property_id}  —  soft delete
@@ -378,6 +426,36 @@ class TestDeleteProperty:
         )
         assert response.status_code == 200
         assert response.json()["deleted_at"] is not None
+
+    def test_agent_cannot_delete_other_agents_property(
+        self, client: TestClient, db, agent_user, unverified_property_owned_by_agent
+    ):
+        other_agent = User(
+            email=f"other_agent_{uuid.uuid4().hex[:6]}_delete@example.com",
+            password_hash=get_password_hash("password"),
+            first_name="Other",
+            last_name="Agent",
+            user_role=UserRole.AGENT,
+            supabase_id=uuid.uuid4(),
+            agency_id=agent_user.agency_id,
+        )
+        db.add(other_agent)
+        db.flush()
+        db.refresh(other_agent)
+
+        other_agent_token = generate_access_token(
+            supabase_id=other_agent.supabase_id,
+            user_id=other_agent.user_id,
+            user_role=other_agent.user_role.value,
+        )
+        other_agent_headers = {"Authorization": f"Bearer {other_agent_token}"}
+
+        response = client.delete(
+            f"/api/v1/properties/{unverified_property_owned_by_agent.property_id}",
+            headers=other_agent_headers
+        )
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Not enough permissions to delete this property"
 
 
 # ===========================================================================
@@ -548,3 +626,4 @@ class TestSearchByRadius:
         }
         response = client.get("/api/v1/properties/search/radius", params=params)
         assert response.status_code == 200
+

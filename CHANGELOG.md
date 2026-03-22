@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Fixed
+- `crud/users.py`: Replaced `db.commit()` with `db.flush()` throughout - eliminates test isolation violations
+- `crud/users.py`: `get()` now excludes soft-deleted users
+- `crud/users.py`: `activate()` now correctly fetches deleted users for restore; preserves `deleted_by` audit history on restore
+- `crud/users.py`: `deactivate()` and `soft_delete()` now always set `deleted_by` atomically with `deleted_at` (CLAUDE.md §1.3)
+- `crud/users.py`: `get_agents()` and `search()` now exclude soft-deleted users
+- `crud/properties.py`: `get()` now excludes soft-deleted properties
+- `crud/properties.py`: `restore()` now correctly fetches deleted properties; preserves `deleted_by` audit history on restore
+- `crud/properties.py`: Bulk operations no longer manually set `updated_at` (DB trigger is authoritative per CLAUDE.md §1.4)
+- `endpoints/admin.py`: Corrected activate/deactivate docstrings to accurately describe soft-delete/restore semantics
+
+### Removed
+- `app/core/dependencies.py`: Dead shim - no imports existed outside the file itself
+
 ## [0.5.0] - 2026-03-16
 
 ### Added

@@ -209,7 +209,9 @@ class TestBulkOperationEdgeCases:
     
     def test_bulk_soft_delete_empty_list(self, db: Session):
         """Test bulk soft delete with empty list"""
-        count = property_crud.bulk_soft_delete(db, property_ids=[])
+        count = property_crud.bulk_soft_delete(
+            db, property_ids=[], deleted_by_supabase_id="550e8400-e29b-41d4-a716-446655440001"
+        )
         assert count == 0
     
     def test_bulk_soft_delete_with_deleted_by(self, db: Session, multiple_properties):
@@ -227,7 +229,7 @@ class TestBulkOperationEdgeCases:
     def test_bulk_operations_ignore_already_deleted(self, db: Session, sample_property):
         """Test that bulk operations skip already-deleted properties"""
         # Soft delete first
-        property_crud.soft_delete(db, property_id=sample_property.property_id)
+        property_crud.soft_delete(db, property_id=sample_property.property_id, deleted_by_supabase_id="550e8400-e29b-41d4-a716-446655440001")
         
         # Try to verify deleted property
         count = property_crud.bulk_verify(
@@ -343,7 +345,7 @@ class TestCRUDEdgeCases:
         # Get a featured property and delete it
         featured_props = [p for p in multiple_properties if p.is_featured]
         if featured_props:
-            property_crud.soft_delete(db, property_id=featured_props[0].property_id)
+            property_crud.soft_delete(db, property_id=featured_props[0].property_id, deleted_by_supabase_id="550e8400-e29b-41d4-a716-446655440001")
             
             # Should not appear in featured list
             featured_list = property_crud.get_featured(db, limit=100)
@@ -354,7 +356,7 @@ class TestCRUDEdgeCases:
     def test_restore_multiple_times(self, db: Session, sample_property):
         """Test restoring a property multiple times (idempotent)"""
         # Delete
-        property_crud.soft_delete(db, property_id=sample_property.property_id)
+        property_crud.soft_delete(db, property_id=sample_property.property_id, deleted_by_supabase_id="550e8400-e29b-41d4-a716-446655440001")
         
         # Restore first time
         restored1 = property_crud.restore(db, property_id=sample_property.property_id)
@@ -412,9 +414,10 @@ class TestPropertyIntegrationCoverage:
         assert prop.listing_status == ListingStatus.pending
         
         # Soft delete
-        prop = property_crud.soft_delete(db, property_id=prop.property_id)
+        prop = property_crud.soft_delete(db, property_id=prop.property_id, deleted_by_supabase_id="550e8400-e29b-41d4-a716-446655440001")
         assert prop.deleted_at is not None
         
         # Restore
         prop = property_crud.restore(db, property_id=prop.property_id)
         assert prop.deleted_at is None
+

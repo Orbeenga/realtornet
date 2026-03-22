@@ -1,5 +1,5 @@
 # app/models/saved_searches.py
-"""SavedSearch model - 100% fidelity to database schema."""
+# SavedSearch model - 100% fidelity to database schema.
 
 from sqlalchemy import Column, BigInteger, ForeignKey, String
 from sqlalchemy.dialects.postgresql import JSONB
@@ -9,10 +9,8 @@ from app.models.base import Base, TimestampMixin, SoftDeleteMixin
 
 
 class SavedSearch(Base, TimestampMixin, SoftDeleteMixin):
-    """
-    Saved search model for user property search preferences.
-    Primary Key: search_id (bigint GENERATED ALWAYS AS IDENTITY)
-    """
+    # Saved search model for user property search preferences.
+    # Primary Key: search_id (bigint GENERATED ALWAYS AS IDENTITY).
     __tablename__ = "saved_searches"
 
     search_id = Column(BigInteger, primary_key=True, autoincrement=True)

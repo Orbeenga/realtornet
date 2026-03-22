@@ -1,5 +1,5 @@
 # app/models/property_images.py
-"""PropertyImage model - 100% fidelity to database schema."""
+# PropertyImage model - 100% fidelity to database schema.
 
 from sqlalchemy import Column, Integer, BigInteger, ForeignKey, String, Boolean
 from sqlalchemy.orm import relationship
@@ -9,10 +9,8 @@ from app.models.base import Base, TimestampMixin
 
 
 class PropertyImage(Base, TimestampMixin):
-    """
-    Property image model for property photos.
-    Primary Key: image_id (bigint GENERATED ALWAYS AS IDENTITY)
-    """
+    # Property image model for property photos.
+    # Primary Key: image_id (bigint GENERATED ALWAYS AS IDENTITY).
     __tablename__ = "property_images"
 
     image_id = Column(BigInteger, primary_key=True, autoincrement=True)

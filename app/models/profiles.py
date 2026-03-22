@@ -1,20 +1,16 @@
 # app/models/profiles.py
-"""
-Profile model - strictly matching database schema.
-DB Table: profiles
-"""
+# Profile model - strictly matching database schema.
+# DB Table: profiles.
 
 from sqlalchemy import Column, BigInteger, ForeignKey, Text, String, Enum, text
 from sqlalchemy.orm import relationship
 import enum
-from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM
-
 from app.models.base import Base, AuditMixin, SoftDeleteMixin
 
 
 # Enums (Match DB exactly)
 class ProfileStatus(str, enum.Enum):
-    """Profile status enum - matches DB USER-DEFINED type"""
+    # Profile status enum - matches DB USER-DEFINED type.
     ACTIVE = "active"
     INACTIVE = "inactive"
     SUSPENDED = "suspended"
@@ -22,11 +18,9 @@ class ProfileStatus(str, enum.Enum):
 
 # Profile Model
 class Profile(Base, AuditMixin, SoftDeleteMixin):
-    """
-    Extended profile information for users.
-    Matches DB table: profiles
-    Primary Key: id (bigint GENERATED ALWAYS AS IDENTITY)
-    """
+    # Extended profile information for users.
+    # Matches DB table: profiles.
+    # Primary Key: profile_id (bigint GENERATED ALWAYS AS IDENTITY).
     __tablename__ = "profiles"
     
     # Primary key - matches DB exactly

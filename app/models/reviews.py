@@ -1,18 +1,15 @@
 # app/models/reviews.py
-"""Review model - 100% fidelity to database schema."""
+# Review model - 100% fidelity to database schema.
 
-from sqlalchemy import Column, BigInteger, Integer, ForeignKey, Text, CheckConstraint, DateTime
+from sqlalchemy import Column, BigInteger, Integer, ForeignKey, Text, CheckConstraint
 from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
 
 from app.models.base import Base, TimestampMixin, SoftDeleteMixin
 
 
 class Review(Base, TimestampMixin, SoftDeleteMixin):
-    """
-    Review model for properties and agents.
-    Primary Key: review_id (bigint GENERATED ALWAYS AS IDENTITY)
-    """
+    # Review model for properties and agents.
+    # Primary Key: review_id (bigint GENERATED ALWAYS AS IDENTITY).
     __tablename__ = "reviews"
 
     review_id = Column(BigInteger, primary_key=True, autoincrement=True)

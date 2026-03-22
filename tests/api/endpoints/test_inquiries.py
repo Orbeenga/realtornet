@@ -252,6 +252,7 @@ class TestReadInquiry:
             headers=other_headers
         )
         assert response.status_code == 403
+        assert response.json()["detail"] == "Not enough permissions to view this inquiry"
 
     def test_read_inquiry_property_missing_returns_404(
         self, client: TestClient, normal_user_token_headers, sample_property, monkeypatch
@@ -500,6 +501,7 @@ class TestDeleteInquiry:
             headers=normal_user_token_headers
         )
         assert response.status_code == 403
+        assert response.json()["detail"] == "Not enough permissions to delete this inquiry"
 
 
 class TestReadInquiriesByProperty:
@@ -596,6 +598,7 @@ class TestUpdateInquiryStatus:
             headers=agent_token_headers
         )
         assert response.status_code == 400
+        assert response.json()["detail"] == "Invalid inquiry status provided."
 
     def test_update_status_property_missing_returns_404(
         self, client: TestClient, agent_token_headers,
@@ -892,12 +895,37 @@ class TestMarkInquiryResponded:
 
 class TestCountInquiries:
 
-    def test_property_not_found_returns_404(self, client: TestClient):
-        response = client.get("/api/v1/inquiries/count/999999")
+    def test_count_inquiries_unauthenticated_returns_401(self, client: TestClient):
+        response = client.get("/api/v1/inquiries/count/1")
+        assert response.status_code == 401
+
+    def test_property_not_found_returns_404(
+        self, client: TestClient, agent_token_headers
+    ):
+        response = client.get(
+            "/api/v1/inquiries/count/999999",
+            headers=agent_token_headers
+        )
         assert response.status_code == 404
 
-    def test_count_inquiries_success(self, client: TestClient, sample_property):
-        response = client.get(f"/api/v1/inquiries/count/{sample_property.property_id}")
+    def test_non_owner_cannot_view_inquiry_count_returns_403(
+        self, client: TestClient, normal_user_token_headers,
+        unverified_property_owned_by_agent
+    ):
+        response = client.get(
+            f"/api/v1/inquiries/count/{unverified_property_owned_by_agent.property_id}",
+            headers=normal_user_token_headers
+        )
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Not enough permissions to view inquiry count for this property"
+
+    def test_count_inquiries_success(
+        self, client: TestClient, agent_token_headers, unverified_property_owned_by_agent
+    ):
+        response = client.get(
+            f"/api/v1/inquiries/count/{unverified_property_owned_by_agent.property_id}",
+            headers=agent_token_headers
+        )
         assert response.status_code == 200
         data = response.json()
         assert "property_id" in data
@@ -935,6 +963,7 @@ class TestCountInquiries:
             headers=agent_token_headers
         )
         assert response.status_code == 400
+        assert response.json()["detail"] == "Invalid inquiry status provided."
 
     def test_count_inquiries_by_status_success(
         self, client: TestClient, agent_token_headers,

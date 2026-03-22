@@ -1,5 +1,5 @@
 # app/models/property_amenities.py
-"""PropertyAmenity junction table - 100% fidelity to database schema."""
+# PropertyAmenity junction table - 100% fidelity to database schema.
 
 from sqlalchemy import Table, Column, BigInteger, ForeignKey
 

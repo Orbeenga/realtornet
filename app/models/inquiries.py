@@ -1,9 +1,7 @@
 # app/models/inquiries.py
-"""
-Inquiry model - strictly matching database schema.
-DB Table: inquiries
-Phase 2 Aligned: Canonical PK naming, ENUM type, soft delete
-"""
+# Inquiry model - strictly matching database schema.
+# DB Table: inquiries.
+# Phase 2 Aligned: Canonical PK naming, ENUM type, soft delete.
 import enum
 from sqlalchemy import Column, BigInteger, ForeignKey, Text, Enum as SQLEnum, text
 from sqlalchemy.orm import relationship
@@ -16,17 +14,15 @@ class InquiryStatus(str, enum.Enum):
     responded = "responded"
 
 class Inquiry(Base, TimestampMixin, SoftDeleteMixin):
-    """
-    Property inquiry model.
-    Matches DB table: inquiries
-    Primary Key: inquiry_id (bigint GENERATED ALWAYS AS IDENTITY)
-    
-    Canonical Compliance:
-    - BigInteger PK with proper naming (inquiry_id, not id)
-    - ENUM type matching DB (inquiry_status_enum)
-    - BigInteger FKs matching referenced tables
-    - SoftDeleteMixin for deleted_at
-    """
+    # Property inquiry model.
+    # Matches DB table: inquiries.
+    # Primary Key: inquiry_id (bigint GENERATED ALWAYS AS IDENTITY).
+    #
+    # Canonical Compliance:
+    # - BigInteger PK with proper naming (inquiry_id, not id)
+    # - ENUM type matching DB (inquiry_status_enum)
+    # - BigInteger FKs matching referenced tables
+    # - SoftDeleteMixin for deleted_at
     __tablename__ = "inquiries"
 
     # Primary key - CORRECTED to match DB naming
