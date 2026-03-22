@@ -94,10 +94,11 @@ class TestPropertyMissingLines:
         ids = [p.property_id for p in geo_properties]
         assert property_crud.bulk_verify(db, property_ids=ids, is_verified=True) == len(ids)
         assert property_crud.bulk_update_status(db, property_ids=ids, new_status=ListingStatus.sold) == len(ids)
-        assert property_crud.bulk_soft_delete(db, property_ids=ids) == len(ids)
+        assert property_crud.bulk_soft_delete(db, property_ids=ids, deleted_by_supabase_id="550e8400-e29b-41d4-a716-446655440001") == len(ids)
 
     def test_geospatial_distance_calculation(self, db: Session, geo_properties):
         """Hits the distance calculation utility if it exists."""
         if hasattr(property_crud, 'calculate_distance'):
             dist = property_crud.calculate_distance(geo_properties[0], geo_properties[1])
             assert dist >= 0
+

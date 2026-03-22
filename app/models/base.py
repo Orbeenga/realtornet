@@ -1,8 +1,6 @@
 # app/models/base.py
-"""
-SQLAlchemy Base Configuration - Database-First Canonical Approach
-All definitions strictly match the normalized database schema.
-"""
+# SQLAlchemy Base Configuration - Database-First Canonical Approach.
+# All definitions strictly match the normalized database schema.
 
 from sqlalchemy import MetaData, Column, DateTime, ForeignKey, Table
 from sqlalchemy.dialects.postgresql import UUID
@@ -24,22 +22,18 @@ metadata = MetaData(naming_convention=naming_convention)
 
 # Declarative Base
 class Base(DeclarativeBase):
-    """
-    Base class for all SQLAlchemy models.
-    
-    IMPORTANT: Do NOT define generic columns here.
-    Each table has its own specific primary key naming per DB schema.
-    All timestamp and identity columns are defined per-table.
-    """
+    # Base class for all SQLAlchemy models.
+    #
+    # IMPORTANT: Do NOT define generic columns here.
+    # Each table has its own specific primary key naming per DB schema.
+    # All timestamp and identity columns are defined per-table.
     metadata = metadata
 
 
 # Mixins (Match Database Schema Exactly)
 class TimestampMixin:
-    """
-    Standard timestamp fields for all tables.
-    Matches DB: timestamptz DEFAULT now()
-    """
+    # Standard timestamp fields for all tables.
+    # Matches DB: timestamptz DEFAULT now().
     
     created_at = Column(
         DateTime(timezone=True),
@@ -54,11 +48,9 @@ class TimestampMixin:
 
 
 class AuditMixin(TimestampMixin):
-    """
-    Audit trail mixin with created_by and updated_by tracking.
-    Use for: users, properties, agencies, agent_profiles, locations
-    Matches DB: created_by and updated_by uuid
-    """
+    # Audit trail mixin with created_by and updated_by tracking.
+    # Use for: users, properties, agencies, agent_profiles, locations.
+    # Matches DB: created_by and updated_by uuid.
     # Intentionally no ForeignKey (Supabase auth.users)
     @declared_attr
     def created_by(cls):
@@ -76,11 +68,9 @@ class AuditMixin(TimestampMixin):
 
 
 class SoftDeleteMixin:
-    """
-    Soft delete functionality via deleted_at timestamp.
-    Use for: properties, reviews, inquiries, favorites, saved_searches
-    Matches DB: deleted_at timestamp with time zone
-    """
+    # Soft delete functionality via deleted_at timestamp.
+    # Use for: properties, reviews, inquiries, favorites, saved_searches.
+    # Matches DB: deleted_at timestamp with time zone.
     deleted_at = Column(DateTime(timezone=True), nullable=True)
 
     # Intentionally no ForeignKey (Supabase auth.users)

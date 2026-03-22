@@ -393,7 +393,7 @@ class TestUserSoftDelete:
         
         assert deleted.deleted_at is not None
         assert str(deleted.deleted_by) == admin_id
-        assert deleted.updated_by is None
+        assert str(deleted.updated_by) == admin_id
     
     def test_soft_delete_nonexistent_user(self, db: Session):
         """Verify returns None for non-existent user"""

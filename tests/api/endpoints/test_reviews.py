@@ -70,6 +70,7 @@ class TestCreatePropertyReview:
             headers=normal_user_token_headers,
         )
         assert response.status_code == 400
+        assert response.json()["detail"] == "You have already reviewed this property"
 
     def test_create_success_201(
         self, client: TestClient, normal_user_token_headers, verified_property
@@ -219,6 +220,7 @@ class TestDeletePropertyReview:
             headers=owner_token_headers,
         )
         assert response.status_code == 403
+        assert response.json()["detail"] == "Not enough permissions to delete this ReviewResponse"
 
     def test_owner_soft_deletes_success(
         self, client: TestClient, db, normal_user, normal_user_token_headers, verified_property
@@ -239,6 +241,8 @@ class TestDeletePropertyReview:
             headers=admin_token_headers,
         )
         assert response.status_code == 200
+        assert response.json()["deleted_at"] is not None
+        assert response.json()["deleted_by"] is not None
 
 
 class TestCreateAgentReview:

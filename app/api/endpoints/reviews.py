@@ -67,19 +67,19 @@ def create_property_ReviewResponse(
         )
 
     # Check if user has already reviewed this property
-    existing_ReviewResponse = review_crud.get_property_review_by_user_and_property(
+    existing_review = review_crud.get_property_review_by_user_and_property(
         db=db,
         user_id=current_user.user_id,
         property_id=review_in.property_id
     )
-    if existing_ReviewResponse:
+    if existing_review:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="You have already reviewed this property"
         )
 
     # Create ReviewResponse with user association (no created_by per DB schema)
-    ReviewResponse = review_crud.create_property_ReviewResponse(
+    review_obj = review_crud.create_property_ReviewResponse(
         db=db,
         obj_in=review_in,
         user_id=current_user.user_id
@@ -88,14 +88,14 @@ def create_property_ReviewResponse(
     logger.info(
         "Property ReviewResponse created",
         extra={
-            "review_id": ReviewResponse.review_id,
+            "review_id": review_obj.review_id,
             "property_id": review_in.property_id,
             "user_id": current_user.user_id,
             "rating": review_in.rating
         }
     )
     
-    return ReviewResponse
+    return review_obj
 
 
 @router.get("/property/by-property/{property_id}", response_model=List[PropertyReviewResponse])
@@ -140,13 +140,13 @@ def read_property_ReviewResponse(
     
     Public endpoint - anyone can read reviews.
     """
-    ReviewResponse = review_crud.get_property_ReviewResponse(db=db, review_id=review_id)
-    if not ReviewResponse:
+    review_obj = review_crud.get_property_ReviewResponse(db=db, review_id=review_id)
+    if not review_obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Property ReviewResponse not found"
         )
-    return ReviewResponse
+    return review_obj
 
 
 @router.put("/property/{review_id}", response_model=PropertyReviewResponse)
@@ -166,24 +166,24 @@ def update_property_ReviewResponse(
     
     Note: reviews table has no updated_by column per DB schema
     """
-    ReviewResponse = review_crud.get_property_ReviewResponse(db=db, review_id=review_id)
-    if not ReviewResponse:
+    review_obj = review_crud.get_property_ReviewResponse(db=db, review_id=review_id)
+    if not review_obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Property ReviewResponse not found"
         )
 
     # Check authorization: owner or admin
-    if ReviewResponse.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    if review_obj.user_id != current_user.user_id and not user_crud.is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to update this ReviewResponse"
         )
 
     # Update (no updated_by per DB schema)
-    updated_ReviewResponse = review_crud.update_property_ReviewResponse(
+    updated_review = review_crud.update_property_ReviewResponse(
         db=db,
-        db_obj=ReviewResponse,
+        db_obj=review_obj,
         obj_in=review_in
     )
     
@@ -191,12 +191,12 @@ def update_property_ReviewResponse(
         "Property ReviewResponse updated",
         extra={
             "review_id": review_id,
-            "property_id": ReviewResponse.property_id,
+            "property_id": review_obj.property_id,
             "updated_by_user": current_user.user_id
         }
     )
     
-    return updated_ReviewResponse
+    return updated_review
 
 
 @router.delete("/property/{review_id}", response_model=PropertyReviewResponse)
@@ -214,28 +214,28 @@ def delete_property_ReviewResponse(
     
     Audit: Tracks who deleted via deleted_by (Supabase UUID)
     """
-    ReviewResponse = review_crud.get_property_ReviewResponse(db=db, review_id=review_id)
-    if not ReviewResponse:
+    review_obj = review_crud.get_property_ReviewResponse(db=db, review_id=review_id)
+    if not review_obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Property ReviewResponse not found"
         )
 
     # Check authorization: owner or admin
-    if ReviewResponse.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    if review_obj.user_id != current_user.user_id and not user_crud.is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to delete this ReviewResponse"
         )
 
     # Soft delete with audit trail
-    deleted_ReviewResponse = review_crud.soft_delete_property_ReviewResponse(
+    deleted_review = review_crud.soft_delete_property_ReviewResponse(
         db=db,
         review_id=review_id,
         deleted_by_supabase_id=current_user.supabase_id
     )
     
-    if not deleted_ReviewResponse:
+    if not deleted_review:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Property ReviewResponse not found during delete attempt"
@@ -245,13 +245,13 @@ def delete_property_ReviewResponse(
         "Property ReviewResponse soft deleted",
         extra={
             "review_id": review_id,
-            "property_id": deleted_ReviewResponse.property_id,
-            "user_id": deleted_ReviewResponse.user_id,
+            "property_id": deleted_review.property_id,
+            "user_id": deleted_review.user_id,
             "deleted_by": current_user.supabase_id
         }
     )
 
-    return deleted_ReviewResponse
+    return deleted_review
 
 
 # AGENT ReviewResponse ENDPOINTS
@@ -289,19 +289,19 @@ def create_agent_ReviewResponse(
         )
 
     # Check if user has already reviewed this agent
-    existing_ReviewResponse = review_crud.get_agent_review_by_user_and_agent(
+    existing_review = review_crud.get_agent_review_by_user_and_agent(
         db=db,
         user_id=current_user.user_id,
         agent_id=review_in.agent_id
     )
-    if existing_ReviewResponse:
+    if existing_review:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="You have already reviewed this agent"
         )
 
     # Create ReviewResponse with user association (no created_by per DB schema)
-    ReviewResponse = review_crud.create_agent_ReviewResponse(
+    review_obj = review_crud.create_agent_ReviewResponse(
         db=db,
         obj_in=review_in,
         user_id=current_user.user_id
@@ -310,14 +310,14 @@ def create_agent_ReviewResponse(
     logger.info(
         "Agent ReviewResponse created",
         extra={
-            "review_id": ReviewResponse.review_id,
+            "review_id": review_obj.review_id,
             "agent_id": review_in.agent_id,
             "user_id": current_user.user_id,
             "rating": review_in.rating
         }
     )
     
-    return ReviewResponse
+    return review_obj
 
 
 @router.get("/agent/by-agent/{agent_id}", response_model=List[AgentReviewResponse])
@@ -361,13 +361,13 @@ def read_agent_ReviewResponse(
     
     Public endpoint - anyone can read reviews.
     """
-    ReviewResponse = review_crud.get_agent_ReviewResponse(db=db, review_id=review_id)
-    if not ReviewResponse:
+    review_obj = review_crud.get_agent_ReviewResponse(db=db, review_id=review_id)
+    if not review_obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent ReviewResponse not found"
         )
-    return ReviewResponse
+    return review_obj
 
 
 @router.put("/agent/{review_id}", response_model=AgentReviewResponse)
@@ -386,24 +386,24 @@ def update_agent_ReviewResponse(
     
     Note: reviews table has no updated_by column per DB schema
     """
-    ReviewResponse = review_crud.get_agent_ReviewResponse(db=db, review_id=review_id)
-    if not ReviewResponse:
+    review_obj = review_crud.get_agent_ReviewResponse(db=db, review_id=review_id)
+    if not review_obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent ReviewResponse not found"
         )
 
     # Check authorization
-    if ReviewResponse.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    if review_obj.user_id != current_user.user_id and not user_crud.is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to update this ReviewResponse"
         )
 
     # Update (no updated_by per DB schema)
-    updated_ReviewResponse = review_crud.update_agent_ReviewResponse(
+    updated_review = review_crud.update_agent_ReviewResponse(
         db=db,
-        db_obj=ReviewResponse,
+        db_obj=review_obj,
         obj_in=review_in
     )
     
@@ -411,12 +411,12 @@ def update_agent_ReviewResponse(
         "Agent ReviewResponse updated",
         extra={
             "review_id": review_id,
-            "agent_id": ReviewResponse.agent_id,
+            "agent_id": review_obj.agent_id,
             "updated_by_user": current_user.user_id
         }
     )
     
-    return updated_ReviewResponse
+    return updated_review
 
 
 @router.delete("/agent/{review_id}", response_model=AgentReviewResponse)
@@ -431,28 +431,28 @@ def delete_agent_ReviewResponse(
     
     Audit: Tracks who deleted via deleted_by (Supabase UUID)
     """
-    ReviewResponse = review_crud.get_agent_ReviewResponse(db=db, review_id=review_id)
-    if not ReviewResponse:
+    review_obj = review_crud.get_agent_ReviewResponse(db=db, review_id=review_id)
+    if not review_obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent ReviewResponse not found"
         )
 
     # Check authorization
-    if ReviewResponse.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    if review_obj.user_id != current_user.user_id and not user_crud.is_admin(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to delete this ReviewResponse"
         )
 
     # Soft delete with audit trail
-    deleted_ReviewResponse = review_crud.soft_delete_agent_ReviewResponse(
+    deleted_review = review_crud.soft_delete_agent_ReviewResponse(
         db=db,
         review_id=review_id,
         deleted_by_supabase_id=current_user.supabase_id
     )
     
-    if not deleted_ReviewResponse:
+    if not deleted_review:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent ReviewResponse not found during delete attempt"
@@ -462,13 +462,13 @@ def delete_agent_ReviewResponse(
         "Agent ReviewResponse soft deleted",
         extra={
             "review_id": review_id,
-            "agent_id": deleted_ReviewResponse.agent_id,
-            "user_id": deleted_ReviewResponse.user_id,
+            "agent_id": deleted_review.agent_id,
+            "user_id": deleted_review.user_id,
             "deleted_by": current_user.supabase_id
         }
     )
 
-    return deleted_ReviewResponse
+    return deleted_review
 
 
 # USER'S REVIEWS ENDPOINTS

@@ -1,9 +1,11 @@
 # app/models/users.py
-"""
+
+""" 
 User model - strictly matching database schema.
 DB Tables: users
 Phase 2 Aligned: Soft delete, proper FK naming, Supabase integration
 """
+
 # from __future__ import annotations # <--- Added for forward ref support
 # from typing import TYPE_CHECKING
 
@@ -22,24 +24,22 @@ from app.models.base import Base, AuditMixin, SoftDeleteMixin
     # Add other models here as needed for type hints
 
 class UserRole(str, enum.Enum):
-    """User role enum - matches DB CHECK constraint exactly."""
+    # User role enum - matches DB CHECK constraint exactly.
     SEEKER = "seeker"
     AGENT = "agent"
     ADMIN = "admin"
 
 class User(Base, AuditMixin, SoftDeleteMixin):
-    """
-    User model for property seekers, agents, and admins.
-    Matches DB table: users
-    Primary Key: user_id (bigint GENERATED ALWAYS AS IDENTITY)
-    
-    Canonical Compliance:
-    - BigInteger PK with proper naming (user_id, not id)
-    - Supabase UUID integration
-    - Soft delete via SoftDeleteMixin
-    - Audit trail via AuditMixin
-    - Multi-tenant via agency_id FK
-    """
+    # User model for property seekers, agents, and admins.
+    # Matches DB table: users.
+    # Primary Key: user_id (bigint GENERATED ALWAYS AS IDENTITY).
+    #
+    # Canonical Compliance:
+    # - BigInteger PK with proper naming (user_id, not id)
+    # - Supabase UUID integration
+    # - Soft delete via SoftDeleteMixin
+    # - Audit trail via AuditMixin
+    # - Multi-tenant via agency_id FK
     __tablename__ = "users"
 
     # Primary key
@@ -100,7 +100,7 @@ class User(Base, AuditMixin, SoftDeleteMixin):
 
     # Timestamps + audit + soft delete inherited from mixins:
     # - created_at, updated_at, updated_by (AuditMixin)
-    # - deleted_at (SoftDeleteMixin)
+    # - deleted_at, deleted_by (SoftDeleteMixin)
 
     # Table constraints
     __table_args__ = (

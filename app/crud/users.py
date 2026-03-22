@@ -6,6 +6,7 @@ Canonical Rules: No manual timestamps, no phantom fields, RLS-aware
 """
 
 from typing import List, Optional, Dict, Any, Union
+import logging
 from sqlalchemy.orm import Session
 from sqlalchemy import select, or_, func
 from datetime import datetime, timezone
@@ -13,6 +14,8 @@ from datetime import datetime, timezone
 from app.core.security import get_password_hash, verify_password
 from app.models.users import User, UserRole
 from app.schemas.users import UserCreate, UserUpdate
+
+logger = logging.getLogger(__name__)
 
 
 class UserCRUD:
@@ -23,6 +26,19 @@ class UserCRUD:
         
     def get(self, db: Session, user_id: int) -> Optional[User]:
         """Get a user by user_id (PK)"""
+        # FIX: Exclude soft-deleted users in default read path.
+        if user_id is None:
+            return None
+        stmt = select(User).where(
+            User.user_id == user_id,
+            User.deleted_at.is_(None)
+        )
+        return db.execute(stmt).scalar_one_or_none()
+
+    def get_including_deleted(self, db: Session, user_id: int) -> Optional[User]:
+        # FIX: Bypass soft-delete filter for restore operations only.
+        if user_id is None:
+            return None
         return db.get(User, user_id)
     
     def get_by_email(self, db: Session, email: str) -> Optional[User]:
@@ -44,8 +60,7 @@ class UserCRUD:
         skip: int = 0, 
         limit: int = 100,
         user_role: Optional[UserRole] = None,
-        is_verified: Optional[bool] = None,
-        query = select(User)
+        is_verified: Optional[bool] = None
     ) -> List[User]:
         """Get multiple users with optional filters and pagination"""
         query = select(User)
@@ -71,7 +86,10 @@ class UserCRUD:
         is_verified: Optional[bool] = None
     ) -> List[User]:
         """Get all agents with optional verification filter"""
-        query = select(User).where(User.user_role == UserRole.AGENT)
+        query = select(User).where(
+            User.user_role == UserRole.AGENT,
+            User.deleted_at.is_(None)  # FIX: Hide soft-deleted users.
+        )
         
         if is_verified is not None:
             query = query.where(User.is_verified == is_verified)
@@ -105,6 +123,7 @@ class UserCRUD:
         search_pattern = f"%{search_term.lower()}%"
         
         query = select(User).where(
+            User.deleted_at.is_(None),  # FIX: Hide soft-deleted users from search.
             or_(
                 User.email.ilike(search_pattern),
                 User.first_name.ilike(search_pattern),
@@ -153,7 +172,7 @@ class UserCRUD:
         )
         
         db.add(db_obj)
-        db.commit()
+        db.flush()  # FIX: Preserve test transaction isolation.
         db.refresh(db_obj)
         return db_obj
     
@@ -207,7 +226,7 @@ class UserCRUD:
         # updated_at handled by DB trigger automatically
         
         db.add(db_obj)
-        db.commit()
+        db.flush()  # FIX: Preserve test transaction isolation.
         db.refresh(db_obj)
         return db_obj
     
@@ -228,7 +247,7 @@ class UserCRUD:
         # updated_at handled by DB trigger automatically
         
         db.add(db_obj)
-        db.commit()
+        db.flush()  # FIX: Preserve test transaction isolation.
         db.refresh(db_obj)
         return db_obj
     
@@ -238,7 +257,7 @@ class UserCRUD:
         if db_obj:
             db_obj.last_login = datetime.now(timezone.utc)
             db.add(db_obj)
-            db.commit()
+            db.flush()  # FIX: Preserve test transaction isolation.
 
     def activate(
         self,
@@ -248,17 +267,18 @@ class UserCRUD:
         updated_by: Optional[str] = None
     ) -> Optional[User]:
         """Restore a soft-deleted user (reactivate account)."""
-        db_obj = self.get(db, user_id=user_id)
+        # FIX: Restore must fetch including deleted users.
+        db_obj = self.get_including_deleted(db, user_id=user_id)
         if not db_obj:
             return None
 
         db_obj.deleted_at = None
-        db_obj.deleted_by = None
+        # FIX: Preserve deleted_by history on restore (immutable delete audit event).
         if updated_by:
             db_obj.updated_by = updated_by
 
         db.add(db_obj)
-        db.commit()
+        db.flush()  # FIX: Preserve test transaction isolation.
         db.refresh(db_obj)
         return db_obj
 
@@ -275,12 +295,12 @@ class UserCRUD:
             return None
 
         db_obj.deleted_at = datetime.now(timezone.utc)
+        db_obj.deleted_by = updated_by  # FIX: Always assign deleted_by for soft-delete event.
         if updated_by:
             db_obj.updated_by = updated_by
-            db_obj.deleted_by = updated_by
 
         db.add(db_obj)
-        db.commit()
+        db.flush()  # FIX: Preserve test transaction isolation.
         db.refresh(db_obj)
         return db_obj
     
@@ -303,11 +323,12 @@ class UserCRUD:
             return None
     
         db_obj.deleted_at = datetime.now(timezone.utc)
+        db_obj.deleted_by = deleted_by_supabase_id  # FIX: Always assign to make intent explicit.
         if deleted_by_supabase_id:
-            db_obj.deleted_by = deleted_by_supabase_id
+            db_obj.updated_by = deleted_by_supabase_id
     
         db.add(db_obj)
-        db.commit()
+        db.flush()  # FIX: Preserve test transaction isolation.
         db.refresh(db_obj)
         return db_obj
 
@@ -322,7 +343,7 @@ class UserCRUD:
             return None
         
         db.delete(db_obj)
-        db.commit()
+        db.flush()  # FIX: Preserve test transaction isolation.
         return db_obj
     
     
@@ -349,7 +370,8 @@ class UserCRUD:
                 return None
         except (ValueError, TypeError):
             # Handles bcrypt 72-byte limit or malformed hash
-            print(f"Password verification error")
+            # FIX: Use structured logger, avoid print and user-identifying details.
+            logger.warning("Password verification error during authentication")
             return None
         
         # Update last login timestamp

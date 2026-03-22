@@ -3,6 +3,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 from sqlalchemy.orm import Session
 from app.crud.users import UserCRUD
+from app.crud.users import user as user_crud
 from app.models.users import User, UserRole
 
 @pytest.fixture
@@ -47,7 +48,7 @@ class TestUserCoverageSurgical:
         with patch.object(u_crud, "get", return_value=mock_user):
             u_crud.soft_delete(mock_db, user_id=1, deleted_by_supabase_id="admin-123")
             assert mock_user.deleted_by == "admin-123"
-            assert mock_user.updated_by != "admin-123"
+            assert mock_user.updated_by == "admin-123"
 
     # --- Target: Lines 283-286 (can_modify_user logic) ---
     def test_can_modify_user_logic(self, u_crud):
@@ -68,3 +69,36 @@ class TestUserCoverageSurgical:
         
         # Hit 285 (Self check - fail)
         assert u_crud.can_modify_user(regular_user, target_user_id=20) is False
+
+
+def test_get_returns_none_for_soft_deleted_user(db, normal_user):
+    # get() must exclude soft-deleted users after fix
+    user_crud.soft_delete(
+        db,
+        user_id=normal_user.user_id,
+        deleted_by_supabase_id=str(normal_user.supabase_id)
+    )
+    db.expire_all()
+    result = user_crud.get(db, user_id=normal_user.user_id)
+    assert result is None  # soft-deleted user must not be returned
+
+
+def test_activate_restores_deleted_user_and_preserves_deleted_by(db, normal_user):
+    # activate() must work on deleted users and preserve deleted_by audit field
+    supabase_id = str(normal_user.supabase_id)
+    user_crud.soft_delete(
+        db,
+        user_id=normal_user.user_id,
+        deleted_by_supabase_id=supabase_id
+    )
+    db.expire_all()
+
+    restored = user_crud.activate(
+        db,
+        user_id=normal_user.user_id,
+        updated_by=supabase_id
+    )
+    assert restored is not None
+    assert restored.deleted_at is None                    # restored
+    assert str(restored.deleted_by) == supabase_id       # audit history preserved
+    assert str(restored.updated_by) == supabase_id       # restorer recorded

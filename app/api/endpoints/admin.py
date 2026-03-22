@@ -116,7 +116,8 @@ def get_user(
     """
     db_user = user_crud.get(db, user_id=user_id)
     
-    if not db_user:
+    # FIX: user_crud.get uses PK lookup and may include soft-deleted users; enforce visibility guard here.
+    if not db_user or db_user.deleted_at is not None:
         logger.warning(f"Failed user lookup: UserResponse {user_id} not found")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -143,7 +144,8 @@ def update_user(
     """
     db_user = user_crud.get(db, user_id=user_id)
     
-    if not db_user:
+    # FIX: Block updates on soft-deleted users.
+    if not db_user or db_user.deleted_at is not None:
         logger.warning(f"Failed user update: UserResponse {user_id} not found")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -177,7 +179,8 @@ def delete_user(
     """
     db_user = user_crud.get(db, user_id=user_id)
     
-    if not db_user:
+    # FIX: Treat already soft-deleted users as not found for admin delete endpoint.
+    if not db_user or db_user.deleted_at is not None:
         logger.warning(f"Failed user deletion: UserResponse {user_id} not found")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -213,26 +216,25 @@ def activate_user(
     _: None = Depends(validate_request_size)
 ) -> Any:
     """
-    Activate a user (sets is_active = true).
-    
-    Tracks who activated via updated_by.
+    Restore a soft-deleted user (admin only).
+
+    Clears deleted_at to restore access. deleted_by audit record is preserved.
+    Tracks who restored via updated_by.
     """
-    db_user = user_crud.get(db, user_id=user_id)
-    
+    # FIX: `activate()` is the restore path and must work for soft-deleted users.
+    db_user = user_crud.activate(
+        db,
+        user_id=user_id,
+        updated_by=current_user.supabase_id
+    )
+
     if not db_user:
         logger.warning(f"Failed user activation: UserResponse {user_id} not found")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
-    
-    # Use CRUD method with audit tracking
-    db_user = user_crud.activate(
-        db, 
-        user_id=user_id,
-        updated_by=current_user.supabase_id
-    )
-    
+
     logger.info(f"User activated: {user_id} by admin {current_user.user_id}")
     return db_user
 
@@ -247,14 +249,17 @@ def deactivate_user(
     _: None = Depends(validate_request_size)
 ) -> Any:
     """
-    Deactivate a user (sets is_active = false).
-    
-    Different from soft delete - user still exists but cannot login.
-    Tracks who deactivated via updated_by.
+    Soft delete a user (admin only).
+
+    Sets deleted_at to revoke access. Use DELETE /users/{user_id} for the
+    standard soft delete path. This endpoint exists for explicit admin
+    deactivation with the same audit trail.
+    Tracks who deactivated via updated_by (written to deleted_by as well).
     """
     db_user = user_crud.get(db, user_id=user_id)
     
-    if not db_user:
+    # FIX: Block deactivation flow for soft-deleted users.
+    if not db_user or db_user.deleted_at is not None:
         logger.warning(f"Failed user deactivation: UserResponse {user_id} not found")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -356,18 +361,23 @@ def verify_property(
     """
     prop = property_crud.get(db, property_id=property_id)
     
+    # FIX: Guard not-found/deleted path (property_crud.get already excludes deleted by default).
     if not prop:
         logger.warning(f"Failed property verification: PropertyResponse {property_id} not found")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Property not found",
         )
-    
+
+    # FIX: Idempotent endpoint behavior for already-verified properties.
+    if prop.is_verified:
+        return prop
+
     # Use CRUD method with audit tracking
     prop = property_crud.verify_property(
         db,
         property_id=property_id,
-        updated_by_supabase_id=current_user.supabase_id
+        updated_by=current_user.supabase_id
     )
     
     logger.info(f"Property verified: {property_id} by admin {current_user.user_id}")
@@ -389,20 +399,33 @@ def approve_property(
     """
     prop = property_crud.get(db, property_id=property_id)
     
+    # FIX: Guard not-found/deleted path (property_crud.get already excludes deleted by default).
     if not prop:
         logger.warning(f"Failed property approval: PropertyResponse {property_id} not found")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Property not found"
         )
-    
+
+    # FIX: Idempotent endpoint behavior for already-active listings.
+    if getattr(prop.listing_status, "value", prop.listing_status) == "active":
+        return prop
+
+    # FIX: Align approve semantics with verification workflow before activation.
+    if not prop.is_verified:
+        property_crud.verify_property(
+            db,
+            property_id=property_id,
+            updated_by=current_user.supabase_id
+        )
+
     # Update with audit tracking
     prop_update = PropertyUpdate(listing_status="active")
     updated_prop = property_crud.update(
         db, 
         db_obj=prop, 
         obj_in=prop_update,
-        updated_by_supabase_id=current_user.supabase_id
+        updated_by=current_user.supabase_id
     )
     
     logger.info(f"Property approved: {property_id} by admin {current_user.user_id}")

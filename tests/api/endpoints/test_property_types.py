@@ -263,7 +263,24 @@ class TestDeletePropertyType:
             headers=admin_token_headers
         )
         assert response.status_code == 400
-        assert "used by" in response.json()["detail"].lower()
+        assert response.json()["detail"] == "Cannot delete property type that is in use by existing properties."
+
+    def test_soft_deleted_property_still_blocks_delete(
+        self, client: TestClient, admin_token_headers,
+        property_type, sample_property
+    ):
+        delete_property_response = client.delete(
+            f"/api/v1/properties/{sample_property.property_id}",
+            headers=admin_token_headers
+        )
+        assert delete_property_response.status_code == 200
+
+        response = client.delete(
+            f"/api/v1/property-types/{property_type.property_type_id}",
+            headers=admin_token_headers
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Cannot delete property type that is in use by existing properties."
 
     def test_admin_deletes_unused_type(
         self, client: TestClient, admin_token_headers, unused_property_type
