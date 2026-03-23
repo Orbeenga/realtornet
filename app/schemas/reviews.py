@@ -99,7 +99,6 @@ class ReviewListResponse(BaseModel):
     total: int
     page: int
     page_size: int
-    average_rating: Optional[float] = None
 
     model_config = ConfigDict(from_attributes=True)
 

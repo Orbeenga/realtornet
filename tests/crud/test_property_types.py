@@ -181,15 +181,15 @@ class TestCreate:
     def test_create_success(self, crud, mock_db):
         with patch.object(crud, "get_by_name", return_value=None):
             mock_db.add.return_value = None
-            mock_db.commit.return_value = None
+            mock_db.flush.return_value = None
             mock_db.refresh.return_value = None
             crud.create(mock_db, obj_in=PropertyTypeCreate(name="Penthouse"))
-        mock_db.commit.assert_called_once()
+        mock_db.flush.assert_called_once()
 
     def test_create_with_description(self, crud, mock_db):
         with patch.object(crud, "get_by_name", return_value=None):
             mock_db.add.return_value = None
-            mock_db.commit.return_value = None
+            mock_db.flush.return_value = None
             mock_db.refresh.return_value = None
             crud.create(mock_db, obj_in=PropertyTypeCreate(
                 name="Villa", description="Luxury standalone"
@@ -206,7 +206,7 @@ class TestCreate:
         """Lines 133-141: logger.info called after create."""
         with patch.object(crud, "get_by_name", return_value=None):
             mock_db.add.return_value = None
-            mock_db.commit.return_value = None
+            mock_db.flush.return_value = None
             new_obj = make_pt(property_type_id=5, name="Loft")
             mock_db.refresh.side_effect = lambda o: None
 
@@ -223,18 +223,18 @@ class TestUpdate:
     def test_update_description(self, crud, mock_db):
         obj = make_pt(name="Apartment", property_type_id=1)
         mock_db.add.return_value = None
-        mock_db.commit.return_value = None
+        mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
 
         crud.update(mock_db, db_obj=obj, obj_in=PropertyTypeUpdate(description="New desc"))
         assert obj.description == "New desc"
-        mock_db.commit.assert_called_once()
+        mock_db.flush.assert_called_once()
 
     def test_update_name_same_case(self, crud, mock_db):
         """Same name (case-insensitive) → no uniqueness check."""
         obj = make_pt(name="Apartment", property_type_id=1)
         mock_db.add.return_value = None
-        mock_db.commit.return_value = None
+        mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
 
         with patch.object(crud, "get_by_name") as mock_gbn:
@@ -244,12 +244,12 @@ class TestUpdate:
     def test_update_name_new_unique(self, crud, mock_db):
         obj = make_pt(name="Apartment", property_type_id=1)
         mock_db.add.return_value = None
-        mock_db.commit.return_value = None
+        mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
 
         with patch.object(crud, "get_by_name", return_value=None):
             crud.update(mock_db, db_obj=obj, obj_in=PropertyTypeUpdate(name="Studio"))
-        mock_db.commit.assert_called_once()
+        mock_db.flush.assert_called_once()
 
     def test_update_name_duplicate_raises(self, crud, mock_db):
         obj = make_pt(name="Apartment", property_type_id=1)
@@ -263,18 +263,18 @@ class TestUpdate:
         """Uniqueness check finds same object → update OK."""
         obj = make_pt(name="Apartment", property_type_id=1)
         mock_db.add.return_value = None
-        mock_db.commit.return_value = None
+        mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
 
         with patch.object(crud, "get_by_name", return_value=obj):
             crud.update(mock_db, db_obj=obj, obj_in=PropertyTypeUpdate(name="ApartmentPlus"))
-        mock_db.commit.assert_called_once()
+        mock_db.flush.assert_called_once()
 
     def test_update_logs(self, crud, mock_db):
         """Lines 190-198: logger.info on successful update."""
         obj = make_pt(name="Apartment", property_type_id=1)
         mock_db.add.return_value = None
-        mock_db.commit.return_value = None
+        mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
 
         with patch("app.crud.property_types.logger") as mock_logger:
@@ -284,7 +284,7 @@ class TestUpdate:
     def test_update_strips_protected_fields(self, crud, mock_db):
         obj = make_pt(property_type_id=1)
         mock_db.add.return_value = None
-        mock_db.commit.return_value = None
+        mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
         crud.update(mock_db, db_obj=obj, obj_in=PropertyTypeUpdate(description="safe"))
         assert obj.property_type_id == 1
@@ -308,7 +308,7 @@ class TestDelete:
 
         with patch.object(crud, "get", return_value=obj):
             mock_db.delete.return_value = None
-            mock_db.commit.return_value = None
+            mock_db.flush.return_value = None
             with patch("app.crud.property_types.logger"):
                 result = crud.delete(mock_db, property_type_id=1)
         mock_db.delete.assert_called_once_with(obj)

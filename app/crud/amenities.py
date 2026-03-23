@@ -146,7 +146,7 @@ class AmenityCRUD:
         )
         
         db.add(db_obj)
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         return db_obj
     
@@ -183,7 +183,7 @@ class AmenityCRUD:
                 setattr(db_obj, field, value)
         
         db.add(db_obj)
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         return db_obj
     
@@ -213,7 +213,7 @@ class AmenityCRUD:
             )
         
         db.delete(db_obj)
-        db.commit()
+        db.flush()
         return db_obj
     
     def remove(self, db: Session, *, amenity_id: int) -> Optional[Amenity]:

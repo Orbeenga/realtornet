@@ -127,7 +127,7 @@ class PropertyTypeCRUD:
         )
         
         db.add(db_obj)
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         
         logger.info(
@@ -183,7 +183,7 @@ class PropertyTypeCRUD:
         # updated_at handled by DB trigger automatically
         
         db.add(db_obj)
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         
         logger.info(
@@ -237,7 +237,7 @@ class PropertyTypeCRUD:
                 )
             
             db.delete(db_obj)
-            db.commit()
+            db.flush()
             
             logger.info(
                 "Property type deleted",

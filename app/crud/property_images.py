@@ -125,7 +125,7 @@ class PropertyImageCRUD:
         )
         
         db.add(db_obj)
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         
         logger.info(
@@ -176,7 +176,7 @@ class PropertyImageCRUD:
         # updated_at handled by DB trigger automatically
         
         db.add(db_obj)
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         
         logger.info(
@@ -209,7 +209,7 @@ class PropertyImageCRUD:
         
         # Delete the image
         db.delete(db_obj)
-        db.commit()
+        db.flush()
         
         logger.info(
             "Property image deleted",
@@ -227,7 +227,7 @@ class PropertyImageCRUD:
                 # Promote first remaining image to primary
                 remaining[0].is_primary = True
                 db.add(remaining[0])
-                db.commit()
+                db.flush()
     
     
     # UTILITY METHODS
@@ -273,7 +273,7 @@ class PropertyImageCRUD:
             )
             .values(is_primary=False)
         )
-        db.commit()
+        db.flush()
     
     def reorder(
         self,
@@ -302,7 +302,7 @@ class PropertyImageCRUD:
                 image.display_order = order_index
                 db.add(image)
         
-        db.commit()
+        db.flush()
         
         logger.info(
             "Property images reordered",
