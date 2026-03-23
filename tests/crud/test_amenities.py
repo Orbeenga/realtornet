@@ -219,13 +219,13 @@ class TestCreate:
         scalar_result(mock_db, None)  # No duplicate
         obj = make_amenity()
         mock_db.add.return_value = None
-        mock_db.commit.return_value = None
+        mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
 
         with patch.object(crud, "get_by_name", return_value=None):
             result = crud.create(mock_db, obj_in=AmenityCreate(name="Gym"))
         mock_db.add.assert_called_once()
-        mock_db.commit.assert_called_once()
+        mock_db.flush.assert_called_once()
 
     def test_create_duplicate_raises(self, crud, mock_db):
         """Lines 136-138: duplicate name raises ValueError."""
@@ -237,7 +237,7 @@ class TestCreate:
     def test_create_with_category(self, crud, mock_db):
         with patch.object(crud, "get_by_name", return_value=None):
             mock_db.add.return_value = None
-            mock_db.commit.return_value = None
+            mock_db.flush.return_value = None
             mock_db.refresh.return_value = None
             crud.create(mock_db, obj_in=AmenityCreate(
                 name="Pool", description="Swimming pool", category="Recreation"
@@ -248,10 +248,10 @@ class TestCreate:
         """Name only — description and category optional."""
         with patch.object(crud, "get_by_name", return_value=None):
             mock_db.add.return_value = None
-            mock_db.commit.return_value = None
+            mock_db.flush.return_value = None
             mock_db.refresh.return_value = None
             crud.create(mock_db, obj_in=AmenityCreate(name="Parking"))
-            mock_db.commit.assert_called_once()
+            mock_db.flush.assert_called_once()
 
 
 # ─────────────────────────────────────────────
@@ -263,18 +263,18 @@ class TestUpdate:
         """Lines 172-197: update field that isn't name."""
         obj = make_amenity()
         mock_db.add.return_value = None
-        mock_db.commit.return_value = None
+        mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
 
         result = crud.update(mock_db, db_obj=obj, obj_in=AmenityUpdate(description="Updated desc"))
         assert obj.description == "Updated desc"
-        mock_db.commit.assert_called_once()
+        mock_db.flush.assert_called_once()
 
     def test_update_name_same_case_insensitive(self, crud, mock_db):
         """Name unchanged (same after lower()) — no uniqueness check needed."""
         obj = make_amenity(name="WiFi")
         mock_db.add.return_value = None
-        mock_db.commit.return_value = None
+        mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
 
         with patch.object(crud, "get_by_name") as mock_gbn:
@@ -285,12 +285,12 @@ class TestUpdate:
         """New name that doesn't exist yet — allowed."""
         obj = make_amenity(name="WiFi", amenity_id=1)
         mock_db.add.return_value = None
-        mock_db.commit.return_value = None
+        mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
 
         with patch.object(crud, "get_by_name", return_value=None):
             crud.update(mock_db, db_obj=obj, obj_in=AmenityUpdate(name="SuperWiFi"))
-        mock_db.commit.assert_called_once()
+        mock_db.flush.assert_called_once()
 
     def test_update_name_duplicate_raises(self, crud, mock_db):
         """New name already taken by a DIFFERENT amenity → ValueError."""
@@ -305,17 +305,17 @@ class TestUpdate:
         """get_by_name returns SAME object (same amenity_id) — update allowed."""
         obj = make_amenity(name="WiFi", amenity_id=1)
         mock_db.add.return_value = None
-        mock_db.commit.return_value = None
+        mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
 
         with patch.object(crud, "get_by_name", return_value=obj):
             crud.update(mock_db, db_obj=obj, obj_in=AmenityUpdate(name="WifiNew"))
-        mock_db.commit.assert_called_once()
+        mock_db.flush.assert_called_once()
 
     def test_update_strips_protected_fields(self, crud, mock_db):
         obj = make_amenity(amenity_id=1)
         mock_db.add.return_value = None
-        mock_db.commit.return_value = None
+        mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
 
         crud.update(mock_db, db_obj=obj, obj_in=AmenityUpdate(description="x"))
@@ -341,7 +341,7 @@ class TestDelete:
 
         with patch.object(crud, "get", return_value=obj):
             mock_db.delete.return_value = None
-            mock_db.commit.return_value = None
+            mock_db.flush.return_value = None
             result = crud.delete(mock_db, amenity_id=1)
         mock_db.delete.assert_called_once_with(obj)
         assert result == obj
@@ -353,7 +353,7 @@ class TestDelete:
 
         with patch.object(crud, "get", return_value=obj):
             mock_db.delete.return_value = None
-            mock_db.commit.return_value = None
+            mock_db.flush.return_value = None
             result = crud.delete(mock_db, amenity_id=1)
         # Warning logged but deletion proceeds
         mock_db.delete.assert_called_once_with(obj)

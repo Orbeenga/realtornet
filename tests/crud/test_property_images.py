@@ -123,7 +123,7 @@ class TestPICreate:
             with patch.object(pi_crud, "unset_primary"):
                 with patch.object(pi_crud, "get_next_order", return_value=0):
                     mock_db.add.return_value = None
-                    mock_db.commit.return_value = None
+                    mock_db.flush.return_value = None
                     mock_db.refresh.return_value = None
                     pi_crud.create(mock_db, obj_in=PropertyImageCreate(
                         property_id=10, image_url="https://x.com/a.jpg"))
@@ -137,7 +137,7 @@ class TestPICreate:
             with patch.object(pi_crud, "unset_primary") as mock_up:
                 with patch.object(pi_crud, "get_next_order", return_value=2):
                     mock_db.add.return_value = None
-                    mock_db.commit.return_value = None
+                    mock_db.flush.return_value = None
                     mock_db.refresh.return_value = None
                     pi_crud.create(mock_db, obj_in=PropertyImageCreate(
                         property_id=10, image_url="https://x.com/b.jpg", is_primary=True))
@@ -150,7 +150,7 @@ class TestPICreate:
             with patch.object(pi_crud, "unset_primary") as mock_up:
                 with patch.object(pi_crud, "get_next_order", return_value=2):
                     mock_db.add.return_value = None
-                    mock_db.commit.return_value = None
+                    mock_db.flush.return_value = None
                     mock_db.refresh.return_value = None
                     pi_crud.create(mock_db, obj_in=PropertyImageCreate(
                         property_id=10, image_url="https://x.com/c.jpg", is_primary=False))
@@ -162,7 +162,7 @@ class TestPICreate:
             with patch.object(pi_crud, "unset_primary"):
                 with patch.object(pi_crud, "get_next_order", return_value=1):
                     mock_db.add.return_value = None
-                    mock_db.commit.return_value = None
+                    mock_db.flush.return_value = None
                     mock_db.refresh.return_value = None
                     with patch("app.crud.property_images.logger") as mock_log:
                         pi_crud.create(mock_db, obj_in=PropertyImageCreate(
@@ -176,7 +176,7 @@ class TestPIUpdate:
     def test_update_caption(self, pi_crud, mock_db):
         obj = make_image(caption="Old")
         mock_db.add.return_value = None
-        mock_db.commit.return_value = None
+        mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
         pi_crud.update(mock_db, db_obj=obj,
                        obj_in=PropertyImageUpdate(caption="New caption"))
@@ -186,7 +186,7 @@ class TestPIUpdate:
         """Setting is_primary=True on non-primary → calls unset_primary."""
         obj = make_image(is_primary=False, property_id=10)
         mock_db.add.return_value = None
-        mock_db.commit.return_value = None
+        mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
         with patch.object(pi_crud, "unset_primary") as mock_up:
             pi_crud.update(mock_db, db_obj=obj,
@@ -197,7 +197,7 @@ class TestPIUpdate:
         """Already primary → unset_primary NOT called again."""
         obj = make_image(is_primary=True, property_id=10)
         mock_db.add.return_value = None
-        mock_db.commit.return_value = None
+        mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
         with patch.object(pi_crud, "unset_primary") as mock_up:
             pi_crud.update(mock_db, db_obj=obj,
@@ -207,7 +207,7 @@ class TestPIUpdate:
     def test_strips_protected_fields(self, pi_crud, mock_db):
         obj = make_image(image_id=1, property_id=10)
         mock_db.add.return_value = None
-        mock_db.commit.return_value = None
+        mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
         pi_crud.update(mock_db, db_obj=obj,
                        obj_in=PropertyImageUpdate(caption="safe"))
@@ -217,7 +217,7 @@ class TestPIUpdate:
     def test_logs_on_update(self, pi_crud, mock_db):
         obj = make_image()
         mock_db.add.return_value = None
-        mock_db.commit.return_value = None
+        mock_db.flush.return_value = None
         mock_db.refresh.return_value = None
         with patch("app.crud.property_images.logger") as mock_log:
             pi_crud.update(mock_db, db_obj=obj,
@@ -239,7 +239,7 @@ class TestPIRemove:
         with patch.object(pi_crud, "get", return_value=obj):
             with patch.object(pi_crud, "get_by_property", return_value=[]):
                 mock_db.delete.return_value = None
-                mock_db.commit.return_value = None
+                mock_db.flush.return_value = None
                 pi_crud.remove(mock_db, image_id=1)
         mock_db.delete.assert_called_once_with(obj)
 
@@ -250,7 +250,7 @@ class TestPIRemove:
         with patch.object(pi_crud, "get", return_value=obj):
             with patch.object(pi_crud, "get_by_property", return_value=[remaining]):
                 mock_db.delete.return_value = None
-                mock_db.commit.return_value = None
+                mock_db.flush.return_value = None
                 mock_db.add.return_value = None
                 pi_crud.remove(mock_db, image_id=1)
         assert remaining.is_primary is True
@@ -262,10 +262,10 @@ class TestPIRemove:
         with patch.object(pi_crud, "get", return_value=obj):
             with patch.object(pi_crud, "get_by_property", return_value=[]):
                 mock_db.delete.return_value = None
-                mock_db.commit.return_value = None
+                mock_db.flush.return_value = None
                 pi_crud.remove(mock_db, image_id=1)
         # Second commit (for promotion) should not be called
-        assert mock_db.commit.call_count == 1
+        assert mock_db.flush.call_count == 1
 
 
 # ─── get_next_order (lines 245-251) ──────────
@@ -285,10 +285,10 @@ class TestPIGetNextOrder:
 class TestPIUnsetPrimary:
     def test_executes_update(self, pi_crud, mock_db):
         mock_db.execute.return_value = None
-        mock_db.commit.return_value = None
+        mock_db.flush.return_value = None
         pi_crud.unset_primary(mock_db, property_id=10)
         mock_db.execute.assert_called_once()
-        mock_db.commit.assert_called_once()
+        mock_db.flush.assert_called_once()
 
 
 # ─── reorder (lines 291-307) ─────────────────
@@ -300,7 +300,7 @@ class TestPIReorder:
         with patch.object(pi_crud, "get_by_property", return_value=[img1, img2]):
             with patch.object(pi_crud, "get", side_effect=lambda db, image_id: {1: img1, 2: img2}[image_id]):
                 mock_db.add.return_value = None
-                mock_db.commit.return_value = None
+                mock_db.flush.return_value = None
                 pi_crud.reorder(mock_db, property_id=10, image_order=[2, 1])
         assert img2.display_order == 0
         assert img1.display_order == 1
@@ -316,7 +316,7 @@ class TestPIReorder:
         with patch.object(pi_crud, "get_by_property", return_value=[img1]):
             with patch.object(pi_crud, "get", return_value=img1):
                 mock_db.add.return_value = None
-                mock_db.commit.return_value = None
+                mock_db.flush.return_value = None
                 with patch("app.crud.property_images.logger") as mock_log:
                     pi_crud.reorder(mock_db, property_id=10, image_order=[1])
         mock_log.info.assert_called_once()

@@ -121,7 +121,7 @@ class CRUDProfile:
         )
         
         db.add(db_obj)
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         return db_obj
     
@@ -164,7 +164,7 @@ class CRUDProfile:
         # If no trigger, add: db_obj.updated_at = datetime.now(timezone.utc)
         
         db.add(db_obj)
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         return db_obj
     
@@ -192,7 +192,7 @@ class CRUDProfile:
         db_obj.status = status
                 
         db.add(db_obj)
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         return db_obj
     
@@ -220,7 +220,7 @@ class CRUDProfile:
     # updated_at handled by trigger
     
         db.add(db_obj)
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         return db_obj
 
@@ -239,7 +239,7 @@ class CRUDProfile:
         db_obj.deleted_at = func.now()
         db_obj.deleted_by = deleted_by_supabase_id
         db.add(db_obj)
-        db.commit()
+        db.flush()
         db.refresh(db_obj)
         return db_obj
 
@@ -259,7 +259,7 @@ class CRUDProfile:
             )
         
         db.delete(db_obj)
-        db.commit()
+        db.flush()
         return db_obj
     
     

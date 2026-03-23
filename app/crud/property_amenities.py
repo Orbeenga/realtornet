@@ -178,7 +178,7 @@ class PropertyAmenityCRUD:
             amenity_id=amenity_id
         )
         db.execute(stmt)
-        db.commit()
+        db.flush()
         return True
     
     def create(
@@ -251,7 +251,7 @@ class PropertyAmenityCRUD:
             db.execute(property_amenities_table.insert(), values)
         
         if commit:
-            db.commit()
+            db.flush()
         
         return len(new_amenity_ids)
     
@@ -318,7 +318,7 @@ class PropertyAmenityCRUD:
                     commit=False  # Defer commit to outer transaction
                 )
             
-            db.commit()
+            db.flush()
             
         except SQLAlchemyError as e:
             db.rollback()
@@ -384,7 +384,7 @@ class PropertyAmenityCRUD:
             )
         )
         
-        db.commit()
+        db.flush()
         return result.rowcount > 0
     
     def remove(
@@ -421,7 +421,7 @@ class PropertyAmenityCRUD:
             )
         )
         
-        db.commit()
+        db.flush()
         return result.rowcount
     
     def remove_bulk(
@@ -454,7 +454,7 @@ class PropertyAmenityCRUD:
             )
         )
         
-        db.commit()
+        db.flush()
         return result.rowcount
     
     
