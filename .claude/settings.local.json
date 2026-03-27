@@ -1,0 +1,30 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read|Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/block_env.py"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/run_tests.py"
+          },
+          {
+            "type": "command",
+            "command": "python .claude/hooks/format_code.py"
+          }
+        ]
+      }
+    ]
+  }
+}
