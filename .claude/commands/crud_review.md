@@ -20,4 +20,4 @@ Before submitting any file, verify commenting standard (CLAUDE.md section 9):
 - First line is # file/path header
 - Class bodies use # not """
 - Every non-obvious column/relationship has inline # comment
-- """ only inside def blocks, sparingly
+- """ only inside def blocks, sparingly and can also be used to introduce a file after the # file/path header
