@@ -82,7 +82,11 @@ class User(Base, AuditMixin, SoftDeleteMixin):
 
     # User role and verification
     user_role = Column(
-        SQLAEnum(UserRole, values_callable=lambda x: [e.value for e in x]),
+        SQLAEnum(
+            UserRole,
+            name="user_role_enum",
+            values_callable=lambda x: [e.value for e in x],
+        ),
         nullable=False,
         index=True
     )
