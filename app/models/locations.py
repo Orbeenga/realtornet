@@ -2,7 +2,7 @@
 # Location model - 100% fidelity to database schema.
 from sqlalchemy.dialects.postgresql import UUID
 
-from sqlalchemy import Column, BigInteger, String, text, Boolean
+from sqlalchemy import Column, BigInteger, String, text, Boolean, Index
 from sqlalchemy.orm import relationship
 from geoalchemy2 import Geography
 
@@ -13,6 +13,9 @@ class Location(Base, TimestampMixin, SoftDeleteMixin):
     # Location model for property addresses.
     # Primary Key: location_id (bigint GENERATED ALWAYS AS IDENTITY).
     __tablename__ = "locations"
+    __table_args__ = (
+        Index("locations_geom_idx", "geom", postgresql_using="gist"),
+    )
 
     location_id = Column(BigInteger, primary_key=True, autoincrement=True)
     state = Column(String, nullable=False)
