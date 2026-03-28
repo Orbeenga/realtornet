@@ -176,6 +176,22 @@ class TestAuth:
     
     def test_token_expiration(self, client, normal_user):
         """Test that expired tokens are rejected."""
-        # This test would require mocking time or using very short expiration
-        # Skipping implementation as it requires time manipulation
-        pytest.skip("Requires time mocking - implement with freezegun if needed")
+        from freezegun import freeze_time
+        from datetime import datetime, timedelta
+
+        # Login to get a valid token
+        data = {"username": "user@example.com", "password": "password"}
+        response = client.post(f"{settings.API_V1_STR}/auth/login", data=data)
+        assert response.status_code == status.HTTP_200_OK
+        token = response.json()["access_token"]
+
+        # Travel forward past token expiration
+        future_time = datetime.utcnow() + timedelta(
+            minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES + 1
+        )
+        with freeze_time(future_time):
+            response = client.get(
+                f"{settings.API_V1_STR}/auth/me",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
