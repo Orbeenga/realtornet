@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import (
     get_db, 
     get_current_admin_user, 
-    validate_request_size
+    validate_request_size,
+    pagination_params,
 )
 
 # --- DIRECT CRUD IMPORTS ---
@@ -29,14 +30,13 @@ router = APIRouter()
 @router.get("/", response_model=List[PropertyTypeResponse])
 def read_property_types(
     db: Session = Depends(get_db), # Updated: Direct dependency call
-    skip: int = 0,
-    limit: int = 100,
+    pagination: dict = Depends(pagination_params),
 ) -> Any:
     """
     Retrieve property types.
     """
     # Updated: Using property_type_crud alias
-    property_types = property_type_crud.get_multi(db, skip=skip, limit=limit)
+    property_types = property_type_crud.get_multi(db, **pagination,)
     return property_types
 
 @router.get("/{property_type_id}", response_model=PropertyTypeResponse)

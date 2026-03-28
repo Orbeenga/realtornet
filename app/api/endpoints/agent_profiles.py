@@ -22,7 +22,8 @@ from app.api.dependencies import (
     get_db, 
     get_current_active_user, 
     get_current_admin_user,
-    validate_request_size
+    validate_request_size,
+    pagination_params,
 )
 
 # --- DIRECT SCHEMA IMPORTS ---
@@ -41,8 +42,7 @@ logger = logging.getLogger(__name__)
 @router.get("/", response_model=List[AgentProfileResponse])
 def read_agent_profiles(
     db: Session = Depends(get_db), # Updated: Direct dependency call
-    skip: int = 0,
-    limit: int = 100,
+    pagination: dict = Depends(pagination_params),
     agency_id: int = None,
 ) -> Any:
     """
@@ -57,12 +57,11 @@ def read_agent_profiles(
         agent_profiles = agent_profile_crud.get_by_agency(
             db, 
             agency_id=agency_id, 
-            skip=skip, 
-            limit=limit
+            **pagination,
         )
     else:
         # Updated: Using direct crud alias agent_profile_crud
-        agent_profiles = agent_profile_crud.get_multi(db, skip=skip, limit=limit)
+        agent_profiles = agent_profile_crud.get_multi(db, **pagination,)
     
     return agent_profiles
 
@@ -321,8 +320,7 @@ def read_agent_properties(
     *,
     db: Session = Depends(get_db), # Updated: Direct dependency call
     profile_id: int,
-    skip: int = 0,
-    limit: int = 100,
+    pagination: dict = Depends(pagination_params),
 ) -> Any:
     """
     Retrieve all properties managed by an agent.
@@ -339,8 +337,7 @@ def read_agent_properties(
     properties = property_crud.get_by_owner_approved(
         db, 
         user_id=agent_profile.user_id, 
-        skip=skip, 
-        limit=limit
+        **pagination,
     )
     return properties
 
@@ -350,8 +347,7 @@ def read_agent_reviews(
     *,
     db: Session = Depends(get_db), # Updated: Direct dependency call
     profile_id: int,
-    skip: int = 0,
-    limit: int = 100,
+    pagination: dict = Depends(pagination_params),
 ) -> Any:
     """
     Retrieve all reviews for an agent.
@@ -368,8 +364,7 @@ def read_agent_reviews(
     reviews = review_crud.get_agent_reviews(
         db, 
         agent_id=agent_profile.user_id, 
-        skip=skip, 
-        limit=limit
+        **pagination,
     )
     return reviews
 

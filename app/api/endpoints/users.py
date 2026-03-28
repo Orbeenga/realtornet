@@ -20,7 +20,8 @@ from app.api.dependencies import (
     get_current_admin_user,
     get_current_user,
     get_current_active_user,
-    validate_request_size
+    validate_request_size,
+    pagination_params,
 )
 
 # --- DIRECT SCHEMA IMPORTS (using aliases) ---
@@ -36,8 +37,7 @@ logger = logging.getLogger(__name__)
 @router.get("/", response_model=List[UserResponse])
 def read_users(
     db: Session = Depends(get_db),
-    skip: int = 0,
-    limit: int = 100,
+    pagination: dict = Depends(pagination_params),
     current_user: UserResponse = Depends(get_current_admin_user),
 ) -> Any:
     """
@@ -45,22 +45,21 @@ def read_users(
     
     Returns only non-deleted users (deleted_at IS NULL).
     """
-    users = user_crud.get_multi(db, skip=skip, limit=limit)
+    users = user_crud.get_multi(db, **pagination,)
     return users
 
 
 @router.get("/realtors", response_model=List[UserResponse])
 def read_realtors(
     db: Session = Depends(get_db),
-    skip: int = 0,
-    limit: int = 100,
+    pagination: dict = Depends(pagination_params),
 ) -> Any:
     """
     Retrieve realtors. Public endpoint.
     
     Returns only active, non-deleted realtors.
     """
-    realtors = user_crud.get_realtors(db, skip=skip, limit=limit)
+    realtors = user_crud.get_realtors(db, **pagination,)
     return realtors
 
 

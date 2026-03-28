@@ -7,7 +7,7 @@ Phase 2 Aligned: Supabase UUID, soft delete, multi-tenant, DoS protection
 from typing import Optional
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Query, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
@@ -41,6 +41,15 @@ def validate_request_size(request: Request):
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail="Request body too large"
         )
+
+
+# --- Pagination Dependency ---
+
+def pagination_params(
+    skip: int = Query(default=0, ge=0, description="Records to skip"),
+    limit: int = Query(default=20, ge=1, le=100, description="Page size (max 100)"),
+) -> dict:
+    return {"skip": skip, "limit": limit}
 
 
 # --- Core Authentication Dependencies ---

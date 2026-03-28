@@ -20,7 +20,8 @@ from app.api.dependencies import (
     get_current_user,
     get_current_active_user,
     get_current_admin_user,
-    validate_request_size
+    validate_request_size,
+    pagination_params,
 )
 
 # --- DIRECT SCHEMA IMPORTS ---
@@ -40,8 +41,7 @@ logger = logging.getLogger(__name__)
 @router.get("/", response_model=List[AgencyResponse])
 def read_agencies(
     db: Session = Depends(get_db),
-    skip: int = 0,
-    limit: int = 100,
+    pagination: dict = Depends(pagination_params),
 ) -> Any:
     """
     Retrieve agencies.
@@ -50,7 +50,7 @@ def read_agencies(
     Used for browsing agencies or populating agency selection.
     CRUD layer enforces deleted_at IS NULL filtering.
     """
-    agencies = agency_crud.get_multi(db, skip=skip, limit=limit)
+    agencies = agency_crud.get_multi(db, **pagination,)
     return agencies
 
 
@@ -255,8 +255,7 @@ def read_agency_agents(
     *,
     db: Session = Depends(get_db),
     agency_id: int,
-    skip: int = 0,
-    limit: int = 100,
+    pagination: dict = Depends(pagination_params),
 ) -> Any:
     """
     Retrieve all agents belonging to an agency.
@@ -272,7 +271,7 @@ def read_agency_agents(
             detail="Agency not found"
         )
     
-    agents = agent_profile_crud.get_by_agency(db, agency_id=agency_id, skip=skip, limit=limit)
+    agents = agent_profile_crud.get_by_agency(db, agency_id=agency_id, **pagination,)
     return agents
 
 
@@ -281,8 +280,7 @@ def read_agency_properties(
     *,
     db: Session = Depends(get_db),
     agency_id: int,
-    skip: int = 0,
-    limit: int = 100,
+    pagination: dict = Depends(pagination_params),
 ) -> Any:
     """
     Retrieve all properties managed by an agency.
@@ -301,8 +299,7 @@ def read_agency_properties(
     properties = property_crud.get_by_agency_approved(
         db, 
         agency_id=agency_id, 
-        skip=skip, 
-        limit=limit
+        **pagination,
     )
     return properties
 

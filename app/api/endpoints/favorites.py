@@ -17,7 +17,8 @@ from app.api.dependencies import (
     get_db,
     get_current_user,
     get_current_active_user,
-    validate_request_size
+    validate_request_size,
+    pagination_params,
 )
 
 # --- DIRECT SCHEMA IMPORTS (using aliases from schema file) ---
@@ -110,8 +111,7 @@ def delete_favorite(
 @router.get("/user/{user_id}", response_model=List[FavoriteResponse])
 def get_user_favorites(
     user_id: int,
-    skip: int = 0,
-    limit: int = 100,
+    pagination: dict = Depends(pagination_params),
     current_user: UserResponse = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -133,8 +133,7 @@ def get_user_favorites(
     return favorite_crud.get_user_favorites(
         db, 
         user_id=user_id, 
-        skip=skip, 
-        limit=limit
+        **pagination,
     )
 
 
