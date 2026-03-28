@@ -1116,23 +1116,26 @@ class PropertyCRUD:
         limit: int = 100,
         agent_user_id: int,
     ) -> List[Property]:
-        """Agent view — verified OR their own properties for a location."""
-        verified = self.get_multi(
-            db, skip=0, limit=skip + limit,
-            filters={"location_id": location_id, "is_verified": True},
+        """Agent view — verified OR their own properties for a location.
+        
+        FIX: Single SQL query with OR predicate so skip/limit semantics are correct.
+        Replaces two-query Python merge that broke pagination under load.
+        """
+        query = (
+            select(Property)
+            .where(
+                Property.deleted_at.is_(None),
+                Property.location_id == location_id,
+                or_(
+                    Property.is_verified.is_(True),
+                    Property.user_id == agent_user_id,
+                ),
+            )
+            .order_by(Property.created_at.desc())
+            .offset(skip)
+            .limit(limit)
         )
-        own = self.get_multi(
-            db, skip=0, limit=skip + limit,
-            user_id=agent_user_id,
-            filters={"location_id": location_id},
-        )
-        seen: set = set()
-        merged: List[Property] = []
-        for p in list(verified) + list(own):
-            if p.property_id not in seen:
-                seen.add(p.property_id)
-                merged.append(p)
-        return merged[skip: skip + limit]
+        return db.execute(query).scalars().all()
 
     # GET /by-agent/{agent_user_id}  —  owner visibility variants
 
@@ -1229,19 +1232,31 @@ class PropertyCRUD:
         params=None,
         agent_user_id: int,
     ) -> List[Property]:
-        """Agent view — verified OR their own properties within radius."""
-        results = self.get_properties_near(
-            db,
-            latitude=latitude,
-            longitude=longitude,
-            radius_km=radius,
-            limit=skip + limit * 2,
+        """Agent view — verified OR their own properties within radius.
+        
+        FIX: OR predicate and pagination applied in SQL before any data is returned.
+        Replaces limit*2 over-fetch heuristic that produced wrong page sizes.
+        """
+        point = ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)
+        radius_meters = radius * 1000
+        query = (
+            select(Property)
+            .where(
+                and_(
+                    Property.deleted_at.is_(None),
+                    Property.geom.isnot(None),
+                    ST_DWithin(Property.geom, point, radius_meters),
+                    or_(
+                        Property.is_verified.is_(True),
+                        Property.user_id == agent_user_id,
+                    ),
+                )
+            )
+            .order_by(ST_Distance(Property.geom, point))
+            .offset(skip)
+            .limit(limit)
         )
-        filtered = [
-            p for p in results
-            if p.is_verified or p.user_id == agent_user_id
-        ]
-        return filtered[skip: skip + limit]
+        return db.execute(query).scalars().all()
 
     # Note: get_properties_near needs skip support — add it if not present:
     # The existing get_properties_near only has limit, not skip.
