@@ -17,7 +17,8 @@ from app.api.dependencies import (
     get_db,
     get_current_active_user,
     get_current_admin_user,
-    validate_request_size
+    validate_request_size,
+    pagination_params,
 )
 
 # --- DIRECT SCHEMA IMPORTS ---
@@ -35,8 +36,7 @@ router = APIRouter()
 @router.get("/", response_model=List[LocationResponse])
 def read_locations(
     db: Session = Depends(get_db),
-    skip: int = 0,
-    limit: int = 100,
+    pagination: dict = Depends(pagination_params),
     state: str = None,
     city: str = None,
     neighborhood: str = None,
@@ -60,8 +60,7 @@ def read_locations(
         state=state, 
         city=city, 
         neighborhood=neighborhood, 
-        skip=skip, 
-        limit=limit
+        **pagination,
     )
     return locations
 
@@ -283,8 +282,7 @@ def read_locations_by_coordinates(
     latitude: float = Query(..., description="Latitude coordinate", ge=-90, le=90),
     longitude: float = Query(..., description="Longitude coordinate", ge=-180, le=180),
     distance_km: float = Query(5.0, description="Search radius in kilometers", gt=0, le=1000),
-    skip: int = 0,
-    limit: int = 100
+    pagination: dict = Depends(pagination_params),
 ) -> Any:
     """
     Get locations within a certain radius of given coordinates.
@@ -300,8 +298,7 @@ def read_locations_by_coordinates(
         latitude=latitude, 
         longitude=longitude, 
         distance_km=distance_km,
-        skip=skip,
-        limit=limit
+        **pagination,
     )
     
     return locations

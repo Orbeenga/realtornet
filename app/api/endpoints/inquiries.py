@@ -17,7 +17,8 @@ from app.api.dependencies import (
     get_db,
     get_current_user,
     get_current_active_user,
-    validate_request_size
+    validate_request_size,
+    pagination_params,
 )
 
 # --- DIRECT SCHEMA IMPORTS ---
@@ -69,8 +70,7 @@ def create_inquiry(
 def read_user_inquiries(
     db: Session = Depends(get_db),
     current_user: UserResponse = Depends(get_current_active_user),
-    skip: int = 0,
-    limit: int = 100,
+    pagination: dict = Depends(pagination_params),
 ) -> Any:
     """
     Retrieve all inquiries made by the current user.
@@ -80,8 +80,7 @@ def read_user_inquiries(
     inquiries = inquiry_crud.get_by_user(
         db=db,
         user_id=current_user.user_id,
-        skip=skip,
-        limit=limit
+        **pagination,
     )
     return inquiries
 
@@ -90,8 +89,7 @@ def read_user_inquiries(
 def read_received_inquiries(
     db: Session = Depends(get_db),
     current_user: UserResponse = Depends(get_current_active_user),
-    skip: int = 0,
-    limit: int = 100,
+    pagination: dict = Depends(pagination_params),
 ) -> Any:
     """
     Retrieve all inquiries for properties owned by the current user.
@@ -109,8 +107,7 @@ def read_received_inquiries(
     inquiries = inquiry_crud.get_by_property_owner(
         db=db,
         owner_user_id=current_user.user_id,
-        skip=skip,
-        limit=limit
+        **pagination,
     )
     return inquiries
 
@@ -256,8 +253,7 @@ def read_inquiries_by_property(
     db: Session = Depends(get_db),
     property_id: int,
     current_user: UserResponse = Depends(get_current_active_user),
-    skip: int = 0,
-    limit: int = 100,
+    pagination: dict = Depends(pagination_params),
 ) -> Any:
     """
     Retrieve all inquiries for a specific property.
@@ -283,8 +279,7 @@ def read_inquiries_by_property(
     inquiries = inquiry_crud.get_by_property(
         db=db,
         property_id=property_id,
-        skip=skip,
-        limit=limit
+        **pagination,
     )
     return inquiries
 

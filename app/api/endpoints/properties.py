@@ -17,7 +17,8 @@ from app.api.dependencies import (
     get_current_user,
     get_current_active_user,
     get_current_user_optional,
-    validate_request_size
+    validate_request_size,
+    pagination_params,
 )
 
 # --- DIRECT SCHEMA IMPORTS ---
@@ -39,8 +40,7 @@ router = APIRouter()
 @router.get("/", response_model=List[PropertyResponse])
 def read_properties(
     db: Session = Depends(get_db),
-    skip: int = 0,
-    limit: int = 100,
+    pagination: dict = Depends(pagination_params),
     location_id: Optional[int] = None,
     min_price: Optional[float] = None,
     max_price: Optional[float] = None,
@@ -75,16 +75,14 @@ def read_properties(
             # Admins see all properties
             properties = property_crud.get_multi_by_params(
                 db, 
-                skip=skip, 
-                limit=limit, 
+                **pagination, 
                 params=search_params
             )
         elif user_crud.is_agent(current_user):
             # Agents see approved + their own properties
             properties = property_crud.get_multi_by_params_for_agent(
                 db,
-                skip=skip,
-                limit=limit,
+                **pagination,
                 params=search_params,
                 agent_user_id=current_user.user_id
             )
@@ -92,16 +90,14 @@ def read_properties(
             # Regular users see only approved
             properties = property_crud.get_multi_by_params_approved(
                 db, 
-                skip=skip, 
-                limit=limit, 
+                **pagination, 
                 params=search_params
             )
     else:
         # Anonymous users see only approved
         properties = property_crud.get_multi_by_params_approved(
             db, 
-            skip=skip, 
-            limit=limit, 
+            **pagination, 
             params=search_params
         )
     
@@ -333,8 +329,7 @@ def delete_property(
 def read_properties_by_LocationResponse(
     location_id: int,
     db: Session = Depends(get_db),
-    skip: int = 0,
-    limit: int = 100,
+    pagination: dict = Depends(pagination_params),
     current_user: Optional[UserResponse] = Depends(get_current_user_optional)
 ) -> Any:
     """
@@ -349,30 +344,26 @@ def read_properties_by_LocationResponse(
             properties = property_crud.get_by_LocationResponse(
                 db=db, 
                 location_id=location_id, 
-                skip=skip, 
-                limit=limit
+                **pagination,
             )
         elif user_crud.is_agent(current_user):
             properties = property_crud.get_by_location_for_agent(
                 db=db,
                 location_id=location_id,
-                skip=skip,
-                limit=limit,
+                **pagination,
                 agent_user_id=current_user.user_id
             )
         else:
             properties = property_crud.get_by_location_approved(
                 db=db,
                 location_id=location_id,
-                skip=skip,
-                limit=limit
+                **pagination,
             )
     else:
         properties = property_crud.get_by_location_approved(
             db=db,
             location_id=location_id,
-            skip=skip,
-            limit=limit
+            **pagination,
         )
     
     return properties
@@ -382,8 +373,7 @@ def read_properties_by_LocationResponse(
 def read_properties_by_agent(
     agent_user_id: int,
     db: Session = Depends(get_db),
-    skip: int = 0,
-    limit: int = 100,
+    pagination: dict = Depends(pagination_params),
     current_user: Optional[UserResponse] = Depends(get_current_user_optional)
 ) -> Any:
     """
@@ -399,24 +389,21 @@ def read_properties_by_agent(
             properties = property_crud.get_by_owner(
                 db=db, 
                 user_id=agent_user_id,  # Explicit parameter name
-                skip=skip, 
-                limit=limit
+                **pagination,
             )
         else:
             # Other users - only approved properties
             properties = property_crud.get_by_owner_approved(
                 db=db,
                 user_id=agent_user_id,
-                skip=skip,
-                limit=limit
+                **pagination,
             )
     else:
         # Anonymous - only approved
         properties = property_crud.get_by_owner_approved(
             db=db,
             user_id=agent_user_id,
-            skip=skip,
-            limit=limit
+            **pagination,
         )
     
     return properties
@@ -428,8 +415,7 @@ def search_properties_by_radius(
     longitude: float = Query(..., description="Center point longitude", ge=-180, le=180),
     radius: float = Query(..., description="Search radius in kilometers", gt=0, le=1000),
     db: Session = Depends(get_db),
-    skip: int = 0,
-    limit: int = 100,
+    pagination: dict = Depends(pagination_params),
     min_price: Optional[float] = None,
     max_price: Optional[float] = None,
     bedrooms: Optional[int] = None,
@@ -464,8 +450,7 @@ def search_properties_by_radius(
                 latitude=latitude,
                 longitude=longitude,
                 radius=radius,
-                skip=skip,
-                limit=limit,
+                **pagination,
                 params=search_params
             )
         elif user_crud.is_agent(current_user):
@@ -474,8 +459,7 @@ def search_properties_by_radius(
                 latitude=latitude,
                 longitude=longitude,
                 radius=radius,
-                skip=skip,
-                limit=limit,
+                **pagination,
                 params=search_params,
                 agent_user_id=current_user.user_id
             )
@@ -485,8 +469,7 @@ def search_properties_by_radius(
                 latitude=latitude,
                 longitude=longitude,
                 radius=radius,
-                skip=skip,
-                limit=limit,
+                **pagination,
                 params=search_params
             )
     else:
@@ -495,8 +478,7 @@ def search_properties_by_radius(
             latitude=latitude,
             longitude=longitude,
             radius=radius,
-            skip=skip,
-            limit=limit,
+            **pagination,
             params=search_params
         )
     

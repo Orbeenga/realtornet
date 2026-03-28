@@ -16,7 +16,8 @@ from app.crud.users import user as user_crud
 from app.api.dependencies import (
     get_db,
     get_current_admin_user,
-    validate_request_size
+    validate_request_size,
+    pagination_params,
 )
 
 # --- DIRECT SCHEMA IMPORTS (using aliases from schema file) ---
@@ -29,8 +30,7 @@ router = APIRouter()
 @router.get("/", response_model=List[AmenityResponse])
 def read_amenities(
     db: Session = Depends(get_db),
-    skip: int = 0,
-    limit: int = 100,
+    pagination: dict = Depends(pagination_params),
     category: str = None,
 ) -> Any:
     """
@@ -40,9 +40,9 @@ def read_amenities(
     Used for populating AmenityResponse selection in property forms.
     """
     if category:
-        amenities = amenity_crud.get_by_category(db, category=category, skip=skip, limit=limit)
+        amenities = amenity_crud.get_by_category(db, category=category, **pagination,)
     else:
-        amenities = amenity_crud.get_multi(db, skip=skip, limit=limit)
+        amenities = amenity_crud.get_multi(db, **pagination,)
     
     return amenities
 

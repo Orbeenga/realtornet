@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import (
     get_db,
     get_current_admin_user,
-    validate_request_size
+    validate_request_size,
+    pagination_params,
 )
 from app.models.users import User as User
 
@@ -41,8 +42,7 @@ router = APIRouter()
 @router.get("/users", response_model=Dict[str, Any])
 def get_users(
     db: Session = Depends(get_db),
-    skip: int = 0,
-    limit: int = 100,
+    pagination: dict = Depends(pagination_params),
     current_user: UserResponse = Depends(get_current_admin_user)
 ) -> Any:
     """
@@ -51,14 +51,14 @@ def get_users(
     Returns only non-deleted users (deleted_at IS NULL).
     CRUD layer enforces soft delete filtering.
     """
-    users = user_crud.get_multi(db, skip=skip, limit=limit)
+    users = user_crud.get_multi(db, **pagination,)
     total = user_crud.count_active(db)  # Use CRUD method that filters deleted_at
     
     return {
         "items": jsonable_encoder(users),
         "total": total,
-        "page": skip // limit + 1 if limit else 1,
-        "pages": (total + limit - 1) // limit if limit else 1
+        "page": pagination["skip"] // pagination["limit"] + 1 if pagination["limit"] else 1,
+        "pages": (total + pagination["limit"] - 1) // pagination["limit"] if pagination["limit"] else 1
     }
 
 
@@ -290,8 +290,7 @@ def deactivate_user(
 @router.get("/properties", response_model=Dict[str, Any])
 def get_properties(
     db: Session = Depends(get_db),
-    skip: int = 0,
-    limit: int = 100,
+    pagination: dict = Depends(pagination_params),
     current_user: UserResponse = Depends(get_current_admin_user)
 ) -> Any:
     """
@@ -300,14 +299,14 @@ def get_properties(
     Returns only non-deleted properties (deleted_at IS NULL).
     CRUD layer enforces soft delete filtering.
     """
-    properties = property_crud.get_multi(db, skip=skip, limit=limit)
+    properties = property_crud.get_multi(db, **pagination,)
     total = property_crud.count_active(db)  # Use CRUD method that filters deleted_at
     
     return {
         "items": jsonable_encoder(properties),
         "total": total,
-        "page": skip // limit + 1 if limit else 1,
-        "pages": (total + limit - 1) // limit if limit else 1
+        "page": pagination["skip"] // pagination["limit"] + 1 if pagination["limit"] else 1,
+        "pages": (total + pagination["limit"] - 1) // pagination["limit"] if pagination["limit"] else 1
     }
 
 
@@ -438,8 +437,7 @@ def approve_property(
 def read_all_inquiries(
     db: Session = Depends(get_db),
     current_user: UserResponse = Depends(get_current_admin_user),
-    skip: int = 0,
-    limit: int = 100,
+    pagination: dict = Depends(pagination_params),
 ) -> Any:
     """
     Retrieve all inquiries with pagination (admin only).
@@ -447,14 +445,14 @@ def read_all_inquiries(
     Returns only non-deleted inquiries (deleted_at IS NULL).
     CRUD layer enforces soft delete filtering.
     """
-    inquiries = inquiry_crud.get_multi(db, skip=skip, limit=limit)
+    inquiries = inquiry_crud.get_multi(db, **pagination,)
     total = inquiry_crud.count_active(db)  # Use CRUD method that filters deleted_at
     
     return {
         "items": jsonable_encoder(inquiries),
         "total": total,
-        "page": skip // limit + 1 if limit else 1,
-        "pages": (total + limit - 1) // limit if limit else 1
+        "page": pagination["skip"] // pagination["limit"] + 1 if pagination["limit"] else 1,
+        "pages": (total + pagination["limit"] - 1) // pagination["limit"] if pagination["limit"] else 1
     }
 
 
