@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Database ops note: `update_updated_at_column` search_path hardening (`SET search_path = public`) was applied directly in Supabase dashboard and is tracked as an external DB operation (not currently Alembic-managed in this repo).
+
 ### Fixed
 - `crud/users.py`: Replaced `db.commit()` with `db.flush()` throughout - eliminates test isolation violations
 - `crud/users.py`: `get()` now excludes soft-deleted users
