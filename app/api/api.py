@@ -3,7 +3,7 @@
 RealtorNet API Router - Central routing configuration.
 Phase 2 Aligned: Complete domain coverage, consistent naming, logical organization
 
-All routes are prefixed with /api/realtornet/v1 via settings.
+All routes are prefixed with /api/v1 via settings.API_V1_STR.
 Router organization: Auth → Core Entities → Domain Entities → Relationships
 """
 

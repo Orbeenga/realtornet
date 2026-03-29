@@ -9,7 +9,6 @@ from app.core.logging import logger
 from app.core.config import settings
 from app.api.api import api_router
 from app.middleware.request_middleware import RedisRateLimitMiddleware
-from app.api.endpoints import analytics
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -52,9 +51,6 @@ app.add_exception_handler(Exception, ErrorHandler.global_exception_handler)
 
 # Include API router
 app.include_router(api_router, prefix=settings.API_V1_STR)
-
-# Include Analytics Services
-app.include_router(analytics.router, prefix="/api")
 
 
 @app.get("/")

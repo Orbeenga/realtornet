@@ -70,17 +70,11 @@ def get_current_user(
     try:
         # Step 1: Decode token
         token_payload: TokenPayload = decode_token(token)
-        print(f"\nDEBUG get_current_user:")
-        print(f"  supabase_id = {token_payload.supabase_id!r}  (type: {type(token_payload.supabase_id).__name__})")
-        print(f"  sub         = {token_payload.sub!r}")
-        print(f"  user_id     = {token_payload.user_id!r}")
 
         # Step 2: Resolve the UUID string to query with
         s_id = token_payload.supabase_id or token_payload.sub
-        print(f"  s_id        = {s_id!r}")
 
         if not s_id:
-            print("  FAIL: s_id is None/empty")
             raise credentials_exception
 
         s_id_str = str(s_id)
@@ -90,28 +84,23 @@ def get_current_user(
             User.supabase_id == s_id_str,
             User.deleted_at.is_(None)
         ).first()
-        print(f"  user found  = {user!r}")
 
         if user is None:
             # Extra debug: check if user exists at all (ignore soft delete)
             user_any = db.query(User).filter(User.supabase_id == s_id_str).first()
-            print(f"  user (any)  = {user_any!r}  (soft-deleted check)")
             raise credentials_exception
 
         # Step 4: Verify user_id if present
         if token_payload.user_id and user.user_id != token_payload.user_id:
-            print(f"  FAIL: user_id mismatch token={token_payload.user_id} db={user.user_id}")
             raise credentials_exception
 
-        print(f"  SUCCESS: returning user {user.user_id}")
         return user
 
     except HTTPException:
         raise  # Re-raise our own 401s directly — do NOT let except Exception swallow them
     except AuthenticationException:
         raise credentials_exception
-    except Exception as e:
-        print(f"  EXCEPTION: {type(e).__name__}: {e}")
+    except Exception:
         raise credentials_exception
 
 
