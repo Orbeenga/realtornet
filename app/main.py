@@ -7,6 +7,8 @@ from contextlib import asynccontextmanager
 from app.core.exceptions import ErrorHandler, ApplicationException
 from app.core.logging import logger
 from app.core.config import settings
+from sqlalchemy import text
+from app.core.database import engine
 from app.api.api import api_router
 from app.middleware.request_middleware import RedisRateLimitMiddleware
 
@@ -62,6 +64,31 @@ def health_check():
         "message": "Welcome to RealtorNet!",
         "version": "2.0"
     }
+
+
+@app.get("/health")
+def health_check_full():  # pragma: no cover
+    """Readiness probe — checks DB connectivity. Used by deployment health checks."""
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return {
+            "status": "healthy",
+            "database": "connected",
+            "version": "2.0"
+        }
+    except Exception as e:
+        from fastapi import Response
+        import json
+        return Response(
+            content=json.dumps({
+                "status": "unhealthy",
+                "database": "unreachable",
+                "detail": str(e)
+            }),
+            status_code=503,
+            media_type="application/json"
+        )
 
 
 @app.get("/example-error")
