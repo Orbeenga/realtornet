@@ -9,10 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Type-safety hardening pass (`v0.5.1`): project-wide pyright reduced from 388 to 0 errors and `pyrightconfig.json` added at basic enforcement level
+
 ### Changed
 - Database ops note: `update_updated_at_column` search_path hardening (`SET search_path = public`) was applied directly in Supabase dashboard and is tracked as an external DB operation (not currently Alembic-managed in this repo).
+- `endpoints/profiles.py`: aligned endpoint field usage from `profile_picture_url` to canonical `profile_picture`
 
 ### Fixed
+- `crud/saved_searches.py`: implemented missing `execute_search()` so saved-search execution now applies stored JSON filters against properties
+- Type-hardening surfaced and resolved two latent integration gaps during the 388 -> 0 pyright pass
 - `crud/users.py`: Replaced `db.commit()` with `db.flush()` throughout - eliminates test isolation violations
 - `crud/users.py`: `get()` now excludes soft-deleted users
 - `crud/users.py`: `activate()` now correctly fetches deleted users for restore; preserves `deleted_by` audit history on restore
