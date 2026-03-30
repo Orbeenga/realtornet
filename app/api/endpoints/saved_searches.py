@@ -3,7 +3,7 @@
 Saved searches management endpoints - Canonical compliant
 Handles user search preferences with JSONB criteria storage, soft delete, and audit tracking
 """
-from typing import Any, List
+from typing import Any, List, cast as typing_cast  # Alias typing.cast so endpoint-local narrowing stays explicit and never collides with ORM helpers elsewhere.
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 import logging
@@ -27,6 +27,7 @@ from app.schemas.saved_searches import (
     SavedSearchCreate,
     SavedSearchUpdate
 )
+from app.models.users import User  # Reuse the ORM-backed user type for local permission-helper narrowing.
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -98,7 +99,9 @@ def read_saved_search(
         )
 
     # Check authorization
-    if saved_search.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    current_user_model: User = typing_cast(User, current_user)  # Narrow the dependency result to the ORM-backed user type expected by CRUD role helpers.
+    saved_search_user_id: int | None = typing_cast(int | None, saved_search.user_id)  # Narrow the ORM owner foreign key to the runtime int value carried on the loaded entity.
+    if saved_search_user_id != current_user.user_id and not user_crud.is_admin(current_user_model):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to access this saved search"
@@ -131,7 +134,9 @@ def update_saved_search(
         )
 
     # Check authorization
-    if existing_saved_search.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    current_user_model: User = typing_cast(User, current_user)  # Narrow the dependency result to the ORM-backed user type expected by CRUD role helpers.
+    existing_saved_search_user_id: int | None = typing_cast(int | None, existing_saved_search.user_id)  # Narrow the ORM owner foreign key to the runtime int value carried on the loaded entity.
+    if existing_saved_search_user_id != current_user.user_id and not user_crud.is_admin(current_user_model):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to update this saved search"
@@ -143,6 +148,11 @@ def update_saved_search(
         db_obj=existing_saved_search,
         obj_in=saved_search_in
     )
+    if updated_saved_search is None:  # Narrow the CRUD result after the guarded lookup above so logging and response typing can treat it as concrete.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Saved search not found during update attempt"
+        )
 
     logger.info(
         "Saved search updated", 
@@ -179,17 +189,20 @@ def delete_saved_search(
         )
 
     # Check authorization
-    if saved_search_to_delete.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    current_user_model: User = typing_cast(User, current_user)  # Narrow the dependency result to the ORM-backed user type expected by CRUD role helpers.
+    saved_search_to_delete_user_id: int | None = typing_cast(int | None, saved_search_to_delete.user_id)  # Narrow the ORM owner foreign key to the runtime int value carried on the loaded entity.
+    if saved_search_to_delete_user_id != current_user.user_id and not user_crud.is_admin(current_user_model):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to delete this saved search"
         )
 
     # Soft delete with audit trail
+    deleted_by_supabase_id: str = str(current_user.supabase_id)  # Normalize the authenticated UUID to the string audit format expected by the CRUD layer.
     deleted_saved_search = saved_search_crud.soft_delete(
         db=db, 
         search_id=search_id,
-        deleted_by_supabase_id=current_user.supabase_id  # UUID audit trail
+        deleted_by_supabase_id=deleted_by_supabase_id
     )
 
     if not deleted_saved_search:
@@ -235,7 +248,9 @@ def execute_saved_search(
         )
 
     # Check authorization
-    if saved_search.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    current_user_model: User = typing_cast(User, current_user)  # Narrow the dependency result to the ORM-backed user type expected by CRUD role helpers.
+    saved_search_user_id: int | None = typing_cast(int | None, saved_search.user_id)  # Narrow the ORM owner foreign key to the runtime int value carried on the loaded entity.
+    if saved_search_user_id != current_user.user_id and not user_crud.is_admin(current_user_model):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to execute this saved search"

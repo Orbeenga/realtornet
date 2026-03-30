@@ -6,10 +6,11 @@ Aligned with Phase 2 canonical rules: Supabase integration, multi-tenant support
 
 from __future__ import annotations
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, cast
 from uuid import UUID
 
-from jose import jwt, JWTError
+from jose import JWTError, jwt
+from jose.exceptions import ExpiredSignatureError, JWTClaimsError
 from pydantic import BaseModel
 import bcrypt
 
@@ -112,9 +113,9 @@ def decode_token(token: str) -> TokenPayload:
         )
         return TokenPayload(**payload_dict)
 
-    except jwt.ExpiredSignatureError:
+    except ExpiredSignatureError:
         raise AuthenticationException(message="Token has expired")
-    except jwt.JWTClaimsError:
+    except JWTClaimsError:
         raise AuthenticationException(message="Invalid authentication credentials")
     except JWTError:
         raise AuthenticationException(message="Invalid authentication credentials")
@@ -172,7 +173,7 @@ def validate_token_refresh(refresh_token: str, current_supabase_id: UUID) -> str
 
         return generate_access_token(
             supabase_id=UUID(refresh_payload.supabase_id),
-            user_id=refresh_payload.user_id,
+            user_id=cast(int, refresh_payload.user_id),
             user_role=refresh_payload.role,
             agency_id=refresh_payload.agency_id
         )

@@ -3,7 +3,7 @@
 Property amenities management endpoints - Canonical compliant
 Handles property-AmenityResponse associations (junction table) with ownership validation
 """
-from typing import Any, List
+from typing import Any, List, cast as typing_cast  # Alias typing.cast so endpoint-local narrowing never shadows SQLAlchemy helpers in future edits.
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
@@ -12,6 +12,7 @@ from app.crud.property_amenities import property_amenities as property_amenity_c
 from app.crud.properties import property as property_crud
 from app.crud.amenities import amenity as amenity_crud
 from app.crud.users import user as user_crud
+from app.models.users import User  # Narrow endpoint-local user values back to the ORM shape expected by CRUD permission helpers.
 
 # --- DIRECT DEPENDENCY IMPORTS ---
 from app.api.dependencies import (
@@ -82,7 +83,10 @@ def add_amenity_to_property(
         )
     
     # Check ownership: PropertyResponse owner or admin
-    if db_property.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    property_owner_id: int = typing_cast(int, db_property.user_id)  # Narrow ORM-owned property user IDs before the permission comparison.
+    current_user_id: int = typing_cast(int, current_user.user_id)  # Narrow the authenticated user ID locally without changing the dependency contract.
+    current_user_model: User = typing_cast(User, current_user)  # typing cast: endpoint local only for CRUD permission helper compatibility.
+    if property_owner_id != current_user_id and not user_crud.is_admin(current_user_model):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to modify this property's amenities"
@@ -139,7 +143,10 @@ def add_amenities_to_property_bulk(
         raise HTTPException(status_code=404, detail="Property not found")
     
     # Check ownership
-    if db_property.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    property_owner_id: int = typing_cast(int, db_property.user_id)  # Narrow ORM-owned property user IDs before the permission comparison.
+    current_user_id: int = typing_cast(int, current_user.user_id)  # Narrow the authenticated user ID locally without changing the dependency contract.
+    current_user_model: User = typing_cast(User, current_user)  # typing cast: endpoint local only for CRUD permission helper compatibility.
+    if property_owner_id != current_user_id and not user_crud.is_admin(current_user_model):
         raise HTTPException(status_code=403, detail="Not enough permissions")
     
     # Validate all amenities exist
@@ -180,7 +187,10 @@ def remove_amenity_from_property(
         raise HTTPException(status_code=404, detail="Property not found")
     
     # Check ownership
-    if db_property.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    property_owner_id: int = typing_cast(int, db_property.user_id)  # Narrow ORM-owned property user IDs before the permission comparison.
+    current_user_id: int = typing_cast(int, current_user.user_id)  # Narrow the authenticated user ID locally without changing the dependency contract.
+    current_user_model: User = typing_cast(User, current_user)  # typing cast: endpoint local only for CRUD permission helper compatibility.
+    if property_owner_id != current_user_id and not user_crud.is_admin(current_user_model):
         raise HTTPException(status_code=403, detail="Not enough permissions")
     
     # Check if association exists
@@ -214,7 +224,10 @@ def remove_amenities_from_property_bulk(
         raise HTTPException(status_code=404, detail="Property not found")
     
     # Check ownership
-    if db_property.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    property_owner_id: int = typing_cast(int, db_property.user_id)  # Narrow ORM-owned property user IDs before the permission comparison.
+    current_user_id: int = typing_cast(int, current_user.user_id)  # Narrow the authenticated user ID locally without changing the dependency contract.
+    current_user_model: User = typing_cast(User, current_user)  # typing cast: endpoint local only for CRUD permission helper compatibility.
+    if property_owner_id != current_user_id and not user_crud.is_admin(current_user_model):
         raise HTTPException(status_code=403, detail="Not enough permissions")
     
     # Bulk remove
@@ -249,7 +262,10 @@ def sync_property_amenities(
         raise HTTPException(status_code=404, detail="Property not found")
     
     # Check ownership
-    if db_property.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    property_owner_id: int = typing_cast(int, db_property.user_id)  # Narrow ORM-owned property user IDs before the permission comparison.
+    current_user_id: int = typing_cast(int, current_user.user_id)  # Narrow the authenticated user ID locally without changing the dependency contract.
+    current_user_model: User = typing_cast(User, current_user)  # typing cast: endpoint local only for CRUD permission helper compatibility.
+    if property_owner_id != current_user_id and not user_crud.is_admin(current_user_model):
         raise HTTPException(status_code=403, detail="Not enough permissions")
     
     # Validate all amenities exist

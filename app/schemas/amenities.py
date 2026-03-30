@@ -50,7 +50,7 @@ class AmenityUpdate(BaseModel):
 class AmenityResponse(AmenityBase):
     """Schema for amenity responses (includes DB-generated fields)"""
     amenity_id: int          # ← matches model PK column
-    id: int = None           # ← kept for backward compat; populated via validator
+    id: Optional[int] = None  # Backward-compat alias; validator syncs from `amenity_id` when omitted.
 
     @model_validator(mode='after')
     def sync_id_fields(self) -> 'AmenityResponse':

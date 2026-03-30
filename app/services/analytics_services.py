@@ -10,7 +10,7 @@ Architecture:
 - Best of both worlds: speed + flexibility
 """
 
-from typing import Optional, List
+from typing import Any, Dict, List, Optional, cast
 from sqlalchemy import select, func, and_, or_, desc
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
@@ -74,8 +74,8 @@ class AnalyticsService:
     def get_active_properties_by_location(
         self,
         db: Session,
-        state: str = None,
-        city: str = None,
+        state: Optional[str] = None,
+        city: Optional[str] = None,
         skip: int = 0,
         limit: int = 100
     ) -> List[ActivePropertiesView]:
@@ -193,7 +193,7 @@ class AnalyticsService:
             .group_by(User.user_role)
         ).all()
         
-        users_by_role = {str(row.user_role): row.count for row in user_role_counts}
+        users_by_role: Dict[str, int] = {str(row.user_role): int(row[1]) for row in user_role_counts}  # Read the labeled count column by position so pyright doesn't confuse it with Row.count().
         
         new_users_week = db.scalar(
             select(func.count()).select_from(User)
@@ -234,7 +234,7 @@ class AnalyticsService:
             .group_by(Property.listing_status)
         ).all()
         
-        properties_by_status = {str(row.listing_status): row.count for row in prop_status_counts}
+        properties_by_status: Dict[str, int] = {str(row.listing_status): int(row[1]) for row in prop_status_counts}  # Read the labeled count column by position so pyright doesn't confuse it with Row.count().
         
         prop_type_counts = db.execute(
             select(Property.property_type_id, func.count(Property.property_id).label('count'))
@@ -242,7 +242,7 @@ class AnalyticsService:
             .group_by(Property.property_type_id)
         ).all()
         
-        properties_by_type = {str(row.property_type_id): row.count for row in prop_type_counts}
+        properties_by_type: Dict[str, int] = {str(row.property_type_id): int(row[1]) for row in prop_type_counts}  # Read the labeled count column by position so pyright doesn't confuse it with Row.count().
         
         new_properties_week = db.scalar(
             select(func.count()).select_from(Property)
@@ -277,7 +277,7 @@ class AnalyticsService:
             .group_by(Inquiry.inquiry_status)
         ).all()
         
-        inquiries_by_status = {row.inquiry_status: row.count for row in inquiry_status_counts}
+        inquiries_by_status: Dict[str, int] = {str(row.inquiry_status): int(row[1]) for row in inquiry_status_counts}  # Read the labeled count column by position so pyright doesn't confuse it with Row.count().
         
         new_inquiries_week = db.scalar(
             select(func.count()).select_from(Inquiry)
@@ -488,7 +488,7 @@ class AnalyticsService:
             )
         )
         
-        if not prop:
+        if prop is None:  # Narrow the optional property lookup explicitly before reading ORM attributes from the result.
             return None
 
         # Count inquiries, favorites, reviews
@@ -510,8 +510,8 @@ class AnalyticsService:
             .where(and_(Review.property_id == property_id, Review.deleted_at.is_(None)))
         ).first()
         
-        review_count = review_stats.review_count or 0
-        avg_rating = review_stats.avg_rating
+        review_count = int(review_stats.review_count or 0) if review_stats is not None else 0  # Support the optional aggregate row and normalize the count to the concrete int expected by the response schema.
+        avg_rating = review_stats.avg_rating if review_stats is not None else None  # Support the optional aggregate row before reading the average rating field.
 
         rating_dist_raw = db.execute(
             select(Review.rating, func.count(Review.review_id).label('count'))
@@ -519,8 +519,8 @@ class AnalyticsService:
             .group_by(Review.rating)
         ).all()
         
-        rating_distribution = {row.rating: row.count for row in rating_dist_raw}
-        days_listed = (datetime.now(timezone.utc) - prop.created_at).days
+        rating_distribution: Dict[int, int] = {int(row.rating): int(row[1]) for row in rating_dist_raw}  # Read the labeled count column by position so pyright doesn't confuse it with Row.count().
+        days_listed = (datetime.now(timezone.utc) - cast(datetime, prop.created_at)).days  # Narrow the ORM-backed created_at value to a concrete datetime before date arithmetic.
 
         return PropertyEngagementResponse(
             property_id=property_id,
@@ -530,8 +530,8 @@ class AnalyticsService:
             average_rating=avg_rating,
             rating_distribution=rating_distribution,
             days_listed=days_listed,
-            is_featured=prop.is_featured,
-            is_verified=prop.is_verified
+            is_featured=bool(prop.is_featured),  # Normalize the ORM-backed boolean field to the concrete bool expected by the response schema.
+            is_verified=bool(prop.is_verified)  # Normalize the ORM-backed boolean field to the concrete bool expected by the response schema.
         )
 
 

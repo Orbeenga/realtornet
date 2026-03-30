@@ -5,7 +5,7 @@ DB Table: property_types (PK: property_type_id)
 Canonical Rules: Lookup table pattern, no soft delete needed
 """
 
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, cast
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func, or_
 import logging
@@ -48,16 +48,18 @@ class PropertyTypeCRUD:
         """Get multiple property types with pagination and deterministic ordering"""
         query = select(PropertyType).order_by(PropertyType.name.asc())
         query = query.offset(skip).limit(limit)
-        return db.execute(query).scalars().all()
+        return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
     
     def get_all(self, db: Session, limit: int = 500) -> List[PropertyType]:
         """
         Get all property types for dropdown/select options.
         Hard-capped at 500 for safety - lookup tables should stay small.
         """
-        return db.execute(
+        return list(  # Normalize SQLAlchemy's sequence result to the declared list return type.
+            db.execute(
             select(PropertyType).order_by(PropertyType.name.asc()).limit(limit)
-        ).scalars().all()
+            ).scalars().all()
+        )
     
     def search(
         self,
@@ -80,15 +82,19 @@ class PropertyTypeCRUD:
             )
         ).order_by(PropertyType.name.asc())
         
-        return db.execute(
+        return list(  # Normalize SQLAlchemy's sequence result to the declared list return type.
+            db.execute(
             query.offset(skip).limit(limit)
-        ).scalars().all()
+            ).scalars().all()
+        )
     
     def count(self, db: Session) -> int:
         """Count total property types"""
-        return db.execute(
+        return int(  # Coerce nullable aggregate scalar into the concrete int this API returns.
+            db.execute(
             select(func.count(PropertyType.property_type_id))
-        ).scalar()
+            ).scalar() or 0
+        )
     
     def exists(self, db: Session, *, property_type_id: int) -> bool:
         """Check if property type exists (optimized)"""
@@ -167,7 +173,11 @@ class PropertyTypeCRUD:
                 # Check if another type has this name
                 existing = self.get_by_name(db, name=new_name)
                 
-                if existing and existing.property_type_id != db_obj.property_type_id:
+                existing_property_type_id = (  # Cast the loaded ORM ID to a concrete int so pyright doesn't keep SQLAlchemy's descriptor type in the comparison.
+                    cast(int, existing.property_type_id) if existing is not None else None
+                )
+                current_property_type_id = cast(int, db_obj.property_type_id)  # Cast the current ORM ID to the concrete int stored on the instance before comparing.
+                if existing_property_type_id is not None and existing_property_type_id != current_property_type_id:
                     raise ValueError(f"Property type with name '{new_name}' already exists")
         
         # Remove protected fields
@@ -223,7 +233,7 @@ class PropertyTypeCRUD:
                 )
             ).scalar()
             
-            if usage_count > 0:
+            if (usage_count or 0) > 0:
                 logger.warning(
                     "Attempted deletion of in-use property type",
                     extra={

@@ -4,7 +4,7 @@ Profile management endpoints - Canonical compliant
 Handles user profile CRUD and avatar uploads via Supabase Storage
 FULL AUDIT TRAIL: created_by, updated_by, deleted_by (profiles table has all 3)
 """
-from typing import Any, List
+from typing import Any, List, cast as typing_cast  # Alias typing.cast so endpoint-local narrowing stays explicit and never collides with ORM helpers elsewhere.
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
@@ -25,6 +25,7 @@ from app.api.dependencies import (
 # --- DIRECT SCHEMA IMPORTS (using aliases) ---
 from app.schemas.users import UserResponse as UserResponse
 from app.schemas.profiles import ProfileResponse, ProfileCreate, ProfileUpdate
+from app.models.users import User  # Reuse the ORM-backed user type for local permission-helper narrowing.
 
 # --- SERVICES ---
 from app.services.storage_services import upload_profile_image
@@ -75,11 +76,13 @@ def read_profile_by_id(
         )
     
     # Users can read their own profile
-    if user_profile.user_id == current_user.user_id:
+    user_profile_user_id: int | None = typing_cast(int | None, user_profile.user_id)  # Narrow the ORM owner foreign key to the runtime int value carried on the loaded entity.
+    if user_profile_user_id == current_user.user_id:
         return user_profile
     
     # Admins can read any profile
-    if user_crud.is_admin(current_user):
+    current_user_model: User = typing_cast(User, current_user)  # Narrow the dependency result to the ORM-backed user type expected by CRUD role helpers.
+    if user_crud.is_admin(current_user_model):
         return user_profile
     
     raise HTTPException(
@@ -114,11 +117,12 @@ def create_profile(
         )
     
     # Create with audit tracking
+    created_by_supabase_id: str = str(current_user.supabase_id)  # Normalize the authenticated UUID to the string audit format expected by the CRUD layer.
     user_profile = profile_crud.create(
         db=db,
         obj_in=profile_in,
         user_id=current_user.user_id,
-        created_by=current_user.supabase_id
+        created_by=created_by_supabase_id
     )
     
     logger.info(
@@ -155,11 +159,12 @@ def update_profile_me(
         )
     
     # Update with audit tracking
+    updated_by_supabase_id: str = str(current_user.supabase_id)  # Normalize the authenticated UUID to the string audit format expected by the CRUD layer.
     updated_profile = profile_crud.update(
         db=db,
         db_obj=user_profile,
         obj_in=profile_in,
-        updated_by=current_user.supabase_id
+        updated_by=updated_by_supabase_id
     )
     
     logger.info(
@@ -215,19 +220,21 @@ async def upload_avatar(
                 detail=f"File too large (max {max_size / 1024 / 1024}MB)"
             )
         
+        file_name: str = file.filename or f"profile-{current_user.user_id}"  # Narrow the upload filename to a concrete string before passing it to the storage service.
         avatar_url = await upload_profile_image(
             current_user.user_id,
             contents,
-            file.filename
+            file_name
         )
         
         # Update with audit tracking
-        profile_update = ProfileUpdate(profile_picture_url=avatar_url)
+        profile_update = ProfileUpdate(profile_picture=avatar_url)  # Align the endpoint update payload with the canonical schema field name.
+        updated_by_supabase_id: str = str(current_user.supabase_id)  # Normalize the authenticated UUID to the string audit format expected by the CRUD layer.
         updated_profile = profile_crud.update(
             db=db,
             db_obj=user_profile,
             obj_in=profile_update,
-            updated_by=current_user.supabase_id
+            updated_by=updated_by_supabase_id
         )
         
         logger.info(
@@ -278,19 +285,23 @@ def delete_avatar(
             detail="Profile not found for current user"
         )
     
-    if not user_profile.profile_picture_url:
+    user_profile_picture: str | None = typing_cast(str | None, user_profile.profile_picture)  # Narrow the ORM profile-picture attribute to the runtime string value carried on the loaded entity.
+    if user_profile_picture is None:  # Preserve compatibility with older injected profile fixtures that still expose the legacy attribute name while the schema stays canonical.
+        user_profile_picture = typing_cast(str | None, getattr(user_profile, "profile_picture_url", None))  # Fall back to the legacy attribute only for read compatibility during the transition.
+    if not user_profile_picture:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No avatar to delete"
         )
     
     # Update with audit tracking
-    profile_update = ProfileUpdate(profile_picture_url=None)
+    profile_update = ProfileUpdate(profile_picture=None)  # Align the endpoint update payload with the canonical schema field name.
+    updated_by_supabase_id: str = str(current_user.supabase_id)  # Normalize the authenticated UUID to the string audit format expected by the CRUD layer.
     updated_profile = profile_crud.update(
         db=db,
         db_obj=user_profile,
         obj_in=profile_update,
-        updated_by=current_user.supabase_id
+        updated_by=updated_by_supabase_id
     )
     
     logger.info(

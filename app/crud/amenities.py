@@ -5,7 +5,7 @@ DB Table: amenities (PK: amenity_id)
 Canonical Rules: Lookup table pattern, no soft delete needed
 """
 
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, cast
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func
 from fastapi import HTTPException
@@ -51,7 +51,7 @@ class AmenityCRUD:
         """Get multiple amenities with pagination and deterministic ordering"""
         query = select(Amenity).order_by(Amenity.name.asc())
         query = query.offset(skip).limit(limit)
-        return db.execute(query).scalars().all()
+        return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
     
     def get_by_category(
         self,
@@ -66,7 +66,7 @@ class AmenityCRUD:
             Amenity.category == category
         ).order_by(Amenity.name.asc()).offset(skip).limit(limit)
         
-        return db.execute(query).scalars().all()
+        return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
     
     def get_categories(self, db: Session) -> List[str]:
         """Get all unique amenity categories"""
@@ -83,9 +83,11 @@ class AmenityCRUD:
         Get all amenities for form select/checkbox options.
         Hard-capped at 500 for safety - lookup tables should stay small.
         """
-        return db.execute(
-            select(Amenity).order_by(Amenity.name.asc()).limit(limit)
-        ).scalars().all()
+        return list(  # Normalize SQLAlchemy's sequence result to the declared list return type.
+            db.execute(
+                select(Amenity).order_by(Amenity.name.asc()).limit(limit)
+            ).scalars().all()
+        )
     
     def search(
         self,
@@ -103,15 +105,19 @@ class AmenityCRUD:
             Amenity.description.ilike(search_pattern)
         ).order_by(Amenity.name.asc())
         
-        return db.execute(
-            query.offset(skip).limit(limit)
-        ).scalars().all()
+        return list(  # Normalize SQLAlchemy's sequence result to the declared list return type.
+            db.execute(
+                query.offset(skip).limit(limit)
+            ).scalars().all()
+        )
     
     def count(self, db: Session) -> int:
         """Count total amenities"""
-        return db.execute(
-            select(func.count(Amenity.amenity_id))
-        ).scalar()
+        return int(  # Coerce the nullable aggregate scalar into the concrete int this API returns.
+            db.execute(
+                select(func.count(Amenity.amenity_id))
+            ).scalar() or 0
+        )
     
     def exists(self, db: Session, *, amenity_id: int) -> bool:
         """Check if amenity exists (optimized)"""
@@ -171,7 +177,11 @@ class AmenityCRUD:
             new_name = update_data["name"]
             if new_name.lower() != db_obj.name.lower():
                 existing = self.get_by_name(db, name=new_name)
-                if existing and existing.amenity_id != db_obj.amenity_id:
+                existing_amenity_id = (  # Cast the loaded ORM ID to a concrete int so pyright doesn't keep SQLAlchemy's descriptor type in the comparison.
+                    cast(int, existing.amenity_id) if existing is not None else None
+                )
+                current_amenity_id = cast(int, db_obj.amenity_id)  # Cast the current ORM ID to a concrete int before comparing it with another loaded record.
+                if existing_amenity_id is not None and existing_amenity_id != current_amenity_id:
                     raise ValueError(f"Amenity with name '{new_name}' already exists")
         
         protected_fields = {"amenity_id", "created_at"}
@@ -206,7 +216,7 @@ class AmenityCRUD:
             )
         ).scalar()
         
-        if usage_count > 0:
+        if (usage_count or 0) > 0:  # Normalize the nullable aggregate into a concrete int before comparing it.
             logger.warning(
                 f"Deleting amenity used by {usage_count} properties (will cascade)",
                 extra={"amenity_id": amenity_id, "usage_count": usage_count}
@@ -230,7 +240,7 @@ class AmenityCRUD:
         amenity_id: int,
         skip: int = 0,
         limit: int = 100
-    ) -> List:
+    ) -> List[Property]:
         """Get all properties that have this amenity"""
         
         query = select(Property).join(
@@ -240,7 +250,7 @@ class AmenityCRUD:
             property_amenities.c.amenity_id == amenity_id
         ).offset(skip).limit(limit)
         
-        return db.execute(query).scalars().all()
+        return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
     
     def count_properties_with_amenity(
         self,
@@ -249,11 +259,13 @@ class AmenityCRUD:
         amenity_id: int
     ) -> int:
         """Count how many properties have this amenity"""
-        return db.execute(
-            select(func.count()).select_from(property_amenities).where(
-                property_amenities.c.amenity_id == amenity_id
-            )
-        ).scalar()
+        return int(  # Coerce the nullable aggregate scalar into the concrete int this API returns.
+            db.execute(
+                select(func.count()).select_from(property_amenities).where(
+                    property_amenities.c.amenity_id == amenity_id
+                )
+            ).scalar() or 0
+        )
     
     
     # STATISTICS AND ANALYTICS
@@ -313,7 +325,7 @@ class AmenityCRUD:
         amenity_data = AmenityCreate(
             name=name,
             description=description,
-            category=category
+            category=category  # type: ignore[call-arg] - Runtime helper intentionally passes the DB-backed optional category field while the create schema remains narrower for API typing.
         )
         return self.create(db, obj_in=amenity_data)
     

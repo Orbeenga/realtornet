@@ -35,7 +35,7 @@ class AgentProfileBase(BaseModel):
 # Create Schema (for POST requests - excludes DB-controlled fields)
 class AgentProfileCreate(AgentProfileBase):
     """Schema for creating a new agent profile"""
-    user_id: int  # Required - must link to a user
+    user_id: int  # pyright: ignore[reportGeneralTypeIssues,reportIncompatibleVariableOverride] - create schema intentionally narrows optional base field.
     # All other fields optional via inheritance
 
 
@@ -63,8 +63,8 @@ class AgentProfileUpdate(BaseModel):
 class AgentProfileResponse(AgentProfileBase):
     """Schema for agent profile responses (includes DB-generated fields)"""
     profile_id: int
-    user_id: int
-    agency_id: int
+    user_id: int  # pyright: ignore[reportGeneralTypeIssues,reportIncompatibleVariableOverride] - response schema enforces persisted required IDs.
+    agency_id: int  # pyright: ignore[reportGeneralTypeIssues,reportIncompatibleVariableOverride] - response schema enforces persisted required IDs.
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime] = None

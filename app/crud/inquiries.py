@@ -5,7 +5,7 @@ CRUD operations for inquiries table.
 Soft delete default, no manual timestamps, proper FK joins.
 """
 
-from typing import List, Optional
+from typing import Any, List, Optional, cast
 from sqlalchemy import select, and_, func
 from sqlalchemy.orm import Session, joinedload
 
@@ -70,7 +70,7 @@ class InquiryCRUD:
             .offset(skip)
             .limit(limit)
         )
-        return db.execute(stmt).scalars().all()
+        return list(db.execute(stmt).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
 
     def update(
         self, 
@@ -110,7 +110,7 @@ class InquiryCRUD:
         db: Session, 
         *, 
         inquiry_id: int,
-        deleted_by_supabase_id: str = None
+        deleted_by_supabase_id: Optional[str] = None
     ) -> Optional[Inquiry]:
         """
         Soft delete an inquiry.
@@ -120,7 +120,7 @@ class InquiryCRUD:
         if not db_obj:
             return None
 
-        db_obj.deleted_at = func.now()  # ORM sets deleted_at; DB trigger handles updated_at only
+        cast(Any, db_obj).deleted_at = func.now()  # Cast through Any so pyright accepts assigning the SQL timestamp expression to the ORM-backed field.
         db_obj.deleted_by = deleted_by_supabase_id
         db.flush()
         db.refresh(db_obj)
@@ -147,7 +147,7 @@ class InquiryCRUD:
             .offset(skip)
             .limit(limit)
         )
-        return db.execute(stmt).scalars().all()
+        return list(db.execute(stmt).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
 
     def get_by_user(
         self, 
@@ -170,7 +170,7 @@ class InquiryCRUD:
             .offset(skip)
             .limit(limit)
         )
-        return db.execute(stmt).scalars().all()
+        return list(db.execute(stmt).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
 
     def get_by_property_owner(
         self, 
@@ -198,7 +198,7 @@ class InquiryCRUD:
             .offset(skip)
             .limit(limit)
         )
-        return db.execute(stmt).scalars().all()
+        return list(db.execute(stmt).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
 
     def update_status(
         self, 
@@ -215,7 +215,7 @@ class InquiryCRUD:
         if not db_obj:
             return None
 
-        db_obj.inquiry_status = new_status
+        cast(Any, db_obj).inquiry_status = new_status  # Cast through Any so pyright accepts assigning the validated runtime status string to the ORM-backed field.
         # DB trigger handles updated_at
         db.flush()
         db.refresh(db_obj)
@@ -252,14 +252,14 @@ class InquiryCRUD:
                 Inquiry.deleted_at.is_(None)
             )
         )
-        return db.execute(stmt).scalar()
+        return int(db.execute(stmt).scalar() or 0)  # Coerce the nullable aggregate scalar into the concrete int this API returns.
 
     def count_active(self, db: Session) -> int:
         """Count active (non-deleted) inquiries."""
         stmt = select(func.count()).select_from(Inquiry).where(
             Inquiry.deleted_at.is_(None)
         )
-        return db.execute(stmt).scalar()
+        return int(db.execute(stmt).scalar() or 0)  # Coerce the nullable aggregate scalar into the concrete int this API returns.
 
     def count_by_status(
         self,
@@ -276,7 +276,7 @@ class InquiryCRUD:
                 Inquiry.deleted_at.is_(None)
             )
         )
-        return db.execute(stmt).scalar()
+        return int(db.execute(stmt).scalar() or 0)  # Coerce the nullable aggregate scalar into the concrete int this API returns.
 
 
 # Singleton instance

@@ -4,7 +4,7 @@ User management endpoints - Canonical compliant
 Handles CRUD operations with proper soft delete, audit tracking, and multi-tenant support
 FULL AUDIT TRAIL: created_by, updated_by, deleted_by (users table has all 3)
 """
-from typing import Any, List
+from typing import Any, List, cast
 import logging
 
 from fastapi import APIRouter, Body, Depends, HTTPException, status, File, UploadFile
@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 # --- DIRECT CRUD IMPORTS ---
 from app.crud.users import user as user_crud
+from app.models.users import User  # Narrow endpoint-local values back to the ORM user shape expected by CRUD helpers without changing the route contract.
 
 # --- DIRECT DEPENDENCY IMPORTS ---
 from app.api.dependencies import (
@@ -77,18 +78,21 @@ def read_user_by_id(
     """
     user = user_crud.get(db, user_id=user_id)
     
-    if not user:
+    if user is None:  # Narrow the optional ORM lookup explicitly before reading fields from the returned user object.
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
     
     # Allow users to read their own profile
-    if user.user_id == current_user.user_id:
+    current_user_id = cast(int, current_user.user_id)  # Narrow the dependency-backed user id to a concrete int before ownership checks.
+    target_user_id = cast(int, user.user_id)  # Narrow the ORM-backed user id to a concrete int before equality checks so pyright doesn't interpret it as SQL expression building.
+    if target_user_id == current_user_id:
         return user
     
     # Otherwise, require admin privileges
-    if not user_crud.is_admin(current_user):
+    current_user_model = cast(User, current_user)  # Narrow the dependency-backed user payload to the ORM user shape expected by the CRUD helper.
+    if not user_crud.is_admin(current_user_model):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions"
@@ -111,18 +115,20 @@ def update_user_me(
     Audit: Tracks updater via updated_by (Supabase UUID)
     """
     # Update with audit tracking
+    current_user_model = cast(User, current_user)  # Narrow the dependency-backed user payload to the ORM user shape expected by the CRUD helper.
+    updated_by_supabase_id = str(current_user.supabase_id)  # Normalize the dependency-backed UUID to the string audit format expected by CRUD.
     user = user_crud.update(
         db,
-        db_obj=current_user,
+        db_obj=current_user_model,
         obj_in=user_in,
-        updated_by=current_user.supabase_id
+        updated_by=updated_by_supabase_id
     )
     
     logger.info(
         "User updated self",
         extra={
             "user_id": current_user.user_id,
-            "updated_by": current_user.supabase_id
+            "updated_by": updated_by_supabase_id
         }
     )
     
@@ -145,25 +151,26 @@ def update_user(
     """
     user = user_crud.get(db, user_id=user_id)
     
-    if not user:
+    if user is None:  # Narrow the optional ORM lookup explicitly before reading fields from the returned user object.
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
     
     # Update with audit tracking
+    updated_by_supabase_id = str(current_user.supabase_id)  # Normalize the dependency-backed UUID to the string audit format expected by CRUD.
     user = user_crud.update(
         db,
         db_obj=user,
         obj_in=user_in,
-        updated_by=current_user.supabase_id
+        updated_by=updated_by_supabase_id
     )
     
     logger.info(
         "User updated by admin",
         extra={
             "user_id": user.user_id,
-            "updated_by": current_user.supabase_id
+            "updated_by": updated_by_supabase_id
         }
     )
     
@@ -184,32 +191,41 @@ def delete_user(
     """
     user = user_crud.get(db, user_id=user_id)
     
-    if not user:
+    if user is None:  # Narrow the optional ORM lookup explicitly before reading fields from the returned user object.
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
     
     # Prevent self-deletion
-    if user.user_id == current_user.user_id:
+    current_user_id = cast(int, current_user.user_id)  # Narrow the dependency-backed user id to a concrete int before self-delete checks.
+    target_user_id = cast(int, user.user_id)  # Narrow the ORM-backed user id to a concrete int before equality checks so pyright doesn't interpret it as SQL expression building.
+    if target_user_id == current_user_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot delete your own account"
         )
     
     # Soft delete with audit trail
+    deleted_by_supabase_id = str(current_user.supabase_id)  # Normalize the dependency-backed UUID to the string audit format expected by CRUD.
     user = user_crud.soft_delete(
         db,
         user_id=user_id,
-        deleted_by_supabase_id=current_user.supabase_id
+        deleted_by_supabase_id=deleted_by_supabase_id
     )
+
+    if user is None:  # Narrow the soft-delete result explicitly before reading fields from the returned user object.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
     
     logger.warning(
         "User soft deleted",
         extra={
             "user_id": user_id,
             "email": user.email,
-            "deleted_by": current_user.supabase_id
+            "deleted_by": deleted_by_supabase_id
         }
     )
     
@@ -238,7 +254,9 @@ async def upload_user_profile_image(
     Audit: Tracks uploader via updated_by
     """
     # Check permissions
-    if current_user.user_id != user_id and not user_crud.is_admin(current_user):
+    current_user_id = cast(int, current_user.user_id)  # Narrow the dependency-backed user id to a concrete int before permission checks.
+    current_user_model = cast(User, current_user)  # Narrow the dependency-backed user payload to the ORM user shape expected by the CRUD helper.
+    if current_user_id != user_id and not user_crud.is_admin(current_user_model):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to upload image for this user"
@@ -246,7 +264,7 @@ async def upload_user_profile_image(
     
     # Ensure user exists and not deleted
     user_obj = user_crud.get(db, user_id=user_id)
-    if not user_obj:
+    if user_obj is None:  # Narrow the optional ORM lookup explicitly before reading fields from the returned user object.
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
@@ -271,15 +289,17 @@ async def upload_user_profile_image(
             )
         
         # Upload to Supabase Storage
-        url = await upload_profile_image(user_id, contents, file.filename)
+        file_name = file.filename if file.filename is not None else "profile-image"  # Narrow the optional uploaded filename to a concrete string before passing it to storage.
+        url = await upload_profile_image(user_id, contents, file_name)
         
         # Update user with new profile image URL
         user_update = UserUpdate(profile_image_url=url)
+        updated_by_supabase_id = str(current_user.supabase_id)  # Normalize the dependency-backed UUID to the string audit format expected by CRUD.
         user = user_crud.update(
             db,
             db_obj=user_obj,
             obj_in=user_update,
-            updated_by=current_user.supabase_id
+            updated_by=updated_by_supabase_id
         )
         
         logger.info(
@@ -287,7 +307,7 @@ async def upload_user_profile_image(
             extra={
                 "user_id": user.user_id,
                 "image_url": url,
-                "uploaded_by": current_user.supabase_id
+                "uploaded_by": updated_by_supabase_id
             }
         )
         

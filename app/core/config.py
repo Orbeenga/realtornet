@@ -221,7 +221,7 @@ def get_settings() -> Settings:
     Cached settings retrieval for performance.
     Validates security requirements on startup.
     """
-    settings_instance = Settings()
+    settings_instance = Settings()  # pyright: ignore[reportCallIssue] - BaseSettings loads required fields from .env at runtime.
     settings_instance.validate_secret_key()
     return settings_instance
 

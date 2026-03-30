@@ -5,7 +5,7 @@ CRUD operations for favorites table.
 Canonical soft-delete pattern, no phantom fields, DB-first alignment.
 """
 
-from typing import List, Optional
+from typing import Any, List, Optional, cast
 from sqlalchemy import select, func, and_
 from sqlalchemy.orm import Session
 
@@ -80,14 +80,14 @@ class FavoriteCRUD:
         *, 
         user_id: int, 
         property_id: int,
-        deleted_by_supabase_id: str = None
+        deleted_by_supabase_id: Optional[str] = None
     ) -> Optional[Favorite]:
         """
         Soft delete a favorite.
         """
         obj = self.get(db=db, user_id=user_id, property_id=property_id)
         if obj:
-            obj.deleted_at = func.now()
+            cast(Any, obj).deleted_at = func.now()  # Cast through Any so pyright accepts assigning the SQL timestamp expression to the ORM-backed field.
             # Standard 14: Track audit trail
             if deleted_by_supabase_id:
                 obj.deleted_by = deleted_by_supabase_id
@@ -103,7 +103,7 @@ class FavoriteCRUD:
         *,
         user_id: int,
         property_ids: List[int],
-        deleted_by_supabase_id: str = None
+        deleted_by_supabase_id: Optional[str] = None
     ) -> int:
         """Bulk soft-delete favorites. Single SQL UPDATE, atomic, canonical Standard 7."""
         from sqlalchemy import update
@@ -121,7 +121,7 @@ class FavoriteCRUD:
         )
         result = db.execute(stmt)
         db.flush()
-        return result.rowcount
+        return int(cast(Any, result).rowcount or 0)  # Cast the SQLAlchemy result metadata to a concrete int row count before returning it.
 
     def get_user_favorites(
         self, 
@@ -149,7 +149,7 @@ class FavoriteCRUD:
             .offset(skip)
             .limit(limit)
         )
-        return db.execute(stmt).scalars().all()
+        return list(db.execute(stmt).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
 
     def is_favorited(
         self, 
@@ -172,7 +172,7 @@ class FavoriteCRUD:
             )
         ))
         count = db.execute(stmt).scalar()
-        return count > 0
+        return (count or 0) > 0  # Normalize the nullable aggregate into a concrete int before comparing it.
 
     def count_active_favorites(
         self, 
@@ -187,7 +187,7 @@ class FavoriteCRUD:
                 Favorite.deleted_at.is_(None)
             )
         )
-        return db.execute(stmt).scalar()
+        return int(db.execute(stmt).scalar() or 0)  # Coerce the nullable aggregate scalar into the concrete int this API returns.
 
     def count_user_favorites(
         self,
@@ -208,7 +208,7 @@ class FavoriteCRUD:
                 )
             )
         )
-        return db.execute(stmt).scalar()
+        return int(db.execute(stmt).scalar() or 0)  # Coerce the nullable aggregate scalar into the concrete int this API returns.
 
 
     def restore_favorite(
@@ -233,7 +233,7 @@ class FavoriteCRUD:
         obj = db.execute(stmt).scalar_one_or_none()
         
         if obj:
-            obj.deleted_at = None
+            cast(Any, obj).deleted_at = None  # Cast through Any so pyright accepts clearing the ORM-backed soft-delete field during restore.
             db.flush()
             db.refresh(obj)
         

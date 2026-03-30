@@ -73,13 +73,13 @@ class ReviewResponse(ReviewBase):
 # Response Schema - Property Review
 class PropertyReviewResponse(ReviewResponse):
     """Response for property reviews"""
-    property_id: int  # Required for property reviews
+    property_id: int  # pyright: ignore[reportGeneralTypeIssues,reportIncompatibleVariableOverride] - specialized response requires concrete property_id.
 
 
 # Response Schema - Agent Review
 class AgentReviewResponse(ReviewResponse):
     """Response for agent reviews"""
-    agent_id: int  # Required for agent reviews
+    agent_id: int  # pyright: ignore[reportGeneralTypeIssues,reportIncompatibleVariableOverride] - specialized response requires concrete agent_id.
 
 
 # Extended Response (with nested user/property/agent data)

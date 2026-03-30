@@ -114,7 +114,7 @@ class ResourceNotFoundException(ApplicationException):
 def example_endpoint():
     try:
         # Some business logic
-        if not valid_condition:
+        if not valid_condition:  # pyright: ignore[reportUndefinedVariable] - illustrative placeholder in example-only snippet.
             raise ValidationException(
                 "Invalid input", 
                 details={"field": "user_email", "reason": "Invalid format"}

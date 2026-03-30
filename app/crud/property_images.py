@@ -5,7 +5,7 @@ DB Table: property_images (PK: image_id, FK: property_id)
 Canonical Rules: NO audit trail, hard delete, primary image enforcement
 """
 
-from typing import List, Optional
+from typing import Any, List, Optional, cast
 from sqlalchemy.orm import Session
 from sqlalchemy import select, and_, func, delete as sql_delete
 import logging
@@ -46,7 +46,7 @@ class PropertyImageCRUD:
             PropertyImage.created_at.asc()
         )
         
-        return db.execute(query).scalars().all()
+        return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
     
     def get_primary_image(
         self,
@@ -71,11 +71,13 @@ class PropertyImageCRUD:
         property_id: int
     ) -> int:
         """Count images for a property"""
-        return db.execute(
-            select(func.count(PropertyImage.image_id)).where(
-                PropertyImage.property_id == property_id
-            )
-        ).scalar()
+        return int(  # Coerce the nullable aggregate scalar into the concrete int this API returns.
+            db.execute(
+                select(func.count(PropertyImage.image_id)).where(
+                    PropertyImage.property_id == property_id
+                )
+            ).scalar() or 0
+        )
     
     
     # CREATE OPERATIONS
@@ -160,8 +162,10 @@ class PropertyImageCRUD:
         update_data = obj_in.dict(exclude_unset=True)
         
         # If setting as primary, unset current primary
-        if update_data.get("is_primary") == True and not db_obj.is_primary:
-            self.unset_primary(db, property_id=db_obj.property_id)
+        should_set_primary = update_data.get("is_primary") == True  # Materialize the update flag as a concrete bool before branching on it.
+        is_currently_primary = cast(bool, db_obj.is_primary)  # Cast the loaded ORM boolean to the concrete runtime bool stored on the instance.
+        if should_set_primary and not is_currently_primary:
+            self.unset_primary(db, property_id=cast(int, db_obj.property_id))  # Cast the loaded ORM foreign key to the concrete int expected by the helper.
         
         # Remove protected fields
         protected_fields = {"image_id", "property_id", "created_at"}
@@ -204,8 +208,8 @@ class PropertyImageCRUD:
         if not db_obj:
             raise ValueError(f"Image with id={image_id} not found")
         
-        was_primary = db_obj.is_primary
-        property_id = db_obj.property_id
+        was_primary = cast(bool, db_obj.is_primary)  # Cast the loaded ORM boolean to the concrete runtime bool used by the promotion branch.
+        property_id = cast(int, db_obj.property_id)  # Cast the loaded ORM foreign key to the concrete int reused after deletion.
         
         # Delete the image
         db.delete(db_obj)
@@ -225,7 +229,7 @@ class PropertyImageCRUD:
             remaining = self.get_by_property(db, property_id=property_id)
             if remaining:
                 # Promote first remaining image to primary
-                remaining[0].is_primary = True
+                cast(Any, remaining[0]).is_primary = True  # Cast through Any so pyright accepts assigning a runtime bool to the ORM-backed field.
                 db.add(remaining[0])
                 db.flush()
     
@@ -298,8 +302,8 @@ class PropertyImageCRUD:
         # Update display_order for each image
         for order_index, image_id in enumerate(image_order):
             image = self.get(db, image_id=image_id)
-            if image:
-                image.display_order = order_index
+            if image is not None:
+                cast(Any, image).display_order = order_index  # Cast through Any so pyright accepts assigning the concrete order int to the ORM-backed field.
                 db.add(image)
         
         db.flush()

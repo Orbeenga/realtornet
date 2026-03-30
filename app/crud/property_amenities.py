@@ -5,9 +5,10 @@ DB Table: property_amenities (Composite PK: property_id, amenity_id)
 Canonical Rules: Junction table pattern, many-to-many relationship
 """
 
-from typing import List, Optional
+from typing import List, Optional, cast
 from sqlalchemy.orm import Session
 from sqlalchemy import select, delete, and_, func
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import SQLAlchemyError
 import logging
 import json
@@ -62,7 +63,7 @@ class PropertyAmenityCRUD:
             property_amenities_table.c.property_id == property_id
         ).order_by(Amenity.name.asc())
         
-        return db.execute(query).scalars().all()
+        return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy Sequence[...] to concrete list return type.
     
     def get_amenities_for_property(
         self,
@@ -88,7 +89,7 @@ class PropertyAmenityCRUD:
             property_amenities_table.c.property_id == property_id
         ).order_by(property_amenities_table.c.amenity_id.asc())
         
-        return db.execute(query).scalars().all()
+        return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy Sequence[...] to concrete list return type.
     
     def has_amenity(
         self,
@@ -118,7 +119,7 @@ class PropertyAmenityCRUD:
             select(func.count(property_amenities_table.c.amenity_id)).where(
                 property_amenities_table.c.property_id == property_id
             )
-        ).scalar()
+        ).scalar() or 0  # COUNT is expected non-null; provide typed fallback for strict checkers.
     
     def count_by_amenity(
         self,
@@ -134,7 +135,7 @@ class PropertyAmenityCRUD:
             select(func.count(property_amenities_table.c.property_id)).where(
                 property_amenities_table.c.amenity_id == amenity_id
             )
-        ).scalar()
+        ).scalar() or 0  # COUNT is expected non-null; provide typed fallback for strict checkers.
     
     
     # CREATE OPERATIONS (Add Amenities)
@@ -375,14 +376,14 @@ class PropertyAmenityCRUD:
         Remove a single amenity from a property.
         Returns True if removed, False if didn't exist.
         """
-        result = db.execute(
+        result = cast(CursorResult, db.execute(
             delete(property_amenities_table).where(
                 and_(
                     property_amenities_table.c.property_id == property_id,
                     property_amenities_table.c.amenity_id == amenity_id
                 )
             )
-        )
+        ))  # Delete returns a cursor-style result at runtime; cast keeps rowcount access typed.
         
         db.flush()
         return result.rowcount > 0
@@ -412,14 +413,14 @@ class PropertyAmenityCRUD:
         Remove multiple amenities from a property.
         Returns count of removed records.
         """
-        result = db.execute(
+        result = cast(CursorResult, db.execute(
             delete(property_amenities_table).where(
                 and_(
                     property_amenities_table.c.property_id == property_id,
                     property_amenities_table.c.amenity_id.in_(amenity_ids)
                 )
             )
-        )
+        ))  # Delete returns a cursor-style result at runtime; cast keeps rowcount access typed.
         
         db.flush()
         return result.rowcount
@@ -448,11 +449,11 @@ class PropertyAmenityCRUD:
         Remove all amenities from a property.
         Returns count of removed records.
         """
-        result = db.execute(
+        result = cast(CursorResult, db.execute(
             delete(property_amenities_table).where(
                 property_amenities_table.c.property_id == property_id
             )
-        )
+        ))  # Delete returns a cursor-style result at runtime; cast keeps rowcount access typed.
         
         db.flush()
         return result.rowcount

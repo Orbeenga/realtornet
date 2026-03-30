@@ -5,7 +5,7 @@ Production-ready with proper error handling, logging, and image optimization
 """
 
 from io import BytesIO
-from typing import Tuple
+from typing import Any, Dict, List, Tuple, cast
 from PIL import Image
 import logging
 
@@ -102,17 +102,19 @@ async def upload_file(bucket_name: str, file_path: str, file_data: bytes) -> str
         response = client.storage.from_(bucket_name).upload(
             file_path, 
             file_data, 
-            {"upsert": True}
+            cast(Any, {"upsert": True})  # Supabase's runtime accepts this options dict even though the stub expects a narrower file-options helper type.
         )
 
-        if response.get("error"):
+        upload_response = cast(Dict[str, Any], response)  # Narrow the upload response to the dict-like shape the current runtime returns before keyed access.
+
+        if upload_response.get("error"):
             # Log internal error but return generic message
             logger.error(
                 "Storage upload failed",
                 extra={
                     "bucket": bucket_name,
                     "path": file_path,
-                    "error": response.get("error")
+                    "error": upload_response.get("error")
                 },
                 exc_info=True
             )
@@ -236,14 +238,17 @@ async def delete_file(bucket_name: str, file_path: str) -> bool:
     try:
         response = client.storage.from_(bucket_name).remove([file_path])
 
-        if response.get("error"):
+        remove_response = cast(List[Dict[str, Any]], response)  # Narrow the remove response to the list-of-dicts shape the current runtime returns before indexed access.
+        first_remove_result = remove_response[0] if remove_response else {}  # Handle the documented empty-list case before reading keyed error details.
+
+        if first_remove_result.get("error"):
             # Log internal error but return generic message
             logger.error(
                 "Storage delete failed",
                 extra={
                     "bucket": bucket_name,
                     "path": file_path,
-                    "error": response.get("error")
+                    "error": first_remove_result.get("error")
                 },
                 exc_info=True
             )

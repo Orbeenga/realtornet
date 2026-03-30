@@ -5,11 +5,13 @@ CRUD operations for saved_searches table.
 Soft delete default, proper PK naming, DB-first alignment.
 """
 
-from typing import List, Optional
+from typing import Any, Dict, List, Optional, cast  # Include concrete mapping types for the JSONB-to-filter normalization path.
 from sqlalchemy import select, func, and_
 from sqlalchemy.orm import Session
 
+from app.crud.properties import property as property_crud  # Reuse the canonical property filtering implementation instead of duplicating query logic here.
 from app.models.saved_searches import SavedSearch
+from app.schemas.properties import PropertyFilter, PropertyResponse  # Reuse the shared property filter/response schemas when executing stored searches.
 from app.schemas.saved_searches import SavedSearchCreate, SavedSearchUpdate
 
 
@@ -74,7 +76,7 @@ class SavedSearchCRUD:
             .offset(skip)
             .limit(limit)
         )
-        return db.execute(stmt).scalars().all()
+        return list(db.execute(stmt).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
 
     def update(
         self, 
@@ -130,7 +132,7 @@ class SavedSearchCRUD:
         if not db_obj:
             return None
 
-        db_obj.deleted_at = func.now()  # ORM sets deleted_at; DB trigger handles updated_at only
+        cast(Any, db_obj).deleted_at = func.now()  # Narrow ORM instance attribute assignment to its runtime timestamp field while preserving the DB trigger behavior.
         db_obj.deleted_by = deleted_by_supabase_id
         db.flush()
         db.refresh(db_obj)
@@ -149,7 +151,7 @@ class SavedSearchCRUD:
                 SavedSearch.deleted_at.is_(None)
             )
         )
-        return db.execute(stmt).scalar()
+        return int(db.execute(stmt).scalar() or 0)  # Coerce nullable aggregate scalar into the concrete int this API returns.
 
     def get_by_name(
         self,
@@ -191,7 +193,35 @@ class SavedSearchCRUD:
             .offset(skip)
             .limit(limit)
         )
-        return db.execute(stmt).scalars().all()
+        return list(db.execute(stmt).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
+
+    def execute_search(
+        self,
+        db: Session,
+        saved_search: SavedSearch,
+        skip: int,
+        limit: int,
+    ) -> List[Dict[str, Any]]:
+        """Execute a saved search by applying its stored JSONB parameters to property filtering."""
+        raw_search_params: Dict[str, Any] = cast(Dict[str, Any], saved_search.search_params or {})  # Narrow the persisted JSONB payload to the dict shape this executor consumes.
+        normalized_search_params: Dict[str, Any] = dict(raw_search_params)  # Copy the stored payload so alias normalization never mutates the ORM-backed JSONB field in place.
+
+        if "price_min" in normalized_search_params and "min_price" not in normalized_search_params:  # Support legacy saved-search aliases while preserving the canonical filter field names.
+            normalized_search_params["min_price"] = normalized_search_params["price_min"]  # Map the legacy minimum-price alias onto the property filter schema key.
+        if "price_max" in normalized_search_params and "max_price" not in normalized_search_params:  # Support legacy saved-search aliases while preserving the canonical filter field names.
+            normalized_search_params["max_price"] = normalized_search_params["price_max"]  # Map the legacy maximum-price alias onto the property filter schema key.
+
+        property_filters: PropertyFilter = PropertyFilter(**normalized_search_params)  # Validate and coerce the stored JSONB payload through the shared property filter schema before querying.
+        matching_properties = property_crud.get_by_filters(  # Reuse the canonical property filtering query so saved searches stay aligned with live property search behavior.
+            db,
+            filters=property_filters,
+            skip=skip,
+            limit=limit,
+        )
+        return [  # Serialize the ORM results through the shared response schema so the endpoint can return property-shaped dictionaries without reshaping its contract.
+            PropertyResponse.model_validate(property_obj).model_dump(mode="json")
+            for property_obj in matching_properties
+        ]
 
 
 # Singleton instance

@@ -6,7 +6,7 @@ Single table with nullable property_id/agent_id for polymorphic reviews.
 Soft delete default, no manual timestamps, DB-first canonical alignment.
 """
 
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, cast
 from sqlalchemy import select, func, and_, or_
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
@@ -98,7 +98,7 @@ class ReviewCRUD:
             .offset(skip)
             .limit(limit)
         )
-        return db.execute(stmt).scalars().all()
+        return list(db.execute(stmt).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
 
     def get_agent_reviews(
         self, 
@@ -129,7 +129,7 @@ class ReviewCRUD:
             .offset(skip)
             .limit(limit)
         )
-        return db.execute(stmt).scalars().all()
+        return list(db.execute(stmt).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
 
     def get_user_reviews(
         self, 
@@ -152,7 +152,7 @@ class ReviewCRUD:
             .offset(skip)
             .limit(limit)
         )
-        return db.execute(stmt).scalars().all()
+        return list(db.execute(stmt).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
 
     def get_user_property_review(
         self,
@@ -304,7 +304,7 @@ class ReviewCRUD:
         db_obj = self.get_property_ReviewResponse(db=db, review_id=review_id)
         if not db_obj:
             return None
-        db_obj.deleted_at = func.now()
+        cast(Any, db_obj).deleted_at = func.now()  # Narrow ORM instance attribute assignment to its runtime timestamp field.
         db_obj.deleted_by = deleted_by_supabase_id
         db.flush()
         db.refresh(db_obj)
@@ -320,7 +320,7 @@ class ReviewCRUD:
         db_obj = self.get_agent_ReviewResponse(db=db, review_id=review_id)
         if not db_obj:
             return None
-        db_obj.deleted_at = func.now()
+        cast(Any, db_obj).deleted_at = func.now()  # Narrow ORM instance attribute assignment to its runtime timestamp field.
         db_obj.deleted_by = deleted_by_supabase_id
         db.flush()
         db.refresh(db_obj)
@@ -347,7 +347,7 @@ class ReviewCRUD:
             .offset(skip)
             .limit(limit)
         )
-        return db.execute(stmt).scalars().all()
+        return list(db.execute(stmt).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
 
     def get_agent_reviews_by_user(
         self,
@@ -370,7 +370,7 @@ class ReviewCRUD:
             .offset(skip)
             .limit(limit)
         )
-        return db.execute(stmt).scalars().all()
+        return list(db.execute(stmt).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
 
     def update(
         self, 
@@ -420,7 +420,7 @@ class ReviewCRUD:
         if not db_obj:
             return None
 
-        db_obj.deleted_at = func.now()  # ORM sets deleted_at; DB trigger handles updated_at only
+        cast(Any, db_obj).deleted_at = func.now()  # Narrow ORM instance attribute assignment to its runtime timestamp field while preserving the DB trigger behavior.
         db_obj.deleted_by = deleted_by_supabase_id
         db.flush()
         db.refresh(db_obj)
@@ -446,6 +446,13 @@ class ReviewCRUD:
         )
         
         result = db.execute(stmt).first()
+        if result is None:
+            return {  # Provide the empty aggregate shape explicitly when no row is returned.
+                "total_reviews": 0,
+                "average_rating": 0.0,
+                "min_rating": None,
+                "max_rating": None,
+            }
         
         return {
             "total_reviews": result.total_reviews or 0,
@@ -474,6 +481,13 @@ class ReviewCRUD:
         )
         
         result = db.execute(stmt).first()
+        if result is None:
+            return {  # Provide the empty aggregate shape explicitly when no row is returned.
+                "total_reviews": 0,
+                "average_rating": 0.0,
+                "min_rating": None,
+                "max_rating": None,
+            }
         
         return {
             "total_reviews": result.total_reviews or 0,
@@ -493,7 +507,7 @@ class ReviewCRUD:
         Get distribution of ratings (1-5 stars count).
         Provide either property_id or agent_id.
         """
-        conditions = [Review.deleted_at.is_(None)]
+        conditions: List[Any] = [Review.deleted_at.is_(None)]  # Widen the predicate collection so SQLAlchemy boolean expressions can be appended safely.
         
         if property_id:
             conditions.append(Review.property_id == property_id)
@@ -514,7 +528,9 @@ class ReviewCRUD:
         # Initialize all ratings 1-5 with 0 count
         distribution = {i: 0 for i in range(1, 6)}
         for row in results:
-            distribution[row.rating] = row.count
+            rating_value = getattr(row, "rating", row[0])  # Support both attribute-style SQLAlchemy rows and tuple-like test doubles.
+            count_value = getattr(row, "count", row[1])  # Support both labeled-row access and positional row access without changing behavior.
+            distribution[int(rating_value)] = int(count_value)  # Normalize row values to concrete ints before storing them in the distribution map.
 
         return distribution
 

@@ -4,7 +4,7 @@ Authentication endpoints - Canonical compliant
 Handles login, registration, token refresh with proper soft delete and audit tracking
 """
 from uuid import UUID
-from typing import Any
+from typing import Any, cast as typing_cast  # Alias typing.cast so endpoint-local narrowing stays explicit without affecting runtime token helpers.
 from fastapi import APIRouter, Depends, HTTPException, status, Body
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -68,19 +68,23 @@ def login_access_token(
     
     # Generate access token with user's role
     # Uses both supabase_id (UUID) and user_id (BIGINT)
+    user_supabase_id: UUID = typing_cast(UUID, user.supabase_id)  # Narrow the ORM-backed Supabase UUID before passing it into the token helper.
+    user_id_value: int = typing_cast(int, user.user_id)  # Narrow the ORM-backed user ID before passing it into the token helper.
+    user_role_value: str | None = typing_cast(str | None, user.user_role.value if user.user_role is not None else None)  # Narrow the optional ORM-backed role value without changing token contents.
+    user_agency_id: int | None = typing_cast(int | None, user.agency_id)  # Narrow the optional ORM-backed agency ID before passing it into the token helper.
     access_token = generate_access_token(
-        supabase_id=user.supabase_id,
-        user_id=user.user_id,
-        user_role=user.user_role.value if user.user_role else None,
-        agency_id=user.agency_id
+        supabase_id=user_supabase_id,
+        user_id=user_id_value,
+        user_role=user_role_value,
+        agency_id=user_agency_id
     )
     
     # Generate refresh token
     refresh_token = generate_refresh_token(
-        supabase_id=user.supabase_id,
-        user_id=user.user_id,
-        user_role=user.user_role.value if user.user_role else None,
-        agency_id=user.agency_id
+        supabase_id=user_supabase_id,
+        user_id=user_id_value,
+        user_role=user_role_value,
+        agency_id=user_agency_id
     )
     
     return {
@@ -133,6 +137,12 @@ def refresh_access_token(
     # Get user from database to verify they still exist and are active
     # Use user_id from token payload (BIGINT)
     user_id = refresh_payload.user_id
+    if user_id is None:  # Narrow the decoded payload before loading the user record from the database.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     # CRUD filters deleted_at IS NULL automatically
     user = user_crud.get(db, user_id=user_id)
@@ -154,7 +164,7 @@ def refresh_access_token(
     # Generate new access token with full user data
     new_access_token = generate_access_token(
         supabase_id=UUID(refresh_payload.supabase_id),
-        user_id=refresh_payload.user_id,
+        user_id=user_id,  # Reuse the narrowed payload user ID without changing refresh-token behavior.
         user_role=refresh_payload.role,
         agency_id=refresh_payload.agency_id
     )
@@ -211,7 +221,8 @@ def register_user(
     )
     
     # Send welcome email as a background task
-    send_welcome_email.delay(
+    email_task = typing_cast(Any, send_welcome_email)  # Narrow the Celery task wrapper locally so pyright accepts the generated delay method.
+    email_task.delay(
         user.email,
         user.first_name
     )

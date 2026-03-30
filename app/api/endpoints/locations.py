@@ -37,9 +37,9 @@ router = APIRouter()
 def read_locations(
     db: Session = Depends(get_db),
     pagination: dict = Depends(pagination_params),
-    state: str = None,
-    city: str = None,
-    neighborhood: str = None,
+    state: str | None = None,  # Preserve the optional filter contract while matching the runtime default of None.
+    city: str | None = None,  # Preserve the optional filter contract while matching the runtime default of None.
+    neighborhood: str | None = None,  # Preserve the optional filter contract while matching the runtime default of None.
 ) -> Any:
     """
     Retrieve locations with optional filtering.
@@ -121,7 +121,7 @@ def read_states(
 @router.get("/cities", response_model=List[str])
 def read_cities(
     db: Session = Depends(get_db),
-    state: str = None,
+    state: str | None = None,  # Preserve the optional filter contract while matching the runtime default of None.
 ) -> Any:
     """
     Get all unique cities, optionally filtered by state.
@@ -140,8 +140,8 @@ def read_cities(
 @router.get("/neighborhoods", response_model=List[str])
 def read_neighborhoods(
     db: Session = Depends(get_db),
-    state: str = None,
-    city: str = None,
+    state: str | None = None,  # Preserve the optional filter contract while matching the runtime default of None.
+    city: str | None = None,  # Preserve the optional filter contract while matching the runtime default of None.
 ) -> Any:
     """
     Get all unique neighborhoods, optionally filtered by state and/or city.
@@ -226,7 +226,7 @@ def update_LocationResponse(
         db, 
         db_obj=location_obj, 
         obj_in=location_in,
-        updated_by=current_user.supabase_id  # UUID audit trail
+        updated_by=str(current_user.supabase_id)  # Normalize the admin Supabase UUID to the CRUD audit string type at the call site.
     )
     
     return location_obj
@@ -269,7 +269,7 @@ def delete_LocationResponse(
     location_obj = location_crud.soft_delete(
         db, 
         location_id=location_id,
-        deleted_by_supabase_id=current_user.supabase_id
+        deleted_by_supabase_id=str(current_user.supabase_id)  # Normalize the admin Supabase UUID to the CRUD audit string type at the call site.
     )
     
     return location_obj
@@ -297,7 +297,7 @@ def read_locations_by_coordinates(
         db, 
         latitude=latitude, 
         longitude=longitude, 
-        distance_km=distance_km,
+        radius_km=distance_km,  # Pass the endpoint's distance_km input through the CRUD layer's radius_km parameter without changing the route contract.
         **pagination,
     )
     
