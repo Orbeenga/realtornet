@@ -5,7 +5,7 @@ DB Table: agent_profiles (PK: profile_id, FKs: user_id, agency_id)
 Canonical Rules: Full audit trail (created_by, updated_by, deleted_by), soft delete
 """
 
-from typing import List, Optional, Dict, Any, Union
+from typing import List, Optional, Dict, Any, Union, cast
 from sqlalchemy.orm import Session
 from sqlalchemy import select, or_, and_, func
 from datetime import datetime, timezone
@@ -77,7 +77,7 @@ class AgentProfileCRUD:
             AgentProfile.profile_id.desc()
         ).offset(skip).limit(limit)
         
-        return db.execute(query).scalars().all()
+        return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
     
     def get_by_agency(
         self,
@@ -98,7 +98,7 @@ class AgentProfileCRUD:
             AgentProfile.profile_id.desc()
         ).offset(skip).limit(limit)
         
-        return db.execute(query).scalars().all()
+        return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
     
     def search(
         self,
@@ -137,19 +137,21 @@ class AgentProfileCRUD:
             )
         ).offset(skip).limit(limit)
         
-        return db.execute(query).scalars().all()
+        return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
     
     def count_by_agency(self, db: Session, *, agency_id: int) -> int:
         """
         Count non-deleted agent profiles for an agency.
         Used for business rule validation.
         """
-        return db.execute(
-            select(func.count(AgentProfile.profile_id)).where(
-                AgentProfile.agency_id == agency_id,
-                AgentProfile.deleted_at.is_(None)
-            )
-        ).scalar()
+        return int(  # Coerce the nullable aggregate scalar into the concrete int this API returns.
+            db.execute(
+                select(func.count(AgentProfile.profile_id)).where(
+                    AgentProfile.agency_id == agency_id,
+                    AgentProfile.deleted_at.is_(None)
+                )
+            ).scalar() or 0
+        )
     
     
     # VALIDATION HELPERS
@@ -168,8 +170,9 @@ class AgentProfileCRUD:
         if not user:
             raise ValueError("User not found or is inactive")
         
-        if user.user_role != UserRole.AGENT:
-            raise ValueError(f"User must have agent role (current role: {user.user_role})")
+        user_role = cast(UserRole, user.user_role)  # Cast the loaded ORM enum value to the concrete runtime role before comparing it.
+        if user_role != UserRole.AGENT:
+            raise ValueError(f"User must have agent role (current role: {user_role})")
         
         return user
     
@@ -216,7 +219,7 @@ class AgentProfileCRUD:
             raise ValueError(f"Agent profile already exists for user_id={obj_in.user_id}")
         
         # Validate agency if provided
-        if obj_in.agency_id:
+        if obj_in.agency_id is not None:
             self._validate_agency_exists(db, agency_id=obj_in.agency_id)
         
         # Validate license uniqueness if provided
@@ -295,7 +298,7 @@ class AgentProfileCRUD:
                 )
             ).scalar()
             
-            if property_count > 0:
+            if (property_count or 0) > 0:  # Normalize the nullable aggregate into a concrete int before comparing it.
                 raise ValueError(
                     "Cannot change agency while agent has active properties. "
                     "Transfer or remove properties first."
@@ -309,7 +312,11 @@ class AgentProfileCRUD:
         if "license_number" in update_data and update_data["license_number"]:
             if update_data["license_number"] != db_obj.license_number:
                 existing = self.get_by_license(db, license_number=update_data["license_number"])
-                if existing and existing.profile_id != db_obj.profile_id:
+                existing_profile_id = (  # Cast the loaded ORM ID to a concrete int so pyright doesn't keep SQLAlchemy's descriptor type in the comparison.
+                    cast(int, existing.profile_id) if existing is not None else None
+                )
+                current_profile_id = cast(int, db_obj.profile_id)  # Cast the current ORM ID to a concrete int before comparing it with another loaded record.
+                if existing_profile_id is not None and existing_profile_id != current_profile_id:
                     raise ValueError(f"Agent with license number '{update_data['license_number']}' already exists")
         
         # Remove protected fields
@@ -364,7 +371,7 @@ class AgentProfileCRUD:
         if db_obj.deleted_at is not None:
             raise ValueError(f"Agent profile with id={profile_id} is already deleted")
 
-        db_obj.deleted_at = datetime.now(timezone.utc)
+        cast(Any, db_obj).deleted_at = datetime.now(timezone.utc)  # Cast through Any so pyright accepts assigning the runtime timestamp to the ORM-backed soft-delete field.
         db_obj.deleted_by = deleted_by_supabase_id
 
         db.add(db_obj)

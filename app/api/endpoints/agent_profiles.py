@@ -3,7 +3,7 @@
 Agent profiles management endpoints - Canonical compliant
 Handles agent professional data (1:1 with users) with agency context and full audit
 """
-from typing import Any, List
+from typing import Any, List, cast  # Narrow dependency-backed and ORM-backed values locally without changing the frozen endpoint contract.
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 import logging
@@ -29,6 +29,7 @@ from app.api.dependencies import (
 # --- DIRECT SCHEMA IMPORTS ---
 # Highlighting: Importing short aliases from schemas as per naming strategy
 from app.schemas.users import UserResponse as UserResponse
+from app.models.users import User  # Narrow endpoint-local user values back to the ORM shape expected by CRUD permission helpers.
 from app.schemas.agent_profiles import (
     AgentProfileResponse, 
     AgentProfileCreate, 
@@ -43,7 +44,7 @@ logger = logging.getLogger(__name__)
 def read_agent_profiles(
     db: Session = Depends(get_db), # Updated: Direct dependency call
     pagination: dict = Depends(pagination_params),
-    agency_id: int = None,
+    agency_id: int | None = None,  # Treat the agency filter as optional so pyright matches the query parameter's default.
 ) -> Any:
     """
     Retrieve agent profiles with optional agency filtering.
@@ -52,7 +53,7 @@ def read_agent_profiles(
     Used for agent directory, search, or agency team pages.
     CRUD layer enforces deleted_at IS NULL filtering.
     """
-    if agency_id:
+    if agency_id is not None:
         # Updated: Using direct crud alias agent_profile_crud
         agent_profiles = agent_profile_crud.get_by_agency(
             db, 
@@ -81,7 +82,7 @@ def read_agent_profile(
     # Updated: Using direct crud alias
     agent_profile = agent_profile_crud.get(db, profile_id=profile_id)
     
-    if not agent_profile:
+    if agent_profile is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent profile not found"
@@ -105,7 +106,7 @@ def read_agent_profile_by_user(
     # Updated: Using direct crud alias
     agent_profile = agent_profile_crud.get_by_user_id(db, user_id=user_id)
     
-    if not agent_profile:
+    if agent_profile is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent profile not found for this user"
@@ -127,7 +128,7 @@ def create_agent_profile(
     """
     # Verify user exists and is an agent - Updated: Using user_crud alias
     user = user_crud.get(db, user_id=agent_profile_in.user_id)
-    if not user:
+    if user is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
@@ -148,8 +149,9 @@ def create_agent_profile(
         )
     
     # Verify agency exists - Updated: Using agency_crud alias
-    agency = agency_crud.get(db, agency_id=agent_profile_in.agency_id)
-    if not agency:
+    created_agency_id = cast(int, agent_profile_in.agency_id)  # Narrow the create schema's persisted agency id before passing it into the CRUD lookup.
+    agency = agency_crud.get(db, agency_id=created_agency_id)
+    if agency is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agency not found"
@@ -171,7 +173,7 @@ def create_agent_profile(
     agent_profile = agent_profile_crud.create(
         db, 
         obj_in=agent_profile_in,
-        created_by=current_user.supabase_id
+        created_by=str(current_user.supabase_id)  # Normalize the dependency UUID to the CRUD audit field's string type.
     )
     
     logger.info(
@@ -180,7 +182,7 @@ def create_agent_profile(
             "profile_id": agent_profile.profile_id,
             "user_id": agent_profile.user_id,
             "agency_id": agent_profile.agency_id,
-            "created_by": current_user.supabase_id
+            "created_by": str(current_user.supabase_id)
         }
     )
 
@@ -202,14 +204,17 @@ def update_agent_profile(
     # Updated: Using agent_profile_crud alias
     agent_profile = agent_profile_crud.get(db, profile_id=profile_id)
     
-    if not agent_profile:
+    if agent_profile is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent profile not found"
         )
     
     # Check authorization - Updated: Using user_crud alias
-    if agent_profile.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    profile_user_id = cast(int, agent_profile.user_id)  # Narrow the ORM-backed foreign key before comparing it to dependency data or CRUD helper inputs.
+    current_user_id = cast(int, current_user.user_id)  # Narrow the dependency user id to a plain int for endpoint-local authorization checks.
+    current_user_model = cast(User, current_user)  # Narrow the dependency response object to the ORM user shape expected by the CRUD admin helper.
+    if profile_user_id != current_user_id and not user_crud.is_admin(current_user_model):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to update this agent profile"
@@ -222,16 +227,19 @@ def update_agent_profile(
             db, 
             license_number=agent_profile_in.license_number
         )
-        if existing_license and existing_license.profile_id != profile_id:
+        existing_license_profile_id = cast(int, existing_license.profile_id) if existing_license is not None else None  # Narrow the ORM-backed profile id before comparing it to the route parameter.
+        if existing_license_profile_id is not None and existing_license_profile_id != profile_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Agent with this license number already exists"
             )
     
     # Agency check - Updated: Using agency_crud alias
-    if agent_profile_in.agency_id and agent_profile_in.agency_id != agent_profile.agency_id:
-        agency = agency_crud.get(db, agency_id=agent_profile_in.agency_id)
-        if not agency:
+    current_agency_id = cast(int | None, agent_profile.agency_id)  # Narrow the ORM-backed optional agency foreign key before comparing it to incoming update data.
+    if agent_profile_in.agency_id is not None and agent_profile_in.agency_id != current_agency_id:
+        updated_agency_id = cast(int, agent_profile_in.agency_id)  # Narrow the optional incoming agency id after the explicit None guard before passing it to CRUD lookups.
+        agency = agency_crud.get(db, agency_id=updated_agency_id)
+        if agency is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Agency not found"
@@ -243,7 +251,7 @@ def update_agent_profile(
             db, 
             db_obj=agent_profile, 
             obj_in=agent_profile_in,
-            updated_by=current_user.supabase_id
+            updated_by=str(current_user.supabase_id)  # Normalize the dependency UUID to the CRUD audit field's string type.
         )
     except ValueError as exc:
         raise HTTPException(
@@ -255,7 +263,7 @@ def update_agent_profile(
         "Agent profile updated", 
         extra={
             "profile_id": agent_profile.profile_id,
-            "updated_by": current_user.supabase_id
+            "updated_by": str(current_user.supabase_id)
         }
     )
 
@@ -275,14 +283,15 @@ def delete_agent_profile(
     # Updated: Using agent_profile_crud alias
     agent_profile = agent_profile_crud.get(db, profile_id=profile_id)
     
-    if not agent_profile:
+    if agent_profile is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent profile not found"
         )
     
     # Check properties - Updated: Using property_crud alias
-    active_properties_count = property_crud.count_by_user(db, user_id=agent_profile.user_id)
+    profile_user_id = cast(int, agent_profile.user_id)  # Narrow the ORM-backed foreign key before passing it into the CRUD count helper.
+    active_properties_count = property_crud.count_by_user(db, user_id=profile_user_id)
     if active_properties_count > 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -293,10 +302,10 @@ def delete_agent_profile(
     agent_profile = agent_profile_crud.soft_delete(
         db, 
         profile_id=profile_id,
-        deleted_by_supabase_id=current_user.supabase_id
+        deleted_by_supabase_id=str(current_user.supabase_id)  # Normalize the dependency UUID to the CRUD soft-delete audit field's string type.
     )
     
-    if not agent_profile:
+    if agent_profile is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent profile not found during delete attempt"
@@ -306,9 +315,9 @@ def delete_agent_profile(
         "Agent profile soft deleted",
         extra={
             "profile_id": profile_id,
-            "user_id": agent_profile.user_id,
-            "agency_id": agent_profile.agency_id,
-            "deleted_by": current_user.supabase_id
+            "user_id": cast(int, agent_profile.user_id),  # Narrow the ORM-backed foreign key to a plain int for structured logging.
+            "agency_id": cast(int, agent_profile.agency_id),  # Narrow the ORM-backed agency key to a plain int for structured logging.
+            "deleted_by": str(current_user.supabase_id)
         }
     )
 
@@ -327,16 +336,17 @@ def read_agent_properties(
     """
     # Updated: Using agent_profile_crud alias
     agent_profile = agent_profile_crud.get(db, profile_id=profile_id)
-    if not agent_profile:
+    if agent_profile is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent profile not found"
         )
     
     # Updated: Using property_crud alias
+    profile_user_id = cast(int, agent_profile.user_id)  # Narrow the ORM-backed foreign key before passing it into the CRUD list helper.
     properties = property_crud.get_by_owner_approved(
         db, 
-        user_id=agent_profile.user_id, 
+        user_id=profile_user_id, 
         **pagination,
     )
     return properties
@@ -354,16 +364,17 @@ def read_agent_reviews(
     """
     # Updated: Using agent_profile_crud alias
     agent_profile = agent_profile_crud.get(db, profile_id=profile_id)
-    if not agent_profile:
+    if agent_profile is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent profile not found"
         )
     
     # Updated: Using review_crud alias
+    agent_user_id = cast(int, agent_profile.user_id)  # Narrow the ORM-backed foreign key before passing it into the CRUD review helper.
     reviews = review_crud.get_agent_reviews(
         db, 
-        agent_id=agent_profile.user_id, 
+        agent_id=agent_user_id, 
         **pagination,
     )
     return reviews
@@ -380,7 +391,7 @@ def read_agent_stats(
     """
     # Updated: Using agent_profile_crud alias
     agent_profile = agent_profile_crud.get(db, profile_id=profile_id)
-    if not agent_profile:
+    if agent_profile is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent profile not found"

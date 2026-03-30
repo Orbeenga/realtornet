@@ -4,7 +4,7 @@ Reviews management endpoints - Canonical compliant
 Handles property and agent reviews with separate schemas, soft delete, and audit tracking
 PARTIAL AUDIT TRAIL: reviews table has NO created_by, NO updated_by, but HAS deleted_by
 """
-from typing import Any, List
+from typing import Any, List, cast  # Narrow dependency-backed and ORM-backed values locally without changing the frozen endpoint contract.
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -25,6 +25,7 @@ from app.api.dependencies import (
 
 # --- DIRECT SCHEMA IMPORTS (using aliases) ---
 from app.schemas.users import UserResponse as UserResponse
+from app.models.users import User  # Narrow endpoint-local user values back to the ORM shape expected by CRUD permission helpers.
 from app.schemas.reviews import (
     PropertyReviewResponse,
     PropertyReviewCreate,
@@ -59,7 +60,7 @@ def create_property_ReviewResponse(
     """
     # Check if property exists
     property_obj = property_crud.get(db=db, property_id=review_in.property_id)
-    if not property_obj:
+    if property_obj is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Property not found"
@@ -71,7 +72,7 @@ def create_property_ReviewResponse(
         user_id=current_user.user_id,
         property_id=review_in.property_id
     )
-    if existing_review:
+    if existing_review is not None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="You have already reviewed this property"
@@ -113,7 +114,7 @@ def read_reviews_by_property(
     """
     # Check if property exists
     property_obj = property_crud.get(db=db, property_id=property_id)
-    if not property_obj:
+    if property_obj is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Property not found"
@@ -140,7 +141,7 @@ def read_property_ReviewResponse(
     Public endpoint - anyone can read reviews.
     """
     review_obj = review_crud.get_property_ReviewResponse(db=db, review_id=review_id)
-    if not review_obj:
+    if review_obj is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Property ReviewResponse not found"
@@ -166,14 +167,17 @@ def update_property_ReviewResponse(
     Note: reviews table has no updated_by column per DB schema
     """
     review_obj = review_crud.get_property_ReviewResponse(db=db, review_id=review_id)
-    if not review_obj:
+    if review_obj is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Property ReviewResponse not found"
         )
 
     # Check authorization: owner or admin
-    if review_obj.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    review_user_id = cast(int, review_obj.user_id)  # Narrow the ORM-backed review owner id before comparing it to dependency data or CRUD helper inputs.
+    current_user_id = cast(int, current_user.user_id)  # Narrow the dependency user id to a plain int for endpoint-local authorization checks.
+    current_user_model = cast(User, current_user)  # Narrow the dependency response object to the ORM user shape expected by the CRUD admin helper.
+    if review_user_id != current_user_id and not user_crud.is_admin(current_user_model):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to update this ReviewResponse"
@@ -214,14 +218,17 @@ def delete_property_ReviewResponse(
     Audit: Tracks who deleted via deleted_by (Supabase UUID)
     """
     review_obj = review_crud.get_property_ReviewResponse(db=db, review_id=review_id)
-    if not review_obj:
+    if review_obj is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Property ReviewResponse not found"
         )
 
     # Check authorization: owner or admin
-    if review_obj.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    review_user_id = cast(int, review_obj.user_id)  # Narrow the ORM-backed review owner id before comparing it to dependency data or CRUD helper inputs.
+    current_user_id = cast(int, current_user.user_id)  # Narrow the dependency user id to a plain int for endpoint-local authorization checks.
+    current_user_model = cast(User, current_user)  # Narrow the dependency response object to the ORM user shape expected by the CRUD admin helper.
+    if review_user_id != current_user_id and not user_crud.is_admin(current_user_model):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to delete this ReviewResponse"
@@ -231,10 +238,10 @@ def delete_property_ReviewResponse(
     deleted_review = review_crud.soft_delete_property_ReviewResponse(
         db=db,
         review_id=review_id,
-        deleted_by_supabase_id=current_user.supabase_id
+        deleted_by_supabase_id=str(current_user.supabase_id)  # Normalize the dependency UUID to the CRUD soft-delete audit field's string type.
     )
     
-    if not deleted_review:
+    if deleted_review is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Property ReviewResponse not found during delete attempt"
@@ -246,7 +253,7 @@ def delete_property_ReviewResponse(
             "review_id": review_id,
             "property_id": deleted_review.property_id,
             "user_id": deleted_review.user_id,
-            "deleted_by": current_user.supabase_id
+            "deleted_by": str(current_user.supabase_id)
         }
     )
 
@@ -274,7 +281,7 @@ def create_agent_ReviewResponse(
     """
     # Ensure agent exists
     agent_obj = user_crud.get(db=db, user_id=review_in.agent_id)
-    if not agent_obj:
+    if agent_obj is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent not found"
@@ -293,7 +300,7 @@ def create_agent_ReviewResponse(
         user_id=current_user.user_id,
         agent_id=review_in.agent_id
     )
-    if existing_review:
+    if existing_review is not None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="You have already reviewed this agent"
@@ -334,7 +341,7 @@ def read_reviews_by_agent(
     """
     # Verify agent exists
     agent_obj = user_crud.get(db=db, user_id=agent_id)
-    if not agent_obj:
+    if agent_obj is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent not found"
@@ -361,7 +368,7 @@ def read_agent_ReviewResponse(
     Public endpoint - anyone can read reviews.
     """
     review_obj = review_crud.get_agent_ReviewResponse(db=db, review_id=review_id)
-    if not review_obj:
+    if review_obj is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent ReviewResponse not found"
@@ -386,14 +393,17 @@ def update_agent_ReviewResponse(
     Note: reviews table has no updated_by column per DB schema
     """
     review_obj = review_crud.get_agent_ReviewResponse(db=db, review_id=review_id)
-    if not review_obj:
+    if review_obj is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent ReviewResponse not found"
         )
 
     # Check authorization
-    if review_obj.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    review_user_id = cast(int, review_obj.user_id)  # Narrow the ORM-backed review owner id before comparing it to dependency data or CRUD helper inputs.
+    current_user_id = cast(int, current_user.user_id)  # Narrow the dependency user id to a plain int for endpoint-local authorization checks.
+    current_user_model = cast(User, current_user)  # Narrow the dependency response object to the ORM user shape expected by the CRUD admin helper.
+    if review_user_id != current_user_id and not user_crud.is_admin(current_user_model):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to update this ReviewResponse"
@@ -431,14 +441,17 @@ def delete_agent_ReviewResponse(
     Audit: Tracks who deleted via deleted_by (Supabase UUID)
     """
     review_obj = review_crud.get_agent_ReviewResponse(db=db, review_id=review_id)
-    if not review_obj:
+    if review_obj is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent ReviewResponse not found"
         )
 
     # Check authorization
-    if review_obj.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    review_user_id = cast(int, review_obj.user_id)  # Narrow the ORM-backed review owner id before comparing it to dependency data or CRUD helper inputs.
+    current_user_id = cast(int, current_user.user_id)  # Narrow the dependency user id to a plain int for endpoint-local authorization checks.
+    current_user_model = cast(User, current_user)  # Narrow the dependency response object to the ORM user shape expected by the CRUD admin helper.
+    if review_user_id != current_user_id and not user_crud.is_admin(current_user_model):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to delete this ReviewResponse"
@@ -448,10 +461,10 @@ def delete_agent_ReviewResponse(
     deleted_review = review_crud.soft_delete_agent_ReviewResponse(
         db=db,
         review_id=review_id,
-        deleted_by_supabase_id=current_user.supabase_id
+        deleted_by_supabase_id=str(current_user.supabase_id)  # Normalize the dependency UUID to the CRUD soft-delete audit field's string type.
     )
     
-    if not deleted_review:
+    if deleted_review is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent ReviewResponse not found during delete attempt"
@@ -463,7 +476,7 @@ def delete_agent_ReviewResponse(
             "review_id": review_id,
             "agent_id": deleted_review.agent_id,
             "user_id": deleted_review.user_id,
-            "deleted_by": current_user.supabase_id
+            "deleted_by": str(current_user.supabase_id)
         }
     )
 

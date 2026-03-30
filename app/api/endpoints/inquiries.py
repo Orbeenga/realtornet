@@ -3,7 +3,7 @@
 Inquiries management endpoints - Canonical compliant
 Handles property inquiries with user-owner relationships, soft delete, and audit tracking
 """
-from typing import Any, List
+from typing import Any, List, cast as typing_cast  # Alias typing.cast so endpoint-local narrowing never shadows SQLAlchemy helpers in future edits.
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.crud.inquiries import inquiry as inquiry_crud
 from app.crud.properties import property as property_crud
 from app.crud.users import user as user_crud
+from app.models.users import User  # Narrow endpoint-local user values back to the ORM shape expected by CRUD permission helpers.
 
 # --- DIRECT DEPENDENCY IMPORTS ---
 from app.api.dependencies import (
@@ -98,7 +99,8 @@ def read_received_inquiries(
     - Returns inquiries for all properties where user_id matches
     """
     # Check if user is agent or admin
-    if not user_crud.is_agent(current_user) and not user_crud.is_admin(current_user):
+    current_user_model: User = typing_cast(User, current_user)  # typing cast: endpoint local only for CRUD role helper compatibility.
+    if not user_crud.is_agent(current_user_model) and not user_crud.is_admin(current_user_model):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Agent or admin privileges required"
@@ -134,16 +136,21 @@ def read_inquiry(
         )
     
     # Check authorization: inquirer, property owner, or admin
-    property = property_crud.get(db=db, property_id=inquiry.property_id)
+    inquiry_property_id: int = typing_cast(int, inquiry.property_id)  # Narrow the ORM-backed property ID before loading the related property.
+    property = property_crud.get(db=db, property_id=inquiry_property_id)
     if not property:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Associated property not found"
         )
 
-    if (inquiry.user_id != current_user.user_id and 
-        property.user_id != current_user.user_id and 
-        not user_crud.is_admin(current_user)):
+    inquiry_user_id: int = typing_cast(int, inquiry.user_id)  # Narrow the ORM-backed inquiry owner ID before the authorization comparison.
+    property_owner_id: int = typing_cast(int, property.user_id)  # Narrow the ORM-backed property owner ID before the authorization comparison.
+    current_user_id: int = typing_cast(int, current_user.user_id)  # Narrow the authenticated user ID locally without changing the dependency contract.
+    current_user_model: User = typing_cast(User, current_user)  # typing cast: endpoint local only for CRUD permission helper compatibility.
+    if (inquiry_user_id != current_user_id and 
+        property_owner_id != current_user_id and 
+        not user_crud.is_admin(current_user_model)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to view this inquiry"
@@ -178,16 +185,21 @@ def update_inquiry(
         )
     
     # Check authorization
-    property = property_crud.get(db=db, property_id=inquiry.property_id)
+    inquiry_property_id: int = typing_cast(int, inquiry.property_id)  # Narrow the ORM-backed property ID before loading the related property.
+    property = property_crud.get(db=db, property_id=inquiry_property_id)
     if not property:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Associated property not found"
         )
 
-    if (inquiry.user_id != current_user.user_id and 
-        property.user_id != current_user.user_id and 
-        not user_crud.is_admin(current_user)):
+    inquiry_user_id: int = typing_cast(int, inquiry.user_id)  # Narrow the ORM-backed inquiry owner ID before the authorization comparison.
+    property_owner_id: int = typing_cast(int, property.user_id)  # Narrow the ORM-backed property owner ID before the authorization comparison.
+    current_user_id: int = typing_cast(int, current_user.user_id)  # Narrow the authenticated user ID locally without changing the dependency contract.
+    current_user_model: User = typing_cast(User, current_user)  # typing cast: endpoint local only for CRUD permission helper compatibility.
+    if (inquiry_user_id != current_user_id and 
+        property_owner_id != current_user_id and 
+        not user_crud.is_admin(current_user_model)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to update this inquiry"
@@ -225,7 +237,10 @@ def delete_inquiry(
         )
 
     # Check authorization: only creator or admin can delete
-    if inquiry.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    inquiry_user_id: int = typing_cast(int, inquiry.user_id)  # Narrow the ORM-backed inquiry owner ID before the authorization comparison.
+    current_user_id: int = typing_cast(int, current_user.user_id)  # Narrow the authenticated user ID locally without changing the dependency contract.
+    current_user_model: User = typing_cast(User, current_user)  # typing cast: endpoint local only for CRUD permission helper compatibility.
+    if inquiry_user_id != current_user_id and not user_crud.is_admin(current_user_model):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to delete this inquiry"
@@ -235,7 +250,7 @@ def delete_inquiry(
     inquiry = inquiry_crud.soft_delete(
         db=db, 
         inquiry_id=inquiry_id,
-        deleted_by_supabase_id=current_user.supabase_id
+        deleted_by_supabase_id=str(current_user.supabase_id)  # Normalize the authenticated user's Supabase UUID to the CRUD audit string type at the call site.
     )
     
     if not inquiry:
@@ -270,7 +285,10 @@ def read_inquiries_by_property(
         )
 
     # Check authorization: PropertyResponse owner or admin
-    if property.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    property_owner_id: int = typing_cast(int, property.user_id)  # Narrow the ORM-backed property owner ID before the authorization comparison.
+    current_user_id: int = typing_cast(int, current_user.user_id)  # Narrow the authenticated user ID locally without changing the dependency contract.
+    current_user_model: User = typing_cast(User, current_user)  # typing cast: endpoint local only for CRUD permission helper compatibility.
+    if property_owner_id != current_user_id and not user_crud.is_admin(current_user_model):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to view inquiries for this property"
@@ -306,14 +324,18 @@ def update_inquiry_status(
         )
     
     # Check authorization: property owner or admin
-    property = property_crud.get(db=db, property_id=inquiry.property_id)
+    inquiry_property_id: int = typing_cast(int, inquiry.property_id)  # Narrow the ORM-backed property ID before loading the related property.
+    property = property_crud.get(db=db, property_id=inquiry_property_id)
     if not property:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Associated property not found"
         )
 
-    if property.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    property_owner_id: int = typing_cast(int, property.user_id)  # Narrow the ORM-backed property owner ID before the authorization comparison.
+    current_user_id: int = typing_cast(int, current_user.user_id)  # Narrow the authenticated user ID locally without changing the dependency contract.
+    current_user_model: User = typing_cast(User, current_user)  # typing cast: endpoint local only for CRUD permission helper compatibility.
+    if property_owner_id != current_user_id and not user_crud.is_admin(current_user_model):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to update inquiry status"
@@ -362,14 +384,18 @@ def mark_inquiry_viewed(
         )
     
     # Check authorization: property owner or admin
-    property = property_crud.get(db=db, property_id=inquiry.property_id)
+    inquiry_property_id: int = typing_cast(int, inquiry.property_id)  # Narrow the ORM-backed property ID before loading the related property.
+    property = property_crud.get(db=db, property_id=inquiry_property_id)
     if not property:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Associated property not found"
         )
 
-    if property.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    property_owner_id: int = typing_cast(int, property.user_id)  # Narrow the ORM-backed property owner ID before the authorization comparison.
+    current_user_id: int = typing_cast(int, current_user.user_id)  # Narrow the authenticated user ID locally without changing the dependency contract.
+    current_user_model: User = typing_cast(User, current_user)  # typing cast: endpoint local only for CRUD permission helper compatibility.
+    if property_owner_id != current_user_id and not user_crud.is_admin(current_user_model):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to mark inquiry as viewed"
@@ -410,14 +436,18 @@ def mark_inquiry_responded(
         )
     
     # Check authorization: property owner or admin
-    property = property_crud.get(db=db, property_id=inquiry.property_id)
+    inquiry_property_id: int = typing_cast(int, inquiry.property_id)  # Narrow the ORM-backed property ID before loading the related property.
+    property = property_crud.get(db=db, property_id=inquiry_property_id)
     if not property:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Associated property not found"
         )
 
-    if property.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    property_owner_id: int = typing_cast(int, property.user_id)  # Narrow the ORM-backed property owner ID before the authorization comparison.
+    current_user_id: int = typing_cast(int, current_user.user_id)  # Narrow the authenticated user ID locally without changing the dependency contract.
+    current_user_model: User = typing_cast(User, current_user)  # typing cast: endpoint local only for CRUD permission helper compatibility.
+    if property_owner_id != current_user_id and not user_crud.is_admin(current_user_model):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to mark inquiry as responded"
@@ -460,7 +490,10 @@ def count_inquiries_for_property(
         )
 
     # Check authorization: property owner or admin
-    if property.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    property_owner_id: int = typing_cast(int, property.user_id)  # Narrow the ORM-backed property owner ID before the authorization comparison.
+    current_user_id: int = typing_cast(int, current_user.user_id)  # Narrow the authenticated user ID locally without changing the dependency contract.
+    current_user_model: User = typing_cast(User, current_user)  # typing cast: endpoint local only for CRUD permission helper compatibility.
+    if property_owner_id != current_user_id and not user_crud.is_admin(current_user_model):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to view inquiry count for this property"
@@ -497,7 +530,10 @@ def count_inquiries_by_status(
         )
 
     # Check authorization: property owner or admin
-    if property.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    property_owner_id: int = typing_cast(int, property.user_id)  # Narrow the ORM-backed property owner ID before the authorization comparison.
+    current_user_id: int = typing_cast(int, current_user.user_id)  # Narrow the authenticated user ID locally without changing the dependency contract.
+    current_user_model: User = typing_cast(User, current_user)  # typing cast: endpoint local only for CRUD permission helper compatibility.
+    if property_owner_id != current_user_id and not user_crud.is_admin(current_user_model):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to view inquiry counts for this property"

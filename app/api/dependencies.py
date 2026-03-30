@@ -4,7 +4,7 @@ RealtorNet API Dependencies - Authentication & Authorization
 Phase 2 Aligned: Supabase UUID, soft delete, multi-tenant, DoS protection
 """
 
-from typing import Optional
+from typing import Optional, cast
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, Query, Request, status
@@ -91,7 +91,8 @@ def get_current_user(
             raise credentials_exception
 
         # Step 4: Verify user_id if present
-        if token_payload.user_id and user.user_id != token_payload.user_id:
+        resolved_user_id = cast(int, user.user_id)
+        if token_payload.user_id is not None and resolved_user_id != token_payload.user_id:
             raise credentials_exception
 
         return user
@@ -174,7 +175,7 @@ def get_current_agency(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ) -> Optional[Agency]:
-    if not current_user.agency_id:
+    if current_user.agency_id is None:
         return None
 
     agency = db.query(Agency).filter(

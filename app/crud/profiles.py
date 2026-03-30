@@ -5,9 +5,9 @@ DB Table: profiles (PK: profile_id, FK: user_id)
 Canonical Rules: No manual timestamps, RLS-aware, user_id from auth context
 """
 
-from typing import List, Optional
+from typing import Any, List, Optional, cast as type_cast
 from sqlalchemy.orm import Session
-from sqlalchemy import select, cast, String, func
+from sqlalchemy import select, cast as sa_cast, String, func
 from fastapi import HTTPException
 
 from app.models.profiles import Profile, ProfileStatus
@@ -57,14 +57,14 @@ class CRUDProfile:
             # PostgreSQL may store as 'active', 'ACTIVE', or 'Active' depending on how
             # the enum type was created. func.lower() ensures match regardless of casing.
             query = query.where(
-                func.lower(cast(Profile.status, String)) == status_str.lower()
+                func.lower(sa_cast(Profile.status, String)) == status_str.lower()
             )
         
         # Pagination - apply after filtering
         query = query.offset(skip).limit(limit)
 
         # Execute query and return results as list
-        return db.execute(query).scalars().all()
+        return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence return to the declared concrete list type.
     
     def get_active_profiles(
         self,
@@ -107,7 +107,7 @@ class CRUDProfile:
         """
         # Check if profile already exists for this user
         existing_profile = self.get_by_user_id(db, user_id=user_id)
-        if existing_profile:
+        if existing_profile is not None:  # Narrow the optional lookup result explicitly before raising on duplicate profile creation.
             raise HTTPException(
                 status_code=400,
                 detail=f"Profile already exists for user_id={user_id}"
@@ -157,7 +157,7 @@ class CRUDProfile:
             if hasattr(db_obj, field):
                 setattr(db_obj, field, value)
         
-        if updated_by:
+        if updated_by is not None:  # Narrow the optional audit identifier explicitly before assigning it back to the ORM object.
             db_obj.updated_by = updated_by
         
         # Note: updated_at handled by DB trigger (if exists) or application logic
@@ -189,7 +189,7 @@ class CRUDProfile:
         # Normalize string to Enum
         if isinstance(status, str):
             status = ProfileStatus(status)
-        db_obj.status = status
+        type_cast(Any, db_obj).status = status  # ORM instance accepts the enum-backed status value here even though the declarative attribute is typed as a column descriptor.
                 
         db.add(db_obj)
         db.flush()
@@ -216,7 +216,7 @@ class CRUDProfile:
             detail=f"Profile with id={profile_id} not found"
         )
     
-        db_obj.status = ProfileStatus.INACTIVE
+        type_cast(Any, db_obj).status = ProfileStatus.INACTIVE  # ORM instance accepts the enum-backed status value here even though the declarative attribute is typed as a column descriptor.
     # updated_at handled by trigger
     
         db.add(db_obj)
@@ -236,7 +236,7 @@ class CRUDProfile:
         if not db_obj:
             return None
 
-        db_obj.deleted_at = func.now()
+        type_cast(Any, db_obj).deleted_at = func.now()  # ORM instance accepts the SQL function assignment here even though the declarative attribute is typed as a column descriptor.
         db_obj.deleted_by = deleted_by_supabase_id
         db.add(db_obj)
         db.flush()
@@ -292,7 +292,7 @@ class CRUDProfile:
         Useful for onboarding flows.
         """
         existing = self.get_by_user_id(db, user_id=user_id)
-        if existing:
+        if existing is not None:  # Narrow the optional lookup result explicitly before returning the existing profile.
             return existing
         
         # Create minimal profile

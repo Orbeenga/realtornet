@@ -21,7 +21,7 @@ class AgencyBase(BaseModel):
     description: Optional[str] = None
     logo_url: Optional[str] = None
     website_url: Optional[str] = None
-    is_verified: Optional[bool] = False
+    is_verified: bool = False  # Keep bool across base/response to avoid mutable override variance.
 
     @field_validator('email')
     @classmethod
@@ -61,7 +61,7 @@ class AgencyResponse(AgencyBase):
     """Schema for agency responses (includes DB-generated fields)"""
     agency_id: int
     name: str
-    is_verified: bool
+    is_verified: bool = False  # Explicit default keeps pyright aligned with inherited mutable field rules.
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime] = None

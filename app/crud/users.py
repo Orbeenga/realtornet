@@ -5,7 +5,7 @@ DB Table: users (PK: user_id)
 Canonical Rules: No manual timestamps, no phantom fields, RLS-aware
 """
 
-from typing import List, Optional, Dict, Any, Union
+from typing import List, Optional, Dict, Any, Union, cast
 import logging
 from sqlalchemy.orm import Session
 from sqlalchemy import select, or_, func
@@ -75,7 +75,7 @@ class UserCRUD:
         # Pagination
         query = query.offset(skip).limit(limit)
         
-        return db.execute(query).scalars().all()
+        return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
     
     def get_agents(
         self, 
@@ -94,9 +94,11 @@ class UserCRUD:
         if is_verified is not None:
             query = query.where(User.is_verified == is_verified)
         
-        return db.execute(
+        return list(  # Normalize SQLAlchemy's sequence result to the declared list return type.
+            db.execute(
             query.offset(skip).limit(limit)
-        ).scalars().all()
+            ).scalars().all()
+        )
     
     def count_by_agency(self, db: Session, *, agency_id: int) -> int:
         """Count active users belonging to an agency."""
@@ -104,12 +106,12 @@ class UserCRUD:
             User.agency_id == agency_id,
             User.deleted_at.is_(None)
         )
-        return db.execute(stmt).scalar()
+        return int(db.execute(stmt).scalar() or 0)  # Coerce nullable aggregate scalar into the concrete int this API returns.
 
     def count_active(self, db: Session) -> int:
         """Count active (non-deleted) users."""
         stmt = select(func.count(User.user_id)).where(User.deleted_at.is_(None))
-        return db.execute(stmt).scalar()
+        return int(db.execute(stmt).scalar() or 0)  # Coerce nullable aggregate scalar into the concrete int this API returns.
 
     def search(
         self,
@@ -131,9 +133,11 @@ class UserCRUD:
             )
         )
         
-        return db.execute(
+        return list(  # Normalize SQLAlchemy's sequence result to the declared list return type.
+            db.execute(
             query.offset(skip).limit(limit)
-        ).scalars().all()
+            ).scalars().all()
+        )
     
     
     # CREATE OPERATIONS
@@ -242,8 +246,8 @@ class UserCRUD:
         if not db_obj:
             return None
         
-        db_obj.is_verified = is_verified
-        db_obj.verification_code = None  # Clear code once verified
+        cast(Any, db_obj).is_verified = is_verified  # Narrow ORM instance attribute assignment to its runtime bool field.
+        cast(Any, db_obj).verification_code = None  # Narrow ORM instance attribute assignment to its runtime nullable field and clear code once verified.
         # updated_at handled by DB trigger automatically
         
         db.add(db_obj)
@@ -255,7 +259,7 @@ class UserCRUD:
         """Update last login timestamp (called during authentication)"""
         db_obj = self.get(db, user_id=user_id)
         if db_obj:
-            db_obj.last_login = datetime.now(timezone.utc)
+            cast(Any, db_obj).last_login = datetime.now(timezone.utc)  # Narrow ORM instance attribute assignment to its runtime datetime field.
             db.add(db_obj)
             db.flush()  # FIX: Preserve test transaction isolation.
 
@@ -272,7 +276,7 @@ class UserCRUD:
         if not db_obj:
             return None
 
-        db_obj.deleted_at = None
+        cast(Any, db_obj).deleted_at = None  # Narrow ORM instance attribute assignment to its runtime nullable datetime field.
         # FIX: Preserve deleted_by history on restore (immutable delete audit event).
         if updated_by:
             db_obj.updated_by = updated_by
@@ -294,7 +298,7 @@ class UserCRUD:
         if not db_obj:
             return None
 
-        db_obj.deleted_at = datetime.now(timezone.utc)
+        cast(Any, db_obj).deleted_at = datetime.now(timezone.utc)  # Narrow ORM instance attribute assignment to its runtime datetime field.
         db_obj.deleted_by = updated_by  # FIX: Always assign deleted_by for soft-delete event.
         if updated_by:
             db_obj.updated_by = updated_by
@@ -322,7 +326,7 @@ class UserCRUD:
         if not db_obj:
             return None
     
-        db_obj.deleted_at = datetime.now(timezone.utc)
+        cast(Any, db_obj).deleted_at = datetime.now(timezone.utc)  # Narrow ORM instance attribute assignment to its runtime datetime field.
         db_obj.deleted_by = deleted_by_supabase_id  # FIX: Always assign to make intent explicit.
         if deleted_by_supabase_id:
             db_obj.updated_by = deleted_by_supabase_id
@@ -366,7 +370,7 @@ class UserCRUD:
         
         try:
             # ADDED: Try-catch for bcrypt edge cases (72-byte limit)
-            if not verify_password(password, user.password_hash):
+            if not verify_password(password, cast(str, user.password_hash)):  # Narrow ORM descriptor-backed field to the runtime password hash string.
                 return None
         except (ValueError, TypeError):
             # Handles bcrypt 72-byte limit or malformed hash
@@ -375,7 +379,7 @@ class UserCRUD:
             return None
         
         # Update last login timestamp
-        self.update_last_login(db, user_id=user.user_id)
+        self.update_last_login(db, user_id=cast(int, user.user_id))  # Narrow ORM descriptor-backed primary key to the runtime int value.
         
         return user
     
@@ -384,27 +388,27 @@ class UserCRUD:
        
     def is_seeker(self, user: User) -> bool:
         """Check if user has seeker role"""
-        return user.user_role == UserRole.SEEKER
+        return cast(UserRole, user.user_role) == UserRole.SEEKER  # Narrow ORM descriptor-backed enum field to the runtime user role value.
     
     def is_agent(self, user: User) -> bool:
         """Check if user has agent role"""
-        return user.user_role == UserRole.AGENT
+        return cast(UserRole, user.user_role) == UserRole.AGENT  # Narrow ORM descriptor-backed enum field to the runtime user role value.
     
     def is_admin(self, user: User) -> bool:
         """Check if user has admin privileges"""
-        return user.is_admin or user.user_role == UserRole.ADMIN
+        return cast(bool, user.is_admin) or cast(UserRole, user.user_role) == UserRole.ADMIN  # Narrow ORM descriptor-backed auth flags to runtime values before boolean evaluation.
     
-    def is_agent_or_admin(self, user) -> bool:
+    def is_agent_or_admin(self, user: User) -> bool:
         """Check if user has agent or admin role"""
         return self.is_agent(user) or self.is_admin(user)
     
     def is_verified(self, user: User) -> bool:
         """Check if user email is verified"""
-        return user.is_verified
+        return cast(bool, user.is_verified)  # Narrow ORM descriptor-backed verification flag to the runtime bool value.
     
     def is_active(self, user: User) -> bool:
         """Check if user is active (not soft deleted)"""
-        return user.deleted_at is None
+        return cast(Optional[datetime], user.deleted_at) is None  # Narrow ORM descriptor-backed timestamp to the runtime optional datetime value.
 
     def get_realtors(
         self,
@@ -423,7 +427,7 @@ class UserCRUD:
             .offset(skip)
             .limit(limit)
         )
-        return db.execute(query).scalars().all()
+        return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
 
     def remove(
         self,
@@ -450,7 +454,7 @@ class UserCRUD:
         """
         if self.is_admin(current_user):
             return True
-        return current_user.user_id == target_user_id
+        return cast(int, current_user.user_id) == target_user_id  # Narrow ORM descriptor-backed primary key to the runtime int value.
 
 
 # Singleton instance

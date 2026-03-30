@@ -4,7 +4,7 @@ Admin management endpoints - Canonical compliant
 Handles system-wide operations with proper soft delete, audit tracking, and RLS enforcement
 """
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, cast as typing_cast  # Alias typing.cast so endpoint-local narrowing never shadows SQLAlchemy helpers in future edits.
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
@@ -27,7 +27,7 @@ from app.services.analytics_services import analytics_service
 # --- DIRECT SCHEMA IMPORTS ---
 # from app.schemas.users import UserResponse, UserCreate, UserUpdate
 from app.schemas.users import UserResponse, UserCreate, UserUpdate
-from app.schemas.properties import PropertyResponse, PropertyUpdate
+from app.schemas.properties import PropertyResponse, PropertyUpdate, ListingStatus
 from app.schemas.inquiries import InquiryResponse
 from app.schemas.stats import SystemStatsResponse as SystemStats
 
@@ -95,7 +95,7 @@ def create_user(
         db,
         obj_in=user_in,
         supabase_id=supabase_id,
-        created_by=current_user.supabase_id
+        created_by=str(current_user.supabase_id)  # Normalize the admin Supabase UUID to the CRUD audit string type at the call site.
     )
     logger.info(f"User created: {db_user.user_id} by admin {current_user.user_id}")
     
@@ -156,7 +156,7 @@ def update_user(
         db, 
         db_obj=db_user, 
         obj_in=user_in,
-        updated_by=current_user.supabase_id  # UUID audit trail
+        updated_by=str(current_user.supabase_id)  # Normalize the admin Supabase UUID to the CRUD audit string type at the call site.
     )
     
     logger.info(f"User updated: {user_id} by admin {current_user.user_id}")
@@ -187,7 +187,9 @@ def delete_user(
         )
     
     # Prevent admin from deleting themselves
-    if db_user.user_id == current_user.user_id:
+    target_user_id: int = typing_cast(int, db_user.user_id)  # Narrow the ORM-backed target user ID before the self-delete comparison.
+    current_user_id: int = typing_cast(int, current_user.user_id)  # Narrow the authenticated admin user ID locally without changing the dependency contract.
+    if target_user_id == current_user_id:
         logger.warning(f"Self-deletion attempt by admin {current_user.user_id}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -198,7 +200,7 @@ def delete_user(
     db_user = user_crud.soft_delete(
         db, 
         user_id=user_id,
-        deleted_by_supabase_id=current_user.supabase_id
+        deleted_by_supabase_id=str(current_user.supabase_id)  # Normalize the admin Supabase UUID to the CRUD audit string type at the call site.
     )
     
     logger.info(f"User soft-deleted: {user_id} by admin {current_user.user_id}")
@@ -224,7 +226,7 @@ def activate_user(
     db_user = user_crud.activate(
         db,
         user_id=user_id,
-        updated_by=current_user.supabase_id
+        updated_by=str(current_user.supabase_id)  # Normalize the admin Supabase UUID to the CRUD audit string type at the call site.
     )
 
     if not db_user:
@@ -266,7 +268,9 @@ def deactivate_user(
         )
     
     # Prevent admin from deactivating themselves
-    if db_user.user_id == current_user.user_id:
+    target_user_id: int = typing_cast(int, db_user.user_id)  # Narrow the ORM-backed target user ID before the self-deactivate comparison.
+    current_user_id: int = typing_cast(int, current_user.user_id)  # Narrow the authenticated admin user ID locally without changing the dependency contract.
+    if target_user_id == current_user_id:
         logger.warning(f"Self-deactivation attempt by admin {current_user.user_id}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -277,7 +281,7 @@ def deactivate_user(
     db_user = user_crud.deactivate(
         db, 
         user_id=user_id,
-        updated_by=current_user.supabase_id
+        updated_by=str(current_user.supabase_id)  # Normalize the admin Supabase UUID to the CRUD audit string type at the call site.
     )
     
     logger.info(f"User deactivated: {user_id} by admin {current_user.user_id}")
@@ -336,7 +340,7 @@ def delete_property(
     prop = property_crud.soft_delete(
         db, 
         property_id=property_id,
-        deleted_by_supabase_id=current_user.supabase_id
+        deleted_by_supabase_id=str(current_user.supabase_id)  # Normalize the admin Supabase UUID to the CRUD audit string type at the call site.
     )
     
     logger.info(f"Property soft-deleted: {property_id} by admin {current_user.user_id}")
@@ -368,14 +372,15 @@ def verify_property(
         )
 
     # FIX: Idempotent endpoint behavior for already-verified properties.
-    if prop.is_verified:
+    property_is_verified: bool = bool(prop.is_verified)  # Narrow the ORM-backed verification flag before the idempotency check.
+    if property_is_verified:
         return prop
 
     # Use CRUD method with audit tracking
     prop = property_crud.verify_property(
         db,
         property_id=property_id,
-        updated_by=current_user.supabase_id
+        updated_by=str(current_user.supabase_id)  # Normalize the admin Supabase UUID to the CRUD audit string type at the call site.
     )
     
     logger.info(f"Property verified: {property_id} by admin {current_user.user_id}")
@@ -406,24 +411,26 @@ def approve_property(
         )
 
     # FIX: Idempotent endpoint behavior for already-active listings.
-    if getattr(prop.listing_status, "value", prop.listing_status) == "active":
+    property_listing_status: str = str(getattr(prop.listing_status, "value", prop.listing_status))  # Normalize the ORM-backed listing status to a plain string before the idempotency check.
+    if property_listing_status == "active":
         return prop
 
     # FIX: Align approve semantics with verification workflow before activation.
-    if not prop.is_verified:
+    property_is_verified: bool = typing_cast(bool, prop.is_verified)  # Narrow the ORM-backed verification flag before the approval precondition check.
+    if not property_is_verified:
         property_crud.verify_property(
             db,
             property_id=property_id,
-            updated_by=current_user.supabase_id
+            updated_by=str(current_user.supabase_id)  # Normalize the admin Supabase UUID to the CRUD audit string type at the call site.
         )
 
     # Update with audit tracking
-    prop_update = PropertyUpdate(listing_status="active")
+    prop_update = PropertyUpdate(listing_status=ListingStatus.active)  # Use the schema enum explicitly so the endpoint keeps the same response shape with precise typing.
     updated_prop = property_crud.update(
         db, 
         db_obj=prop, 
         obj_in=prop_update,
-        updated_by=current_user.supabase_id
+        updated_by=str(current_user.supabase_id)  # Normalize the admin Supabase UUID to the CRUD audit string type at the call site.
     )
     
     logger.info(f"Property approved: {property_id} by admin {current_user.user_id}")

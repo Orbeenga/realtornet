@@ -3,7 +3,8 @@
 Property management endpoints - Canonical compliant
 Handles property CRUD with geography, multi-tenant enforcement, and soft delete
 """
-from typing import Any, List, Optional
+from decimal import Decimal  # Narrow float query inputs to the Decimal-compatible type expected by the filter schema.
+from typing import Any, List, Optional, cast as typing_cast  # Alias typing.cast so endpoint-local narrowing never shadows SQLAlchemy helpers elsewhere.
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
@@ -27,12 +28,14 @@ from app.schemas.properties import (
     PropertyResponse,
     PropertyCreate,
     PropertyUpdate,
-    PropertyFilter
+    PropertyFilter,
+    ListingStatus as PropertyListingStatus,
+    ListingType as PropertyListingType,
 )
 
 # --- DIRECT MODEL ENUM IMPORTS ---
 from app.models.properties import ListingStatus, ListingType
-from app.models.users import UserRole
+from app.models.users import User
 
 router = APIRouter()
 
@@ -59,26 +62,32 @@ def read_properties(
     
     CRUD layer enforces soft delete filtering (deleted_at IS NULL).
     """
+    min_price_value: Decimal | None = typing_cast(Decimal | None, min_price)  # Preserve FastAPI's runtime coercion while narrowing the filter input for pyright.
+    max_price_value: Decimal | None = typing_cast(Decimal | None, max_price)  # Preserve FastAPI's runtime coercion while narrowing the filter input for pyright.
+    bathrooms_value: int | None = typing_cast(int | None, bathrooms)  # Preserve the existing query value flow while matching the filter schema's integer field.
+    listing_type_value: PropertyListingType | None = typing_cast(PropertyListingType | None, listing_type)  # Narrow the enum locally because model and schema enums share the same runtime values.
+    listing_status_value: PropertyListingStatus | None = typing_cast(PropertyListingStatus | None, listing_status)  # Narrow the enum locally because model and schema enums share the same runtime values.
     search_params = PropertyFilter(
         location_id=location_id,
-        min_price=min_price,
-        max_price=max_price,
+        min_price=min_price_value,
+        max_price=max_price_value,
         bedrooms=bedrooms,
-        bathrooms=bathrooms,
-        listing_type=listing_type,
-        listing_status=listing_status
+        bathrooms=bathrooms_value,
+        listing_type=listing_type_value,
+        listing_status=listing_status_value
     )
     
     # Determine visibility based on user role
     if current_user:
-        if user_crud.is_admin(current_user):
+        current_user_model: User = typing_cast(User, current_user)  # Narrow the dependency result to the ORM-backed user type expected by CRUD role helpers.
+        if user_crud.is_admin(current_user_model):
             # Admins see all properties
             properties = property_crud.get_multi_by_params(
                 db, 
                 **pagination, 
                 params=search_params
             )
-        elif user_crud.is_agent(current_user):
+        elif user_crud.is_agent(current_user_model):
             # Agents see approved + their own properties
             properties = property_crud.get_multi_by_params_for_agent(
                 db,
@@ -122,23 +131,25 @@ def create_property(
     
     Audit: Tracks creator via user_id FK
     """
+    current_user_model: User = typing_cast(User, current_user)  # Narrow the authenticated dependency result to the ORM-backed user type used by CRUD permission helpers.
     # Check if user is allowed to create properties
-    if not user_crud.is_agent_or_admin(current_user):
+    if not user_crud.is_agent_or_admin(current_user_model):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only agents and admins can create property listings"
         )
     
     # Multi-tenant enforcement: Agents can only create for their agency
-    if user_crud.is_agent(current_user):
-        if not current_user.agency_id:
+    if user_crud.is_agent(current_user_model):
+        current_user_agency_id: int | None = typing_cast(int | None, current_user_model.agency_id)  # Narrow the optional agency foreign key before tenant checks.
+        if not current_user_agency_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Agent must belong to an agency to create properties"
             )
         
         # If property_in has agency_id, it must match agent's agency
-        if hasattr(property_in, 'agency_id') and property_in.agency_id and property_in.agency_id != current_user.agency_id:
+        if hasattr(property_in, 'agency_id') and property_in.agency_id and property_in.agency_id != current_user_agency_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Cannot create property for another agency"
@@ -146,7 +157,7 @@ def create_property(
         
         # Auto-assign agent's agency if not specified
         if hasattr(property_in, 'agency_id') and not property_in.agency_id:
-            property_in.agency_id = current_user.agency_id
+            property_in.agency_id = current_user_agency_id
     
     # Validate geography if coordinates provided
     if hasattr(property_in, 'latitude') and property_in.latitude is not None:
@@ -164,11 +175,12 @@ def create_property(
             )
     
     # Create property with owner tracking
+    created_by_supabase_id: str = str(current_user.supabase_id)  # Normalize the authenticated UUID to the string audit format expected by the CRUD layer.
     property = property_crud.create_with_owner(
         db=db, 
         obj_in=property_in, 
         user_id=current_user.user_id,  # Explicit FK reference
-        created_by=current_user.supabase_id
+        created_by=created_by_supabase_id
     )
     
     return property
@@ -198,13 +210,16 @@ def read_property(
     
     # Visibility check
     if current_user:
-        if user_crud.is_admin(current_user):
+        current_user_model: User = typing_cast(User, current_user)  # Narrow the optional dependency result before calling ORM-oriented role helpers.
+        property_user_id: int = typing_cast(int, property.user_id)  # Narrow the ORM integer attribute to the runtime int carried on the loaded entity.
+        property_is_verified: bool = typing_cast(bool, property.is_verified)  # Narrow the ORM boolean attribute to the runtime bool carried on the loaded entity.
+        if user_crud.is_admin(current_user_model):
             # Admins can see any property
             return property
-        elif property.user_id == current_user.user_id:
+        elif property_user_id == current_user.user_id:
             # Owners can see their own properties
             return property
-        elif property.is_verified:
+        elif property_is_verified:
             # Anyone can see verified properties
             return property
         else:
@@ -214,7 +229,8 @@ def read_property(
             )
     else:
         # Anonymous users can only see verified
-        if property.is_verified:
+        property_is_verified: bool = typing_cast(bool, property.is_verified)  # Narrow the ORM boolean attribute to the runtime bool carried on the loaded entity.
+        if property_is_verified:
             return property
         else:
             # Intentional 404 instead of 403 - prevents property ID enumeration
@@ -252,7 +268,9 @@ def update_property(
         )
     
     # Permission check: owner or admin
-    if property.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    current_user_model: User = typing_cast(User, current_user)  # Narrow the authenticated dependency result to the ORM-backed user type used by permission helpers.
+    property_user_id: int = typing_cast(int, property.user_id)  # Narrow the ORM integer attribute to the runtime int carried on the loaded entity.
+    if property_user_id != current_user.user_id and not user_crud.is_admin(current_user_model):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to update this property"
@@ -274,11 +292,12 @@ def update_property(
             )
     
     # Update with audit tracking
+    updated_by_supabase_id: str = str(current_user.supabase_id)  # Normalize the authenticated UUID to the string audit format expected by the CRUD layer.
     property = property_crud.update(
         db=db,
         db_obj=property,
         obj_in=property_in,
-        updated_by_supabase_id=current_user.supabase_id  # UUID audit trail
+        updated_by_supabase_id=updated_by_supabase_id
     )
     
     return property
@@ -309,17 +328,20 @@ def delete_property(
         )
     
     # Permission check: owner or admin
-    if property.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    current_user_model: User = typing_cast(User, current_user)  # Narrow the authenticated dependency result to the ORM-backed user type used by permission helpers.
+    property_user_id: int = typing_cast(int, property.user_id)  # Narrow the ORM integer attribute to the runtime int carried on the loaded entity.
+    if property_user_id != current_user.user_id and not user_crud.is_admin(current_user_model):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to delete this property"
         )
     
     # Soft delete with audit trail
+    deleted_by_supabase_id: str = str(current_user.supabase_id)  # Normalize the authenticated UUID to the string audit format expected by the CRUD layer.
     property = property_crud.soft_delete(
         db=db, 
         property_id=property_id,
-        deleted_by_supabase_id=current_user.supabase_id
+        deleted_by_supabase_id=deleted_by_supabase_id
     )
     
     return property
@@ -340,13 +362,14 @@ def read_properties_by_LocationResponse(
     """
     # Apply visibility logic based on user role
     if current_user:
-        if user_crud.is_admin(current_user):
+        current_user_model: User = typing_cast(User, current_user)  # Narrow the optional dependency result before calling ORM-oriented role helpers.
+        if user_crud.is_admin(current_user_model):
             properties = property_crud.get_by_LocationResponse(
                 db=db, 
                 location_id=location_id, 
                 **pagination,
             )
-        elif user_crud.is_agent(current_user):
+        elif user_crud.is_agent(current_user_model):
             properties = property_crud.get_by_location_for_agent(
                 db=db,
                 location_id=location_id,
@@ -384,7 +407,8 @@ def read_properties_by_agent(
     Admin: All properties by this agent
     """
     if current_user:
-        if user_crud.is_admin(current_user) or current_user.user_id == agent_user_id:
+        current_user_model: User = typing_cast(User, current_user)  # Narrow the optional dependency result before calling ORM-oriented role helpers.
+        if user_crud.is_admin(current_user_model) or current_user.user_id == agent_user_id:
             # Admin or self - see all properties by this agent
             properties = property_crud.get_by_owner(
                 db=db, 
@@ -433,18 +457,24 @@ def search_properties_by_radius(
     Visibility rules apply based on user role.
     CRUD layer converts lat/lon to WKT POINT for PostGIS.
     """
+    min_price_value: Decimal | None = typing_cast(Decimal | None, min_price)  # Preserve FastAPI's runtime coercion while narrowing the filter input for pyright.
+    max_price_value: Decimal | None = typing_cast(Decimal | None, max_price)  # Preserve FastAPI's runtime coercion while narrowing the filter input for pyright.
+    bathrooms_value: int | None = typing_cast(int | None, bathrooms)  # Preserve the existing query value flow while matching the filter schema's integer field.
+    listing_type_value: PropertyListingType | None = typing_cast(PropertyListingType | None, listing_type)  # Narrow the enum locally because model and schema enums share the same runtime values.
+    listing_status_value: PropertyListingStatus | None = typing_cast(PropertyListingStatus | None, listing_status)  # Narrow the enum locally because model and schema enums share the same runtime values.
     search_params = PropertyFilter(
-        min_price=min_price,
-        max_price=max_price,
+        min_price=min_price_value,
+        max_price=max_price_value,
         bedrooms=bedrooms,
-        bathrooms=bathrooms,
-        listing_type=listing_type,
-        listing_status=listing_status
+        bathrooms=bathrooms_value,
+        listing_type=listing_type_value,
+        listing_status=listing_status_value
     )
     
     # Apply visibility logic
     if current_user:
-        if user_crud.is_admin(current_user):
+        current_user_model: User = typing_cast(User, current_user)  # Narrow the optional dependency result before calling ORM-oriented role helpers.
+        if user_crud.is_admin(current_user_model):
             properties = property_crud.get_within_radius(
                 db=db,
                 latitude=latitude,
@@ -453,7 +483,7 @@ def search_properties_by_radius(
                 **pagination,
                 params=search_params
             )
-        elif user_crud.is_agent(current_user):
+        elif user_crud.is_agent(current_user_model):
             properties = property_crud.get_within_radius_for_agent(
                 db=db,
                 latitude=latitude,

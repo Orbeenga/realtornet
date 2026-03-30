@@ -31,7 +31,7 @@ router = APIRouter()
 def read_amenities(
     db: Session = Depends(get_db),
     pagination: dict = Depends(pagination_params),
-    category: str = None,
+    category: str | None = None,  # Treat the category filter as optional so pyright matches the query parameter's default.
 ) -> Any:
     """
     Retrieve amenities with optional category filtering.
@@ -39,7 +39,7 @@ def read_amenities(
     Public endpoint - returns all amenities.
     Used for populating AmenityResponse selection in property forms.
     """
-    if category:
+    if category is not None:
         amenities = amenity_crud.get_by_category(db, category=category, **pagination,)
     else:
         amenities = amenity_crud.get_multi(db, **pagination,)
@@ -74,7 +74,7 @@ def read_AmenityResponse(
     """
     AmenityResponse = amenity_crud.get(db, amenity_id=amenity_id)
     
-    if not AmenityResponse:
+    if AmenityResponse is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="AmenityResponse not found"
@@ -100,7 +100,7 @@ def create_AmenityResponse(
     # Check if AmenityResponse with same name exists
     existing_AmenityResponse = amenity_crud.get_by_name(db, name=amenity_in.name)
     
-    if existing_AmenityResponse:
+    if existing_AmenityResponse is not None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="AmenityResponse with this name already exists"
@@ -129,7 +129,7 @@ def update_AmenityResponse(
     """
     AmenityResponse = amenity_crud.get(db, amenity_id=amenity_id)
     
-    if not AmenityResponse:
+    if AmenityResponse is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="AmenityResponse not found"
@@ -138,7 +138,7 @@ def update_AmenityResponse(
     # If name is being changed, check uniqueness
     if amenity_in.name and amenity_in.name != AmenityResponse.name:
         existing_AmenityResponse = amenity_crud.get_by_name(db, name=amenity_in.name)
-        if existing_AmenityResponse:
+        if existing_AmenityResponse is not None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="AmenityResponse with this name already exists"
@@ -168,7 +168,7 @@ def delete_AmenityResponse(
     """
     AmenityResponse = amenity_crud.get(db, amenity_id=amenity_id)
     
-    if not AmenityResponse:
+    if AmenityResponse is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="AmenityResponse not found"

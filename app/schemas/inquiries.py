@@ -38,8 +38,8 @@ class InquiryBase(BaseModel):
 # Create Schema (for POST requests - excludes DB-controlled fields)
 class InquiryCreate(InquiryBase):
     """Schema for creating a new inquiry"""
-    property_id: int  # Required
-    message: str  # Required
+    property_id: int  # pyright: ignore[reportGeneralTypeIssues,reportIncompatibleVariableOverride] - create schema intentionally narrows optional base field.
+    message: str  # pyright: ignore[reportGeneralTypeIssues,reportIncompatibleVariableOverride] - create schema intentionally narrows optional base field.
     # user_id typically set by current_user in endpoint
 
     @field_validator('message')

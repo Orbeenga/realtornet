@@ -3,7 +3,7 @@
 Favorites management endpoints - Canonical compliant
 Handles user property favorites with composite key, soft delete, and audit tracking
 """
-from typing import Any, List
+from typing import Any, List, cast  # Narrow dependency-backed values locally without changing the frozen endpoint contract.
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
@@ -23,6 +23,7 @@ from app.api.dependencies import (
 
 # --- DIRECT SCHEMA IMPORTS (using aliases from schema file) ---
 from app.schemas.users import UserResponse as UserResponse
+from app.models.users import User  # Narrow endpoint-local user values back to the ORM shape expected by CRUD permission helpers.
 from app.schemas.favorites import FavoriteResponse, FavoriteCreate
 
 router = APIRouter()
@@ -51,7 +52,7 @@ def create_favorite(
         property_id=favorite_in.property_id
     )
     
-    if existing_favorite:
+    if existing_favorite is not None:
         if existing_favorite.deleted_at is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -66,7 +67,7 @@ def create_favorite(
     
     # Verify property exists
     property = property_crud.get(db, property_id=favorite_in.property_id)
-    if not property:
+    if property is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Property not found"
@@ -96,10 +97,10 @@ def delete_favorite(
         db, 
         user_id=current_user.user_id,
         property_id=property_id,
-        deleted_by_supabase_id=current_user.supabase_id  # UUID audit trail
+        deleted_by_supabase_id=str(current_user.supabase_id)  # Normalize the dependency UUID to the CRUD soft-delete audit field's string type.
     )
     
-    if not deleted_favorite:
+    if deleted_favorite is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Favorite not found"
@@ -124,7 +125,9 @@ def get_user_favorites(
     - Admins can access any user's favorites
     """
     # Ensure user can only access their own favorites (unless admin)
-    if user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    current_user_id = cast(int, current_user.user_id)  # Narrow the dependency user id to a plain int for endpoint-local authorization checks.
+    current_user_model = cast(User, current_user)  # Narrow the dependency response object to the ORM user shape expected by the CRUD admin helper.
+    if user_id != current_user_id and not user_crud.is_admin(current_user_model):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Cannot access another user's favorites"
@@ -160,7 +163,7 @@ def restore_favorite(
         property_id=property_id
     )
     
-    if not restored_favorite:
+    if restored_favorite is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No removed favorite found to restore for this property."
@@ -207,7 +210,7 @@ def count_property_favorites(
     """
     # Verify property exists
     property = property_crud.get(db, property_id=property_id)
-    if not property:
+    if property is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Property not found"
@@ -230,7 +233,9 @@ def count_user_favorites(
     - Admins can check any user's favorite count
     """
     # Ensure user can only access their own favorites (unless admin)
-    if user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    current_user_id = cast(int, current_user.user_id)  # Narrow the dependency user id to a plain int for endpoint-local authorization checks.
+    current_user_model = cast(User, current_user)  # Narrow the dependency response object to the ORM user shape expected by the CRUD admin helper.
+    if user_id != current_user_id and not user_crud.is_admin(current_user_model):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Cannot access another user's favorite count"
@@ -256,7 +261,7 @@ def bulk_delete_favorites(
         db,
         user_id=current_user.user_id,
         property_ids=property_ids,
-        deleted_by_supabase_id=current_user.supabase_id
+        deleted_by_supabase_id=str(current_user.supabase_id)  # Normalize the dependency UUID to the CRUD soft-delete audit field's string type.
     )
     return {
         "status": "success",

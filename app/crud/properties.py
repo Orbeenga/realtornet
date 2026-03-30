@@ -5,7 +5,7 @@ DB Table: properties (PK: property_id)
 Canonical Rules: Main entity with geography, enums, soft delete
 """
 
-from typing import List, Optional, Dict, Any, Tuple, Union
+from typing import List, Optional, Dict, Any, Tuple, Union, cast as type_cast
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func, and_, or_, cast, Float, String, update, delete
 from datetime import datetime, timezone
@@ -67,11 +67,13 @@ class PropertyCRUD:
         query = select(Property)
 
         if filters:
-            # Normalize: accept both Pydantic models and plain dicts
-            if hasattr(filters, 'model_dump'):
-                filters = filters.model_dump(exclude_unset=True)
+            # Normalize: accept both Pydantic models and plain dicts.
+            if isinstance(filters, dict):
+                filters = filters  # Preserve plain dict filters without invoking model-only methods.
+            elif hasattr(filters, 'model_dump'):
+                filters = type_cast(Dict[str, Any], filters.model_dump(exclude_unset=True))  # Narrow model_dump output to the dict shape used below.
             elif hasattr(filters, 'dict'):
-                filters = filters.dict(exclude_unset=True)
+                filters = type_cast(Dict[str, Any], filters.dict(exclude_unset=True))  # Narrow v1-style dict output to the dict shape used below.
 
         if not include_deleted:
             query = query.where(Property.deleted_at.is_(None))
@@ -127,7 +129,7 @@ class PropertyCRUD:
                 query = query.where(Property.has_security == filters["has_security"])
 
         query = query.order_by(Property.created_at.desc()).offset(skip).limit(limit)
-        return db.execute(query).scalars().all()
+        return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
     
     def get_featured(
         self, 
@@ -144,7 +146,7 @@ class PropertyCRUD:
             )
         ).order_by(Property.created_at.desc()).limit(limit)
         
-        return db.execute(query).scalars().all()
+        return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
     
     def count(
         self, 
@@ -162,7 +164,7 @@ class PropertyCRUD:
         if user_id is not None:
             query = query.where(Property.user_id == user_id)
         
-        return db.execute(query).scalar()
+        return int(db.execute(query).scalar() or 0)  # Coerce nullable aggregate scalar into the concrete int this API returns.
     
     def count_by_type(
         self,
@@ -182,7 +184,7 @@ class PropertyCRUD:
         )
         if not include_deleted:
             stmt = stmt.where(Property.deleted_at.is_(None))
-        return db.execute(stmt).scalar()
+        return int(db.execute(stmt).scalar() or 0)  # Coerce nullable aggregate scalar into the concrete int this API returns.
 
     def count_by_location(self, db: Session, *, location_id: int) -> int:
         """Count non-deleted properties for a location."""
@@ -190,33 +192,39 @@ class PropertyCRUD:
             Property.location_id == location_id,
             Property.deleted_at.is_(None)
         )
-        return db.execute(stmt).scalar()
+        return int(db.execute(stmt).scalar() or 0)  # Coerce nullable aggregate scalar into the concrete int this API returns.
 
     def count_active(self, db: Session) -> int:
         """Count active (non-deleted) properties."""
-        return db.execute(
-            select(func.count(Property.property_id)).where(
-                Property.deleted_at.is_(None)
-            )
-        ).scalar()
+        return int(  # Coerce nullable aggregate scalar into the concrete int this API returns.
+            db.execute(
+                select(func.count(Property.property_id)).where(
+                    Property.deleted_at.is_(None)
+                )
+            ).scalar() or 0
+        )
 
     def count_approved(self, db: Session) -> int:
         """Count approved (verified) properties."""
-        return db.execute(
-            select(func.count(Property.property_id)).where(
-                Property.deleted_at.is_(None),
-                Property.is_verified.is_(True)
-            )
-        ).scalar()
+        return int(  # Coerce nullable aggregate scalar into the concrete int this API returns.
+            db.execute(
+                select(func.count(Property.property_id)).where(
+                    Property.deleted_at.is_(None),
+                    Property.is_verified.is_(True)
+                )
+            ).scalar() or 0
+        )
 
     def count_pending(self, db: Session) -> int:
         """Count pending (unverified) properties."""
-        return db.execute(
-            select(func.count(Property.property_id)).where(
-                Property.deleted_at.is_(None),
-                or_(Property.is_verified.is_(False), Property.is_verified.is_(None))
-            )
-        ).scalar()
+        return int(  # Coerce nullable aggregate scalar into the concrete int this API returns.
+            db.execute(
+                select(func.count(Property.property_id)).where(
+                    Property.deleted_at.is_(None),
+                    or_(Property.is_verified.is_(False), Property.is_verified.is_(None))
+                )
+            ).scalar() or 0
+        )
 
     def search(
         self, 
@@ -239,7 +247,7 @@ class PropertyCRUD:
             )
         ).order_by(Property.created_at.desc()).offset(skip).limit(limit)
         
-        return db.execute(query).scalars().all()
+        return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
     
     
     # ADVANCED FILTERING
@@ -312,7 +320,7 @@ class PropertyCRUD:
             query = query.where(Location.neighborhood.ilike(filters.neighborhood))
         
         # Geography filter (radius search)
-        if all([filters.latitude, filters.longitude, filters.radius_km]):
+        if None not in (filters.latitude, filters.longitude, filters.radius_km):
             point = WKTElement(
                 f'POINT({filters.longitude} {filters.latitude})', 
                 srid=4326
@@ -327,7 +335,7 @@ class PropertyCRUD:
                 ST_DWithin(
                     Location.geom,
                     point,
-                    filters.radius_km * 1000
+                    type_cast(float, filters.radius_km) * 1000  # Narrow validated radius to float before distance math.
                 )
             )
         
@@ -377,7 +385,7 @@ class PropertyCRUD:
         
         query = query.offset(skip).limit(limit)
         
-        return db.execute(query).scalars().all()
+        return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
     
     def get_nearby_properties(
         self,
@@ -539,7 +547,7 @@ class PropertyCRUD:
         if not db_obj:
             return None
         
-        db_obj.listing_status = listing_status
+        type_cast(Any, db_obj).listing_status = listing_status  # Narrow ORM instance attribute assignment to its runtime enum field.
         # FIX: Support canonical `updated_by` and keep backward compatibility.
         actor_supabase_id = updated_by if updated_by is not None else updated_by_supabase_id
         if actor_supabase_id:
@@ -565,7 +573,7 @@ class PropertyCRUD:
             return None
 
         # FIX: Idempotent verify/unverify to avoid timestamp churn on no-op calls.
-        if db_obj.is_verified == is_verified:
+        if type_cast(bool, db_obj.is_verified) == is_verified:
             actor_supabase_id = updated_by if updated_by is not None else updated_by_supabase_id
             if actor_supabase_id:
                 db_obj.updated_by = actor_supabase_id
@@ -574,11 +582,11 @@ class PropertyCRUD:
                 db.refresh(db_obj)
             return db_obj
 
-        db_obj.is_verified = is_verified
+        type_cast(Any, db_obj).is_verified = is_verified  # Narrow ORM instance attribute assignment to its runtime bool field.
         if is_verified:
-            db_obj.verification_date = datetime.now(timezone.utc)
+            type_cast(Any, db_obj).verification_date = datetime.now(timezone.utc)  # Narrow ORM instance attribute assignment to its runtime datetime field.
         else:
-            db_obj.verification_date = None
+            type_cast(Any, db_obj).verification_date = None  # Narrow ORM instance attribute assignment to its runtime nullable datetime field.
 
         # FIX: Support canonical `updated_by` and keep backward compatibility.
         actor_supabase_id = updated_by if updated_by is not None else updated_by_supabase_id
@@ -604,7 +612,7 @@ class PropertyCRUD:
         if not db_obj:
             return None
         
-        db_obj.is_featured = is_featured
+        type_cast(Any, db_obj).is_featured = is_featured  # Narrow ORM instance attribute assignment to its runtime bool field.
         # FIX: Support canonical `updated_by` and keep backward compatibility.
         actor_supabase_id = updated_by if updated_by is not None else updated_by_supabase_id
         if actor_supabase_id:
@@ -626,7 +634,7 @@ class PropertyCRUD:
                 Property.deleted_at.is_(None)
             )
         )
-        return db.execute(stmt).scalar()
+        return int(db.execute(stmt).scalar() or 0)  # Coerce nullable aggregate scalar into the concrete int this API returns.
 
     def get_by_agency_approved(
         self,
@@ -635,7 +643,7 @@ class PropertyCRUD:
         agency_id: int,
         skip: int = 0,
         limit: int = 100
-    ) -> list:
+    ) -> List[Property]:
         """Get verified, non-deleted properties for an agency via user relationship."""
         from app.models.users import User
         stmt = (
@@ -649,7 +657,7 @@ class PropertyCRUD:
             .offset(skip)
             .limit(limit)
         )
-        return db.execute(stmt).scalars().all()
+        return list(db.execute(stmt).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
 
     def count_by_user(self, db: Session, *, user_id: int) -> int:
         """Count active properties owned by a specific user."""
@@ -657,7 +665,7 @@ class PropertyCRUD:
             Property.user_id == user_id,
             Property.deleted_at.is_(None)
         )
-        return db.execute(stmt).scalar()
+        return int(db.execute(stmt).scalar() or 0)  # Coerce nullable aggregate scalar into the concrete int this API returns.
 
     # DELETE OPERATIONS
         
@@ -677,7 +685,7 @@ class PropertyCRUD:
         if not deleted_by_supabase_id:
             raise HTTPException(status_code=400, detail="deleted_by_supabase_id is required")
 
-        db_obj.deleted_at = datetime.now(timezone.utc)
+        type_cast(Any, db_obj).deleted_at = datetime.now(timezone.utc)  # Narrow ORM instance attribute assignment to its runtime datetime field.
         db_obj.deleted_by = deleted_by_supabase_id
         
         db.add(db_obj)
@@ -699,10 +707,10 @@ class PropertyCRUD:
             return None
 
         # FIX: Keep restore idempotent when property is already active.
-        if db_obj.deleted_at is None:
+        if type_cast(Optional[datetime], db_obj.deleted_at) is None:
             return db_obj
 
-        db_obj.deleted_at = None
+        type_cast(Any, db_obj).deleted_at = None  # Narrow ORM instance attribute assignment to its runtime nullable datetime field.
         # FIX: Preserve deleted_by history on restore (immutable delete audit event).
         if restored_by_supabase_id:
             db_obj.updated_by = restored_by_supabase_id
@@ -780,7 +788,7 @@ class PropertyCRUD:
             .limit(limit)
         )
         
-        return db.execute(query).scalars().all()
+        return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
     
     
     # GEOSPATIAL SEARCH: BOUNDING BOX (MAP-BASED)
@@ -830,7 +838,7 @@ class PropertyCRUD:
                 .limit(limit)
             )
         
-        return db.execute(query).scalars().all()
+        return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
     
     
     # UTILITY: DISTANCE CALCULATION
@@ -844,14 +852,14 @@ class PropertyCRUD:
         Calculate distance in kilometers between two properties.
         Returns 0.0 if either property lacks coordinates.
         """
-        if not property_a.geom or not property_b.geom:
+        if type_cast(Any, property_a).geom is None or type_cast(Any, property_b).geom is None:
             return 0.0
         
         from app.utils.geospatial import wkt_to_coords, get_distance_between_points
         
         try:
-            coords_a = wkt_to_coords(str(property_a.geom))
-            coords_b = wkt_to_coords(str(property_b.geom))
+            coords_a = wkt_to_coords(str(type_cast(Any, property_a).geom))  # Narrow ORM descriptor-backed geometry to the runtime geometry value.
+            coords_b = wkt_to_coords(str(type_cast(Any, property_b).geom))  # Narrow ORM descriptor-backed geometry to the runtime geometry value.
             
             if not coords_a or not coords_b:
                 return 0.0
@@ -900,7 +908,7 @@ class PropertyCRUD:
         result = db.execute(stmt)
         db.flush()
         
-        return result.rowcount
+        return int(type_cast(Any, result).rowcount or 0)  # Narrow SQLAlchemy execute result to the runtime rowcount-bearing object.
     
     
     # BULK OPERATIONS: STATUS UPDATE
@@ -938,7 +946,7 @@ class PropertyCRUD:
         result = db.execute(stmt)
         db.flush()
         
-        return result.rowcount
+        return int(type_cast(Any, result).rowcount or 0)  # Narrow SQLAlchemy execute result to the runtime rowcount-bearing object.
     
     
     # BULK OPERATIONS: SOFT DELETE
@@ -974,7 +982,7 @@ class PropertyCRUD:
         result = db.execute(stmt)
         db.flush()
         
-        return result.rowcount
+        return int(type_cast(Any, result).rowcount or 0)  # Narrow SQLAlchemy execute result to the runtime rowcount-bearing object.
 
     # create_with_owner  (alias for create — endpoint uses this name)
 
@@ -1074,7 +1082,7 @@ class PropertyCRUD:
             query = query.where(Property.has_security == filters["has_security"])
 
         query = query.order_by(Property.created_at.desc()).offset(skip).limit(limit)
-        return db.execute(query).scalars().all()
+        return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
 
 
     # GET /by-LocationResponse/{location_id}  —  location visibility variants
@@ -1135,7 +1143,7 @@ class PropertyCRUD:
             .offset(skip)
             .limit(limit)
         )
-        return db.execute(query).scalars().all()
+        return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
 
     # GET /by-agent/{agent_user_id}  —  owner visibility variants
 
@@ -1218,7 +1226,7 @@ class PropertyCRUD:
             .offset(skip)
             .limit(limit)
         )
-        return db.execute(query).scalars().all()
+        return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
 
     def get_within_radius_for_agent(
         self,
@@ -1256,7 +1264,7 @@ class PropertyCRUD:
             .offset(skip)
             .limit(limit)
         )
-        return db.execute(query).scalars().all()
+        return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
 
     # Note: get_properties_near needs skip support — add it if not present:
     # The existing get_properties_near only has limit, not skip.

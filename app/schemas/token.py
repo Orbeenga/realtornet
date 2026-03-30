@@ -77,9 +77,13 @@ class TokenData(BaseModel):
         Returns:
             TokenData with essential fields for request context
         """
+        if payload.supabase_id is None or payload.user_id is None:
+            # TokenData requires concrete IDs; guard prevents Optional leakage into strict fields.
+            raise ValueError("Token payload is missing required identifiers")
+
         return TokenData(
-            supabase_id=payload.supabase_id,
-            user_id=payload.user_id,
+            supabase_id=UUID(payload.supabase_id),  # Normalize payload string UUID into TokenData's UUID type.
+            user_id=payload.user_id,  # Guard above narrows Optional[int] to int for strict schema construction.
             role=payload.role,
             agency_id=payload.agency_id
         )
@@ -96,4 +100,9 @@ class TokenData(BaseModel):
 
 
 # Export TokenPayload for use in other modules (avoid circular imports)
-__all__ = ["Token", "TokenRefresh", "TokenData", "TokenPayload"]
+__all__ = [
+    "Token", 
+    "TokenRefresh", 
+    "TokenData", 
+    "TokenPayload"
+]

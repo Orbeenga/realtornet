@@ -3,7 +3,7 @@
 Agencies management endpoints - Canonical compliant
 Handles real estate agencies (multi-tenant hub) with full audit trail and soft delete
 """
-from typing import Any, List
+from typing import Any, List, cast  # Narrow dependency-backed values locally without changing the frozen endpoint contract.
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 import logging
@@ -26,6 +26,7 @@ from app.api.dependencies import (
 
 # --- DIRECT SCHEMA IMPORTS ---
 from app.schemas.users import UserResponse
+from app.models.users import User  # Narrow endpoint-local user values back to the ORM shape expected by CRUD permission helpers.
 from app.schemas.agencies import (
     AgencyResponse,
     AgencyCreate,
@@ -68,7 +69,7 @@ def read_agency(
     """
     agency = agency_crud.get(db, agency_id=agency_id)
     
-    if not agency:
+    if agency is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agency not found"
@@ -114,7 +115,7 @@ def create_agency(
     agency = agency_crud.create(
         db, 
         obj_in=agency_in,
-        created_by=current_user.supabase_id  # UUID Audit Trail
+        created_by=str(current_user.supabase_id)  # Normalize the dependency UUID to the CRUD audit field's string type.
     )
 
     logger.info("Agency created", extra={
@@ -144,7 +145,7 @@ def update_agency(
     """
     agency = agency_crud.get(db, agency_id=agency_id)
     
-    if not agency:
+    if agency is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agency not found"
@@ -173,7 +174,7 @@ def update_agency(
         db, 
         db_obj=agency, 
         obj_in=agency_in,
-        updated_by=current_user.supabase_id
+        updated_by=str(current_user.supabase_id)  # Normalize the dependency UUID to the CRUD audit field's string type.
     )
 
     logger.info("Agency updated", extra={
@@ -206,7 +207,7 @@ def delete_agency(
     """
     agency = agency_crud.get(db, agency_id=agency_id)
     
-    if not agency:
+    if agency is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agency not found"
@@ -232,10 +233,10 @@ def delete_agency(
     agency = agency_crud.soft_delete(
         db, 
         agency_id=agency_id,
-        deleted_by_supabase_id=current_user.supabase_id
+        deleted_by_supabase_id=str(current_user.supabase_id)  # Normalize the dependency UUID to the CRUD soft-delete audit field's string type.
     )
 
-    if not agency:
+    if agency is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agency not found during delete attempt"
@@ -265,7 +266,7 @@ def read_agency_agents(
     """
     # Verify agency exists
     agency = agency_crud.get(db, agency_id=agency_id)
-    if not agency:
+    if agency is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agency not found"
@@ -290,7 +291,7 @@ def read_agency_properties(
     """
     # Verify agency exists
     agency = agency_crud.get(db, agency_id=agency_id)
-    if not agency:
+    if agency is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agency not found"
@@ -322,16 +323,18 @@ def read_agency_stats(
     """
     # Verify agency exists
     agency = agency_crud.get(db, agency_id=agency_id)
-    if not agency:
+    if agency is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agency not found"
         )
     
     # Check authorization: agent of this agency or admin
-    if not user_crud.is_admin(current_user):
+    current_user_model = cast(User, current_user)  # Narrow the dependency response object to the ORM user shape expected by the CRUD authorization helper.
+    if not user_crud.is_admin(current_user_model):
         # Check if user is an agent of this agency
-        if not current_user.agency_id or current_user.agency_id != agency_id:
+        current_agency_id = cast(int | None, current_user_model.agency_id)  # Narrow the optional ORM agency foreign key before comparing it to the route parameter.
+        if current_agency_id is None or current_agency_id != agency_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not enough permissions to view this agency's statistics"
@@ -339,4 +342,3 @@ def read_agency_stats(
     
     stats = agency_crud.get_stats(db, agency_id=agency_id)
     return stats
-

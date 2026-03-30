@@ -5,7 +5,7 @@ DB Table: agencies (PK: agency_id)
 Canonical Rules: Full audit trail (created_by, updated_by, deleted_by), soft delete
 """
 
-from typing import List, Optional, Dict, Any, Union
+from typing import List, Optional, Dict, Any, Union, cast
 from sqlalchemy.orm import Session
 from sqlalchemy import select, or_, func, and_
 from datetime import datetime, timezone
@@ -84,7 +84,7 @@ class AgencyCRUD:
         # Pagination
         query = query.offset(skip).limit(limit)
         
-        return db.execute(query).scalars().all()
+        return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence return to the declared concrete list type.
     
     def search(
         self,
@@ -113,7 +113,7 @@ class AgencyCRUD:
             )
         ).order_by(Agency.name).offset(skip).limit(limit)
         
-        return db.execute(query).scalars().all()
+        return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence return to the declared concrete list type.
     
     def count(self, db: Session, *, is_verified: Optional[bool] = None) -> int:
         """Count non-deleted agencies with optional verification filter"""
@@ -124,7 +124,7 @@ class AgencyCRUD:
         if is_verified is not None:
             query = query.where(Agency.is_verified == is_verified)
         
-        return db.execute(query).scalar()
+        return int(db.execute(query).scalar() or 0)  # Count queries can surface None to the type checker even though callers expect an int.
     
     
     # CREATE OPERATIONS
@@ -151,7 +151,7 @@ class AgencyCRUD:
         
         db_obj = Agency(
             name=create_data["name"],
-            email=create_data.get("email").lower() if create_data.get("email") else None,
+            email=create_data["email"].lower() if create_data.get("email") is not None else None,  # Guard the optional email before lowercasing so pyright can narrow it safely.
             phone_number=create_data.get("phone_number"),
             address=create_data.get("address"),
             description=create_data.get("description"),
@@ -204,20 +204,26 @@ class AgencyCRUD:
             update_data = obj_in.dict(exclude_unset=True)
         
         # Check for email uniqueness if email is being updated
-        if "email" in update_data and update_data["email"]:
-            new_email = update_data["email"].lower()
+        raw_email = cast(Optional[str], update_data.get("email"))  # Narrow the dynamic update payload to the string-or-none shape expected for email updates.
+        if raw_email is not None and raw_email != "":  # Use an explicit string presence check instead of truthiness so pyright doesn't treat SQLAlchemy-like values as boolean operands.
+            new_email = raw_email.lower()  # Lowercasing now happens after the update payload has been narrowed to a concrete string.
             if new_email != db_obj.email:
                 existing = self.get_by_email(db, email=new_email)
-                if existing and existing.agency_id != db_obj.agency_id:
+                existing_agency_id = cast(int, existing.agency_id) if existing is not None else None  # Convert the ORM-backed primary key to a concrete int before duplicate comparison.
+                current_agency_id = cast(int, db_obj.agency_id)  # Convert the current ORM-backed primary key to a concrete int before duplicate comparison.
+                if existing_agency_id is not None and existing_agency_id != current_agency_id:  # Compare concrete ints so pyright doesn't interpret the ORM descriptor comparison as SQL expression building.
                     raise ValueError(f"Agency with email '{new_email}' already exists")
             update_data["email"] = new_email
         
         # Check name uniqueness if being changed
-        if "name" in update_data and update_data["name"]:
-            if update_data["name"].lower() != db_obj.name.lower():
-                existing = self.get_by_name(db, name=update_data["name"])
-                if existing and existing.agency_id != db_obj.agency_id:
-                    raise ValueError(f"Agency with name '{update_data['name']}' already exists")
+        raw_name = cast(Optional[str], update_data.get("name"))  # Narrow the dynamic update payload to the string-or-none shape expected for name updates.
+        if raw_name is not None and raw_name != "":  # Use an explicit string presence check instead of truthiness so pyright doesn't treat SQLAlchemy-like values as boolean operands.
+            if raw_name.lower() != db_obj.name.lower():
+                existing = self.get_by_name(db, name=raw_name)
+                existing_agency_id = cast(int, existing.agency_id) if existing is not None else None  # Convert the ORM-backed primary key to a concrete int before duplicate comparison.
+                current_agency_id = cast(int, db_obj.agency_id)  # Convert the current ORM-backed primary key to a concrete int before duplicate comparison.
+                if existing_agency_id is not None and existing_agency_id != current_agency_id:  # Compare concrete ints so pyright doesn't interpret the ORM descriptor comparison as SQL expression building.
+                    raise ValueError(f"Agency with name '{raw_name}' already exists")
         
         # Remove protected fields
         protected_fields = {"agency_id", "created_at", "created_by"}
@@ -265,7 +271,7 @@ class AgencyCRUD:
         if not db_obj:
             return None
     
-        db_obj.deleted_at = datetime.now(timezone.utc)
+        cast(Any, db_obj).deleted_at = datetime.now(timezone.utc)  # ORM instance accepts datetime here even though the declarative attribute is typed as a column descriptor.
         db_obj.deleted_by = deleted_by_supabase_id
         db_obj.updated_by = deleted_by_supabase_id
         
@@ -297,15 +303,15 @@ class AgencyCRUD:
         from app.models.users import User
         
         # Count agents
-        agent_count = db.execute(
+        agent_count = int(db.execute(
             select(func.count(User.user_id)).where(
                 User.agency_id == agency_id,
                 User.deleted_at.is_(None)
             )
-        ).scalar()
+        ).scalar() or 0)  # Count aggregation is narrowed to an int for the stats payload.
         
         # Count properties (via agents)
-        property_count = db.execute(
+        property_count = int(db.execute(
             select(func.count(Property.property_id.distinct())).join(
                 AgentProfile,
                 Property.user_id == AgentProfile.user_id
@@ -313,7 +319,7 @@ class AgencyCRUD:
                 AgentProfile.agency_id == agency_id,
                 Property.deleted_at.is_(None)
             )
-        ).scalar()
+        ).scalar() or 0)  # Count aggregation is narrowed to an int for the stats payload.
         
         return {
             "agent_count": agent_count,

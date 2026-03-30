@@ -4,7 +4,7 @@ Property images management endpoints - Canonical compliant
 Handles property photo uploads with Supabase Storage, ordering, and hard delete
 NO AUDIT TRAIL: property_images table has no created_by/updated_by/deleted_by columns
 """
-from typing import Any, List
+from typing import Any, List, cast as typing_cast  # Alias typing.cast so endpoint-local narrowing never shadows SQLAlchemy helpers in future edits.
 from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile
 from sqlalchemy.orm import Session
 import logging
@@ -13,6 +13,7 @@ import logging
 from app.crud.property_images import property_image as property_image_crud
 from app.crud.properties import property as property_crud
 from app.crud.users import user as user_crud
+from app.models.users import User  # Narrow endpoint-local user values back to the ORM shape expected by CRUD permission helpers.
 
 # --- DIRECT DEPENDENCY IMPORTS ---
 from app.api.dependencies import (
@@ -84,7 +85,7 @@ async def upload_property_image_endpoint(
     db: Session = Depends(get_db),
     property_id: int,
     file: UploadFile = File(...),
-    caption: str = None,
+    caption: str | None = None,  # Preserve the optional caption contract while matching the runtime default of None.
     is_primary: bool = False,
     current_user: UserResponse = Depends(get_current_active_user),
     _: None = Depends(validate_request_size)
@@ -112,7 +113,10 @@ async def upload_property_image_endpoint(
         )
     
     # Check ownership: PropertyResponse owner or admin
-    if property.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    property_owner_id: int = typing_cast(int, property.user_id)  # Narrow ORM-owned property user IDs before the permission comparison.
+    current_user_id: int = typing_cast(int, current_user.user_id)  # Narrow the authenticated user ID locally without changing the dependency contract.
+    current_user_model: User = typing_cast(User, current_user)  # typing cast: endpoint local only for CRUD permission helper compatibility.
+    if property_owner_id != current_user_id and not user_crud.is_admin(current_user_model):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to upload images for this property"
@@ -139,7 +143,8 @@ async def upload_property_image_endpoint(
             )
         
         # Upload to Supabase Storage
-        image_url = await upload_property_image(property_id, contents, file.filename)
+        upload_filename: str = typing_cast(str, file.filename)  # Narrow the uploaded filename locally before passing it to the storage helper.
+        image_url = await upload_property_image(property_id, contents, upload_filename)
         
         # If this is set as primary, unset other primary images
         if is_primary:
@@ -216,16 +221,26 @@ def update_property_image(
         )
     
     # Check ownership
-    property = property_crud.get(db, property_id=image.property_id)
-    if property.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    property_id_value: int = typing_cast(int, image.property_id)  # Narrow the ORM-backed property ID before loading the owning property.
+    property = property_crud.get(db, property_id=property_id_value)
+    if property is None:  # Narrow the loaded property before accessing owner fields.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Property not found"
+        )
+    property_owner_id: int = typing_cast(int, property.user_id)  # Narrow ORM-owned property user IDs before the permission comparison.
+    current_user_id: int = typing_cast(int, current_user.user_id)  # Narrow the authenticated user ID locally without changing the dependency contract.
+    current_user_model: User = typing_cast(User, current_user)  # typing cast: endpoint local only for CRUD permission helper compatibility.
+    if property_owner_id != current_user_id and not user_crud.is_admin(current_user_model):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to update this image"
         )
     
     # If setting as primary, unset other primary images
-    if image_in.is_primary and not image.is_primary:
-        property_image_crud.unset_primary(db, property_id=image.property_id)
+    image_is_primary: bool = typing_cast(bool, image.is_primary)  # Narrow the ORM-backed primary flag before boolean checks.
+    if image_in.is_primary and not image_is_primary:
+        property_image_crud.unset_primary(db, property_id=property_id_value)
     
     # Update metadata only (no audit trail per DB schema)
     image = property_image_crud.update(db, db_obj=image, obj_in=image_in)
@@ -265,8 +280,17 @@ async def delete_property_image_endpoint(
         )
     
     # Check ownership
-    property = property_crud.get(db, property_id=image.property_id)
-    if property.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    property_id_value: int = typing_cast(int, image.property_id)  # Narrow the ORM-backed property ID before loading the owning property.
+    property = property_crud.get(db, property_id=property_id_value)
+    if property is None:  # Narrow the loaded property before accessing owner fields.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Property not found"
+        )
+    property_owner_id: int = typing_cast(int, property.user_id)  # Narrow ORM-owned property user IDs before the permission comparison.
+    current_user_id: int = typing_cast(int, current_user.user_id)  # Narrow the authenticated user ID locally without changing the dependency contract.
+    current_user_model: User = typing_cast(User, current_user)  # typing cast: endpoint local only for CRUD permission helper compatibility.
+    if property_owner_id != current_user_id and not user_crud.is_admin(current_user_model):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to delete this image"
@@ -274,7 +298,8 @@ async def delete_property_image_endpoint(
     
     try:
         # Delete from Supabase Storage
-        await delete_property_image(image.image_url)
+        image_url_value: str = typing_cast(str, image.image_url)  # Narrow the ORM-backed image URL before passing it to the storage helper.
+        await delete_property_image(image_url_value)
         
         # Hard delete from database
         property_image_crud.remove(db, image_id=image_id)
@@ -334,7 +359,10 @@ def reorder_property_images(
         )
     
     # Check ownership
-    if property.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    property_owner_id: int = typing_cast(int, property.user_id)  # Narrow ORM-owned property user IDs before the permission comparison.
+    current_user_id: int = typing_cast(int, current_user.user_id)  # Narrow the authenticated user ID locally without changing the dependency contract.
+    current_user_model: User = typing_cast(User, current_user)  # typing cast: endpoint local only for CRUD permission helper compatibility.
+    if property_owner_id != current_user_id and not user_crud.is_admin(current_user_model):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to reorder images for this property"
@@ -390,15 +418,24 @@ def set_primary_image(
         )
     
     # Check ownership
-    property = property_crud.get(db, property_id=image.property_id)
-    if property.user_id != current_user.user_id and not user_crud.is_admin(current_user):
+    property_id_value: int = typing_cast(int, image.property_id)  # Narrow the ORM-backed property ID before loading the owning property.
+    property = property_crud.get(db, property_id=property_id_value)
+    if property is None:  # Narrow the loaded property before accessing owner fields.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Property not found"
+        )
+    property_owner_id: int = typing_cast(int, property.user_id)  # Narrow ORM-owned property user IDs before the permission comparison.
+    current_user_id: int = typing_cast(int, current_user.user_id)  # Narrow the authenticated user ID locally without changing the dependency contract.
+    current_user_model: User = typing_cast(User, current_user)  # typing cast: endpoint local only for CRUD permission helper compatibility.
+    if property_owner_id != current_user_id and not user_crud.is_admin(current_user_model):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to modify this image"
         )
     
     # Unset other primary images
-    property_image_crud.unset_primary(db, property_id=image.property_id)
+    property_image_crud.unset_primary(db, property_id=property_id_value)
     
     # Set this image as primary
     image_update = PropertyImageUpdate(is_primary=True)
