@@ -128,4 +128,8 @@ def log_method_call(logger_instance=logger):  # pragma: no cover
     return decorator
 
 
-__all__ = ["logger", "log_method_call", "LoggerConfiguration"]
+__all__ = [
+    "logger", 
+    "log_method_call", 
+    "LoggerConfiguration"
+]

@@ -76,4 +76,10 @@ class AgentProfile(Base, AuditMixin, SoftDeleteMixin):
     )
     
     def __repr__(self):
-        return f"<AgentProfile(profile_id={self.profile_id}, user_id={self.user_id}, license={self.license_number})>"
+        profile_id = self.__dict__.get("profile_id", "unknown")
+        user_id = self.__dict__.get("user_id", "unknown")
+        license_number = self.__dict__.get("license_number", "unknown")
+        return (
+            f"<AgentProfile(profile_id={profile_id}, "
+            f"user_id={user_id}, license={license_number})>"
+        )

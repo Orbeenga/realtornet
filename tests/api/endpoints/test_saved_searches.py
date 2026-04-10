@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.api.endpoints import saved_searches as saved_searches_api
 from app.core.security import generate_access_token, get_password_hash
+from app.schemas.properties import PropertyResponse
 from app.models.saved_searches import SavedSearch
 from app.models.users import User, UserRole
 
@@ -370,8 +371,12 @@ class TestExecuteSavedSearch:
         assert response.status_code == 403
 
     def test_execute_saved_search_success(
-        self, client: TestClient, normal_user_token_headers, db, normal_user, monkeypatch
+        self, client: TestClient, normal_user_token_headers, db, normal_user,
+        agent_user, location, property_type, monkeypatch
     ):
+        from app.models.properties import Property, ListingType, ListingStatus
+        from geoalchemy2.elements import WKTElement
+
         saved = SavedSearch(
             user_id=normal_user.user_id,
             search_params={"min_price": 11000},
@@ -381,10 +386,31 @@ class TestExecuteSavedSearch:
         db.flush()
         db.refresh(saved)
 
+        property_obj = Property(
+            title="Execute Search Property",
+            description="Saved search execution payload",
+            user_id=agent_user.user_id,
+            property_type_id=property_type.property_type_id,
+            location_id=location.location_id,
+            geom=WKTElement('POINT(3.3488 6.6018)', srid=4326),
+            price=19000000,
+            bedrooms=2,
+            bathrooms=2,
+            property_size=100.0,
+            listing_type=ListingType.sale,
+            listing_status=ListingStatus.available,
+            is_verified=True,
+        )
+        db.add(property_obj)
+        db.flush()
+        db.refresh(property_obj)
+
+        serialized = PropertyResponse.model_validate(property_obj).model_dump(mode="json")
+
         monkeypatch.setattr(
             saved_searches_api.saved_search_crud,
             "execute_search",
-            lambda *args, **kwargs: [{"property_id": 1}],
+            lambda *args, **kwargs: [serialized],
             raising=False
         )
 
@@ -393,4 +419,62 @@ class TestExecuteSavedSearch:
             headers=normal_user_token_headers
         )
         assert response.status_code == 200
-        assert isinstance(response.json(), list)
+        data = response.json()
+        assert isinstance(data, list)
+        assert data[0]["property_id"] == property_obj.property_id
+
+    def test_execute_saved_search_returns_property_response_shape(
+        self, client: TestClient, normal_user_token_headers, db, normal_user,
+        agent_user, location, property_type, monkeypatch
+    ):
+        from app.models.properties import Property, ListingType, ListingStatus
+        from geoalchemy2.elements import WKTElement
+
+        saved = SavedSearch(
+            user_id=normal_user.user_id,
+            search_params={"min_price": 1000},
+            name="Execute Serialized"
+        )
+        db.add(saved)
+        db.flush()
+        db.refresh(saved)
+
+        property_obj = Property(
+            title="Saved Search Property",
+            description="Result payload should match PropertyResponse",
+            user_id=agent_user.user_id,
+            property_type_id=property_type.property_type_id,
+            location_id=location.location_id,
+            geom=WKTElement('POINT(3.3488 6.6018)', srid=4326),
+            price=21000000,
+            bedrooms=3,
+            bathrooms=2,
+            property_size=110.0,
+            listing_type=ListingType.sale,
+            listing_status=ListingStatus.available,
+            is_verified=True,
+        )
+        db.add(property_obj)
+        db.flush()
+        db.refresh(property_obj)
+
+        serialized = PropertyResponse.model_validate(property_obj).model_dump(mode="json")
+        monkeypatch.setattr(
+            saved_searches_api.saved_search_crud,
+            "execute_search",
+            lambda *args, **kwargs: [serialized],
+            raising=False
+        )
+
+        response = client.post(
+            f"/api/v1/saved-searches/{saved.search_id}/execute",
+            headers=normal_user_token_headers
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, list)
+        assert len(data) == 1
+        assert data[0]["property_id"] == property_obj.property_id
+        assert data[0]["title"] == "Saved Search Property"
+        assert data[0]["user_id"] == agent_user.user_id

@@ -27,6 +27,7 @@ from app.schemas.saved_searches import (
     SavedSearchCreate,
     SavedSearchUpdate
 )
+from app.schemas.properties import PropertyResponse
 from app.models.users import User  # Reuse the ORM-backed user type for local permission-helper narrowing.
 
 router = APIRouter()
@@ -223,7 +224,7 @@ def delete_saved_search(
     return deleted_saved_search
 
 
-@router.post("/{search_id}/execute", response_model=List[dict])
+@router.post("/{search_id}/execute", response_model=List[PropertyResponse])
 def execute_saved_search(
     *,
     db: Session = Depends(get_db),

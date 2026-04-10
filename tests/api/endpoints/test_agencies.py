@@ -291,6 +291,46 @@ class TestReadAgencyAgents:
         assert response.status_code == 200
         assert isinstance(response.json(), list)
 
+    def test_read_agency_agents_serializes_agent_profiles(
+        self, client: TestClient, db, agency
+    ):
+        from app.models.agent_profiles import AgentProfile
+        from app.models.users import User, UserRole
+
+        agent_user = User(
+            email=f"agency_agent_{uuid.uuid4().hex[:6]}@example.com",
+            password_hash="hashed_placeholder",
+            first_name="Agency",
+            last_name="Agent",
+            user_role=UserRole.AGENT,
+            supabase_id=uuid.uuid4(),
+            agency_id=agency.agency_id,
+        )
+        db.add(agent_user)
+        db.flush()
+        db.refresh(agent_user)
+
+        profile = AgentProfile(
+            user_id=agent_user.user_id,
+            agency_id=agency.agency_id,
+            license_number="LIC-AGENCY-001",
+            specialization="Residential Sales",
+        )
+        db.add(profile)
+        db.flush()
+        db.refresh(profile)
+
+        response = client.get(f"/api/v1/agencies/{agency.agency_id}/agents")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, list)
+        assert len(data) >= 1
+        assert data[0]["profile_id"] == profile.profile_id
+        assert data[0]["user_id"] == agent_user.user_id
+        assert data[0]["agency_id"] == agency.agency_id
+        assert data[0]["license_number"] == "LIC-AGENCY-001"
+
 
 class TestReadAgencyProperties:
 
@@ -302,6 +342,41 @@ class TestReadAgencyProperties:
         response = client.get(f"/api/v1/agencies/{agency.agency_id}/properties")
         assert response.status_code == 200
         assert isinstance(response.json(), list)
+
+    def test_read_agency_properties_serializes_properties(
+        self, client: TestClient, db, agency, agent_user, location, property_type
+    ):
+        from app.models.properties import Property, ListingType, ListingStatus
+        from geoalchemy2.elements import WKTElement
+
+        property_obj = Property(
+            title="Serialized Agency Property",
+            description="Agency listing for serialization test",
+            user_id=agent_user.user_id,
+            property_type_id=property_type.property_type_id,
+            location_id=location.location_id,
+            geom=WKTElement('POINT(3.3488 6.6018)', srid=4326),
+            price=18000000,
+            bedrooms=2,
+            bathrooms=2,
+            property_size=95.0,
+            listing_type=ListingType.sale,
+            listing_status=ListingStatus.available,
+            is_verified=True,
+        )
+        db.add(property_obj)
+        db.flush()
+        db.refresh(property_obj)
+
+        response = client.get(f"/api/v1/agencies/{agency.agency_id}/properties")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, list)
+        assert len(data) >= 1
+        assert data[0]["property_id"] == property_obj.property_id
+        assert data[0]["title"] == "Serialized Agency Property"
+        assert data[0]["user_id"] == agent_user.user_id
 
 
 class TestReadAgencyStats:
