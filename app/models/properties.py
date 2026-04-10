@@ -86,4 +86,6 @@ class Property(Base, AuditMixin, SoftDeleteMixin):
     # created_at, updated_at, deleted_at
 
     def __repr__(self):
-        return f"<Property(property_id={self.property_id}, title={self.title})>"
+        property_id = self.__dict__.get("property_id", "unknown")
+        title = self.__dict__.get("title", "unknown")
+        return f"<Property(property_id={property_id}, title={title})>"

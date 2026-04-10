@@ -141,9 +141,14 @@ class RedisRateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         
         except Exception as e:
+            try:
+                error_detail = str(e)
+            except Exception:
+                error_detail = type(e).__name__
+
             logger.error(
                 f"Unexpected error in rate limiting middleware",
-                extra={"error": str(e), "client_id": client_id},
+                extra={"error": error_detail, "client_id": client_id},
                 exc_info=True
             )
             # Fallback: Allow request

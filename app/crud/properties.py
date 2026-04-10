@@ -82,6 +82,15 @@ class PropertyCRUD:
             query = query.where(Property.user_id == user_id)
 
         if filters:
+            if filters.get("search"):
+                search_pattern = f"%{filters['search']}%"
+                query = query.where(
+                    or_(
+                        Property.title.ilike(search_pattern),
+                        Property.description.ilike(search_pattern)
+                    )
+                )
+
             # Price range
             if filters.get("min_price") is not None:
                 query = query.where(Property.price >= filters["min_price"])
@@ -1049,6 +1058,15 @@ class PropertyCRUD:
                 Property.user_id == agent_user_id
             )
         )
+
+        if filters.get("search"):
+            search_pattern = f"%{filters['search']}%"
+            query = query.where(
+                or_(
+                    Property.title.ilike(search_pattern),
+                    Property.description.ilike(search_pattern)
+                )
+            )
 
         if filters.get("min_price") is not None:
             query = query.where(Property.price >= filters["min_price"])

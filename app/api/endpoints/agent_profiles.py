@@ -35,6 +35,8 @@ from app.schemas.agent_profiles import (
     AgentProfileCreate, 
     AgentProfileUpdate
 )
+from app.schemas.properties import PropertyResponse
+from app.schemas.reviews import AgentReviewResponse
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -324,7 +326,7 @@ def delete_agent_profile(
     return agent_profile
 
 
-@router.get("/{profile_id}/properties", response_model=List[dict])
+@router.get("/{profile_id}/properties", response_model=List[PropertyResponse])
 def read_agent_properties(
     *,
     db: Session = Depends(get_db), # Updated: Direct dependency call
@@ -352,7 +354,7 @@ def read_agent_properties(
     return properties
 
 
-@router.get("/{profile_id}/reviews", response_model=List[dict])
+@router.get("/{profile_id}/reviews", response_model=List[AgentReviewResponse])
 def read_agent_reviews(
     *,
     db: Session = Depends(get_db), # Updated: Direct dependency call

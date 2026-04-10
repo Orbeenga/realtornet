@@ -32,6 +32,8 @@ from app.schemas.agencies import (
     AgencyCreate,
     AgencyUpdate
 )
+from app.schemas.agent_profiles import AgentProfileResponse
+from app.schemas.properties import PropertyResponse
 
 router = APIRouter()
 
@@ -251,7 +253,7 @@ def delete_agency(
     return agency
 
 
-@router.get("/{agency_id}/agents", response_model=List[dict])
+@router.get("/{agency_id}/agents", response_model=List[AgentProfileResponse])
 def read_agency_agents(
     *,
     db: Session = Depends(get_db),
@@ -276,7 +278,7 @@ def read_agency_agents(
     return agents
 
 
-@router.get("/{agency_id}/properties", response_model=List[dict])
+@router.get("/{agency_id}/properties", response_model=List[PropertyResponse])
 def read_agency_properties(
     *,
     db: Session = Depends(get_db),

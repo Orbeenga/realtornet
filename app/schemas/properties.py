@@ -198,6 +198,8 @@ class PropertyExtendedResponse(PropertyResponse):
 # Filter Schema (for search/filtering)
 class PropertyFilter(BaseModel):
     """Schema for filtering properties"""
+    search: Optional[str] = None
+
     # Location filters
     state: Optional[str] = None
     city: Optional[str] = None

@@ -44,6 +44,7 @@ router = APIRouter()
 def read_properties(
     db: Session = Depends(get_db),
     pagination: dict = Depends(pagination_params),
+    search: Optional[str] = Query(None),
     location_id: Optional[int] = None,
     min_price: Optional[float] = None,
     max_price: Optional[float] = None,
@@ -68,6 +69,7 @@ def read_properties(
     listing_type_value: PropertyListingType | None = typing_cast(PropertyListingType | None, listing_type)  # Narrow the enum locally because model and schema enums share the same runtime values.
     listing_status_value: PropertyListingStatus | None = typing_cast(PropertyListingStatus | None, listing_status)  # Narrow the enum locally because model and schema enums share the same runtime values.
     search_params = PropertyFilter(
+        search=search,
         location_id=location_id,
         min_price=min_price_value,
         max_price=max_price_value,

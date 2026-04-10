@@ -10,6 +10,7 @@ from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
 from app.core.security import generate_access_token, get_password_hash
+from app.models.properties import Property, ListingType, ListingStatus
 from app.models.users import User, UserRole
 
 
@@ -84,6 +85,77 @@ class TestReadProperties:
         """skip/limit accepted."""
         response = client.get("/api/v1/properties/", params={"skip": 0, "limit": 5})
         assert response.status_code == 200
+
+    def test_search_filters_title_and_description(
+        self, client: TestClient, db, normal_user, location, property_type
+    ):
+        from geoalchemy2.elements import WKTElement
+
+        matching_title = Property(
+            title="Lekki Waterfront Apartment",
+            description="Modern apartment in Lagos",
+            user_id=normal_user.user_id,
+            property_type_id=property_type.property_type_id,
+            location_id=location.location_id,
+            geom=WKTElement('POINT(3.3488 6.6018)', srid=4326),
+            price=25000000,
+            bedrooms=3,
+            bathrooms=2,
+            property_size=120.0,
+            listing_type=ListingType.sale,
+            listing_status=ListingStatus.available,
+            is_verified=True,
+        )
+        matching_description = Property(
+            title="Coastal Apartment",
+            description="Bright home near Lekki conservation centre",
+            user_id=normal_user.user_id,
+            property_type_id=property_type.property_type_id,
+            location_id=location.location_id,
+            geom=WKTElement('POINT(3.3488 6.6018)', srid=4326),
+            price=18000000,
+            bedrooms=2,
+            bathrooms=2,
+            property_size=95.0,
+            listing_type=ListingType.sale,
+            listing_status=ListingStatus.available,
+            is_verified=True,
+        )
+        non_matching = Property(
+            title="Ikeja Family Home",
+            description="Quiet street with good access",
+            user_id=normal_user.user_id,
+            property_type_id=property_type.property_type_id,
+            location_id=location.location_id,
+            geom=WKTElement('POINT(3.3488 6.6018)', srid=4326),
+            price=22000000,
+            bedrooms=3,
+            bathrooms=2,
+            property_size=115.0,
+            listing_type=ListingType.sale,
+            listing_status=ListingStatus.available,
+            is_verified=True,
+        )
+        db.add(matching_title)
+        db.add(matching_description)
+        db.add(non_matching)
+        db.flush()
+        db.refresh(matching_title)
+        db.refresh(matching_description)
+        db.refresh(non_matching)
+
+        response = client.get("/api/v1/properties/", params={"search": "Lekki"})
+
+        assert response.status_code == 200
+        data = response.json()
+        returned_ids = {item["property_id"] for item in data}
+        assert matching_title.property_id in returned_ids
+        assert matching_description.property_id in returned_ids
+        assert non_matching.property_id not in returned_ids
+        assert all(
+            "lekki" in (item["title"] + " " + item["description"]).lower()
+            for item in data
+        )
 
 
 # ===========================================================================

@@ -6,11 +6,12 @@ Production-ready with proper error handling, logging, and image optimization
 
 from io import BytesIO
 from typing import Any, Dict, List, Tuple, cast
+import mimetypes
 from PIL import Image
 import logging
 
 from app.core.config import settings
-from app.utils.supabase_client import get_supabase_client
+from app.utils.supabase_client import get_supabase_admin_client
 
 
 logger = logging.getLogger(__name__)
@@ -96,29 +97,18 @@ async def upload_file(bucket_name: str, file_path: str, file_data: bytes) -> str
         )
         raise ValueError("Invalid storage bucket.")
     
-    client = get_supabase_client()
+    client = get_supabase_admin_client()
 
     try:
+        content_type, _ = mimetypes.guess_type(file_path)
+        if not content_type or not content_type.startswith("image/"):
+            content_type = "image/jpeg"
+
         response = client.storage.from_(bucket_name).upload(
             file_path, 
             file_data, 
-            cast(Any, {"upsert": True})  # Supabase's runtime accepts this options dict even though the stub expects a narrower file-options helper type.
+            cast(Any, {"upsert": "true", "content-type": content_type})  # Explicit MIME avoids storage3/httpx defaulting uploads to text/plain on this SDK version.
         )
-
-        upload_response = cast(Dict[str, Any], response)  # Narrow the upload response to the dict-like shape the current runtime returns before keyed access.
-
-        if upload_response.get("error"):
-            # Log internal error but return generic message
-            logger.error(
-                "Storage upload failed",
-                extra={
-                    "bucket": bucket_name,
-                    "path": file_path,
-                    "error": upload_response.get("error")
-                },
-                exc_info=True
-            )
-            raise ValueError("Failed to upload file. Please try again.")
 
         # Get public URL
         public_url = client.storage.from_(bucket_name).get_public_url(file_path)
@@ -142,7 +132,9 @@ async def upload_file(bucket_name: str, file_path: str, file_data: bytes) -> str
             "Unexpected storage error",
             extra={
                 "bucket": bucket_name,
-                "error_type": type(e).__name__
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "path": file_path,
             },
             exc_info=True
         )
@@ -233,7 +225,7 @@ async def delete_file(bucket_name: str, file_path: str) -> bool:
         )
         raise ValueError("Invalid storage bucket.")
     
-    client = get_supabase_client()
+    client = get_supabase_admin_client()
 
     try:
         response = client.storage.from_(bucket_name).remove([file_path])

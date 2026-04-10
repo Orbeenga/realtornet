@@ -565,6 +565,51 @@ class TestReadAgentProperties:
         assert response.status_code == 200
         assert isinstance(response.json(), list)
 
+    def test_read_agent_properties_serializes_properties(
+        self, client: TestClient, db, agency, agent_user, location, property_type
+    ):
+        from app.models.agent_profiles import AgentProfile
+        from app.models.properties import Property, ListingType, ListingStatus
+        from geoalchemy2.elements import WKTElement
+
+        profile = AgentProfile(
+            user_id=agent_user.user_id,
+            agency_id=agency.agency_id,
+            license_number="LIC-PROP-JSON-001"
+        )
+        db.add(profile)
+        db.flush()
+        db.refresh(profile)
+
+        property_obj = Property(
+            title="Serialized Agent Property",
+            description="Agent-owned listing for serialization test",
+            user_id=agent_user.user_id,
+            property_type_id=property_type.property_type_id,
+            location_id=location.location_id,
+            geom=WKTElement('POINT(3.3488 6.6018)', srid=4326),
+            price=25000000,
+            bedrooms=3,
+            bathrooms=2,
+            property_size=120.0,
+            listing_type=ListingType.sale,
+            listing_status=ListingStatus.available,
+            is_verified=True,
+        )
+        db.add(property_obj)
+        db.flush()
+        db.refresh(property_obj)
+
+        response = client.get(f"/api/v1/agent-profiles/{profile.profile_id}/properties")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, list)
+        assert len(data) >= 1
+        assert data[0]["property_id"] == property_obj.property_id
+        assert data[0]["title"] == "Serialized Agent Property"
+        assert data[0]["user_id"] == agent_user.user_id
+
 
 class TestReadAgentReviews:
 
@@ -588,6 +633,41 @@ class TestReadAgentReviews:
         response = client.get(f"/api/v1/agent-profiles/{profile.profile_id}/reviews")
         assert response.status_code == 200
         assert isinstance(response.json(), list)
+
+    def test_read_agent_reviews_serializes_reviews(
+        self, client: TestClient, db, agency, agent_user, normal_user
+    ):
+        from app.models.agent_profiles import AgentProfile
+        from app.models.reviews import Review
+
+        profile = AgentProfile(
+            user_id=agent_user.user_id,
+            agency_id=agency.agency_id,
+            license_number="LIC-REV-JSON-001"
+        )
+        db.add(profile)
+        db.flush()
+        db.refresh(profile)
+
+        review = Review(
+            user_id=normal_user.user_id,
+            agent_id=agent_user.user_id,
+            rating=5,
+            comment="Excellent agent support",
+        )
+        db.add(review)
+        db.flush()
+        db.refresh(review)
+
+        response = client.get(f"/api/v1/agent-profiles/{profile.profile_id}/reviews")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, list)
+        assert len(data) >= 1
+        assert data[0]["review_id"] == review.review_id
+        assert data[0]["agent_id"] == agent_user.user_id
+        assert data[0]["rating"] == 5
 
 
 class TestReadAgentStats:
