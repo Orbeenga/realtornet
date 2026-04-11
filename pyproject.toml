@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "realtornet"
-version = "0.1.0"
+version = "0.5.2"
 description = "A FastAPI-based real estate platform"
 authors = [
   { name="Orbeenga Apine", email="apineorbeenga@gmail.com" },

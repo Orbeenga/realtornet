@@ -2,6 +2,13 @@
 
 FastAPI backend for a real estate platform with authentication, role-based access, audit trails, geospatial property data, analytics views, and background task support.
 
+## Current State
+- Current backend version: `0.5.2`
+- Phase D backend support is complete
+- Supabase Storage uploads/deletes now run through the admin client with explicit MIME metadata and improved error diagnostics
+- Amenities catalogue is seeded with 15 residential property amenities
+- Deferred tracking currently keeps `DEF-006` and `DEF-007` open; `DEF-008` is resolved on the backend side
+
 ## What This Service Provides
 - JWT auth with refresh flow and Supabase identity integration
 - CRUD APIs for users, agencies, profiles, properties, media, amenities, reviews, inquiries, favorites, and saved searches
@@ -129,16 +136,26 @@ python scripts/migrate.py history
 
 Run full suite:
 ```bash
-pytest tests/
+pytest tests/ --tb=short -q
+```
+
+Run fast without coverage:
+```bash
+pytest tests/ --no-cov -q
 ```
 
 Run with coverage:
 ```bash
-pytest tests/ --cov=app --cov-report=term-missing
+pytest tests/ --tb=short -q
 ```
 
 Current enforced coverage floor:
 - `92.78%` (`pytest.ini` uses `--cov-fail-under=92.78`)
+
+CI/automation notes:
+- `make test` and GitHub Actions both run `pytest tests/ --tb=short -q` with the coverage gate provided by `pytest.ini`
+- `make test-fast` runs `pytest tests/ --tb=short -q --no-cov`
+- `make lint` and GitHub Actions both run `black --check app/ tests/`
 
 Important local test DB note:
 - Current `tests/conftest.py` expects PostgreSQL at `localhost:5432` with DB `testdb` and PostGIS available.
