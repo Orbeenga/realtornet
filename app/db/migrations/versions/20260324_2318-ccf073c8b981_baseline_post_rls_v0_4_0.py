@@ -84,18 +84,39 @@ def upgrade() -> None:
     op.create_foreign_key(op.f('fk_favorites_property_id_properties'), 'favorites', 'properties', ['property_id'], ['property_id'])
     op.create_foreign_key(op.f('fk_favorites_user_id_users'), 'favorites', 'users', ['user_id'], ['user_id'])
     # Drop check constraint that compares inquiry_status as text (blocks type change).
-    op.execute('ALTER TABLE inquiries DROP CONSTRAINT inquiries_inquiry_status_check')
+    op.execute('ALTER TABLE inquiries DROP CONSTRAINT IF EXISTS inquiries_inquiry_status_check')
+    op.execute('ALTER TABLE inquiries DROP CONSTRAINT IF EXISTS ck_inquiries_inquiries_inquiry_status_check')
     # Drop status indexes before changing inquiry_status from TEXT to enum.
-    op.drop_index('idx_inquiries_new_status', table_name='inquiries')
-    op.drop_index('inquiries_status_active_idx', table_name='inquiries')
-    op.drop_index('idx_inquiries_status', table_name='inquiries')
+    op.drop_index('idx_inquiries_new_status', table_name='inquiries', if_exists=True)
+    op.drop_index('inquiries_status_active_idx', table_name='inquiries', if_exists=True)
+    op.drop_index('idx_inquiries_status', table_name='inquiries', if_exists=True)
     op.execute("""
-        ALTER TABLE inquiries
-            ALTER COLUMN inquiry_status DROP DEFAULT,
-            ALTER COLUMN inquiry_status TYPE inquiry_status_enum
-                USING inquiry_status::text::inquiry_status_enum,
-            ALTER COLUMN inquiry_status SET NOT NULL,
-            ALTER COLUMN inquiry_status SET DEFAULT 'new'::inquiry_status_enum
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_catalog.pg_attribute a
+                JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+                JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                JOIN pg_catalog.pg_type t ON t.oid = a.atttypid
+                WHERE n.nspname = 'public'
+                AND c.relname = 'inquiries'
+                AND a.attname = 'inquiry_status'
+                AND NOT a.attisdropped
+                AND t.typtype = 'e'
+            ) THEN
+                ALTER TABLE inquiries
+                    ALTER COLUMN inquiry_status DROP DEFAULT,
+                    ALTER COLUMN inquiry_status TYPE inquiry_status_enum
+                        USING inquiry_status::text::inquiry_status_enum,
+                    ALTER COLUMN inquiry_status SET NOT NULL,
+                    ALTER COLUMN inquiry_status SET DEFAULT 'new'::inquiry_status_enum;
+            ELSE
+                ALTER TABLE inquiries
+                    ALTER COLUMN inquiry_status SET NOT NULL,
+                    ALTER COLUMN inquiry_status SET DEFAULT 'new'::inquiry_status_enum;
+            END IF;
+        END $$;
     """)
     op.alter_column('inquiries', 'deleted_at',
                existing_type=postgresql.TIMESTAMP(timezone=True),
