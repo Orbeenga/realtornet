@@ -64,7 +64,7 @@ jobs:
 
       - name: Run tests with coverage gate
         run: |
-          pytest --tb=short -q
+          pytest tests/ --tb=short -q
 
       - name: Check code formatting
         run: |

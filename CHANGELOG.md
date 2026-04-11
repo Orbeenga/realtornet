@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-04-10
+
+### Added
+- Amenities catalogue seeded with 15 residential property amenities for Phase D backend support
+- Deferred tracker refreshed: DEF-006 and DEF-007 logged, DEF-008 marked resolved
+
+### Changed
+- `docs/DEFERRED.md`: aligned deferred-item state with completed Phase D backend work
+
+### Fixed
+- `app/services/storage_services.py`: all storage uploads and deletes now use `get_supabase_admin_client()` for write-capable Supabase Storage access
+- `app/services/storage_services.py`: uploads now derive and send explicit MIME type metadata, with `image/jpeg` fallback for unsupported guesses
+- `app/services/storage_services.py`: removed dict-style `UploadResponse` error inspection and now rely on SDK exception flow for upload failures
+- `app/services/storage_services.py`: upload `upsert` option now uses string `"true"` instead of Python `True` to satisfy the current storage/http client expectations
+- `app/services/storage_services.py`: `delete_file()` now uses the same admin client path as uploads for consistent storage permissions
+- `app/services/storage_services.py`: expanded storage error logging to include `error_type` and `error_message` before returning safe client-facing errors
+
+## [0.5.1] - 2026-03-31
+
 ### Added
 - Type-safety hardening pass (`v0.5.1`): project-wide pyright reduced from 388 to 0 errors and `pyrightconfig.json` added at basic enforcement level
 
