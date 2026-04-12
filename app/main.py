@@ -68,6 +68,11 @@ def health_check():
     }
 
 
+@app.get("/healthz")
+def health_simple():
+    return {"status": "ok"}
+
+
 @app.get("/health")
 def health_check_full():  # pragma: no cover
     """Readiness probe — checks DB connectivity. Used by deployment health checks."""
