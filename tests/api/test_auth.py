@@ -6,6 +6,7 @@ Tests login, registration, token refresh, and current user endpoints.
 
 import pytest
 from fastapi import status
+from unittest.mock import patch
 from app.core.config import settings
 from tests.utils import get_auth_headers
 
@@ -96,10 +97,12 @@ class TestAuth:
             # "supabase_id": "550e8400-e29b-41d4-a716-446655440000"
             # supabase_id NOT needed - API generates it!
         }
-        response = client.post(
-            f"{settings.API_V1_STR}/auth/register", 
-            json=user_data
-        )
+        with patch("app.api.endpoints.auth.send_welcome_email") as mock_email:
+            mock_email.delay.return_value = None
+            response = client.post(
+                f"{settings.API_V1_STR}/auth/register", 
+                json=user_data
+            )
         
         assert response.status_code == status.HTTP_200_OK
         new_user = response.json()
@@ -118,10 +121,12 @@ class TestAuth:
             "last_name": "User",
             "phone_number": "+1234567898"
         }
-        response = client.post(
-            f"{settings.API_V1_STR}/auth/register", 
-            json=user_data
-        )
+        with patch("app.api.endpoints.auth.send_welcome_email") as mock_email:
+            mock_email.delay.return_value = None
+            response = client.post(
+                f"{settings.API_V1_STR}/auth/register", 
+                json=user_data
+            )
         
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY  # Pydantic validation
     

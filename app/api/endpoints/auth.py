@@ -222,9 +222,26 @@ def register_user(
     
     # Send welcome email as a background task
     email_task = typing_cast(Any, send_welcome_email)  # Narrow the Celery task wrapper locally so pyright accepts the generated delay method.
+    welcome_subject = "Welcome to RealtorNet"
+    welcome_text = (
+        f"Hi {user.first_name},\n\n"
+        "Welcome to RealtorNet. Your account has been created successfully.\n\n"
+        "You can now sign in and start exploring listings."
+    )
+    welcome_html = f"""
+    <html>
+        <body>
+            <h2>Welcome to RealtorNet, {user.first_name}!</h2>
+            <p>Your account has been created successfully.</p>
+            <p>You can now sign in and start exploring listings.</p>
+        </body>
+    </html>
+    """
     email_task.delay(
         user.email,
-        user.first_name
+        welcome_subject,
+        welcome_text,
+        welcome_html
     )
     
     return user

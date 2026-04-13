@@ -6,7 +6,7 @@ Phase 2 Aligned: Psycopg 3, production-ready settings, 1:1 .env match
 
 import urllib.parse
 from typing import List, Union, Optional
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 
@@ -87,6 +87,7 @@ class Settings(BaseSettings):
     LOG_FILE: Optional[str] = None
     
     # Redis configuration (matches .env structure)
+    REDIS_URL: str = ""
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_CELERY_BROKER: str = "redis://localhost:6379/1"
@@ -191,6 +192,24 @@ class Settings(BaseSettings):
         if "*" in self.BACKEND_CORS_ORIGINS:
             return ["*"]
         return [origin.strip() for origin in self.BACKEND_CORS_ORIGINS if origin.strip()]
+
+    @model_validator(mode="after")
+    def normalize_redis_urls(self) -> "Settings":
+        """
+        Prefer a single REDIS_URL when platforms like Railway inject it.
+        Falls back to local development defaults when REDIS_URL is absent.
+        """
+        base_redis_url = self.REDIS_URL.strip().rstrip("/")
+        if not base_redis_url:
+            return self
+
+        if self.REDIS_CELERY_BROKER == "redis://localhost:6379/1":
+            self.REDIS_CELERY_BROKER = f"{base_redis_url}/1"
+
+        if self.REDIS_CELERY_BACKEND == "redis://localhost:6379/2":
+            self.REDIS_CELERY_BACKEND = f"{base_redis_url}/2"
+
+        return self
     
     def validate_secret_key(self) -> None:
         """
