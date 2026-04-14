@@ -282,6 +282,33 @@ class TestRegisterBranches:
         assert response.status_code == 400
         assert "already exists" in response.json()["detail"]
 
+    def test_register_agent_creates_agent_profile(self, client: TestClient, db):
+        """
+        Agent registration must bootstrap the 1:1 agent profile row atomically.
+        """
+        import uuid
+        from app.crud.agent_profiles import agent_profile as agent_profile_crud
+
+        email = f"agent_{uuid.uuid4().hex[:6]}@example.com"
+        with patch("app.api.endpoints.auth.send_welcome_email") as mock_email:
+            mock_email.delay.return_value = None
+            response = client.post(
+                "/api/v1/auth/register",
+                json={
+                    "email": email,
+                    "password": "ValidPass123!",
+                    "first_name": "Agent",
+                    "last_name": "User",
+                    "user_role": "agent"
+                }
+            )
+
+        assert response.status_code == 200
+        user_id = response.json()["user_id"]
+        profile = agent_profile_crud.get_by_user_id(db, user_id=user_id)
+        assert profile is not None
+        assert profile.user_id == user_id
+
 
 class TestMeEndpoint:
     def test_get_me_returns_current_user(

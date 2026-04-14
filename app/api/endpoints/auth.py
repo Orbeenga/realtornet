@@ -10,6 +10,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 # --- DIRECT CRUD IMPORTS ---
+from app.crud.agent_profiles import agent_profile as agent_profile_crud
 from app.crud.users import user as user_crud
 
 # --- DIRECT DEPENDENCY IMPORTS ---
@@ -21,7 +22,8 @@ from app.core.config import settings
 
 # --- DIRECT SCHEMA IMPORTS ---
 from app.schemas.token import Token, TokenRefresh
-from app.schemas.users import UserCreate, UserResponse
+from app.schemas.users import UserCreate, UserResponse, UserRole
+from app.schemas.agent_profiles import AgentProfileCreate
 
 # --- TASK IMPORTS ---
 from app.tasks.email_tasks import send_welcome_email
@@ -219,6 +221,16 @@ def register_user(
         supabase_id=supabase_id,
         created_by=supabase_id
     )
+
+    if user_in.user_role == UserRole.AGENT:
+        agent_profile_crud.create(
+            db,
+            obj_in=AgentProfileCreate(
+                user_id=user.user_id,
+                agency_id=user.agency_id
+            ),
+            created_by=supabase_id
+        )
     
     # Send welcome email as a background task
     email_task = typing_cast(Any, send_welcome_email)  # Narrow the Celery task wrapper locally so pyright accepts the generated delay method.

@@ -64,7 +64,7 @@ class AgentProfileResponse(AgentProfileBase):
     """Schema for agent profile responses (includes DB-generated fields)"""
     profile_id: int
     user_id: int  # pyright: ignore[reportGeneralTypeIssues,reportIncompatibleVariableOverride] - response schema enforces persisted required IDs.
-    agency_id: int  # pyright: ignore[reportGeneralTypeIssues,reportIncompatibleVariableOverride] - response schema enforces persisted required IDs.
+    agency_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime] = None

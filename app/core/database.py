@@ -28,7 +28,10 @@ engine = create_engine(
         "keepalives": 1,
         "keepalives_idle": 30,
         "keepalives_interval": 10,
-        "keepalives_count": 5
+        "keepalives_count": 5,
+        # Disable psycopg prepared statements so Supabase/Railway poolers
+        # running in transaction mode don't trip DuplicatePreparedStatement.
+        "prepare_threshold": None,
     }
 )
 
