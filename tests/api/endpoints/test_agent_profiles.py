@@ -77,6 +77,38 @@ class TestReadAgentProfileByUser:
         data = response.json()
         assert data["user_id"] == agent_user.user_id
 
+    def test_read_profile_by_user_with_no_agency_success(self, client: TestClient, db):
+        from app.models.agent_profiles import AgentProfile
+        from app.models.users import User, UserRole
+
+        agent_user = User(
+            email=f"solo_agent_{uuid.uuid4().hex[:6]}@example.com",
+            supabase_id=str(uuid.uuid4()),
+            user_role=UserRole.AGENT,
+            is_verified=True,
+            password_hash="hashed_placeholder",
+            first_name="Solo",
+            last_name="Agent"
+        )
+        db.add(agent_user)
+        db.flush()
+        db.refresh(agent_user)
+
+        profile = AgentProfile(
+            user_id=agent_user.user_id,
+            agency_id=None,
+            license_number=f"LIC-SOLO-{uuid.uuid4().hex[:6]}"
+        )
+        db.add(profile)
+        db.flush()
+        db.refresh(profile)
+
+        response = client.get(f"/api/v1/agent-profiles/by-user/{agent_user.user_id}")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["user_id"] == agent_user.user_id
+        assert data["agency_id"] is None
+
 
 class TestCreateAgentProfile:
 

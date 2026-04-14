@@ -5,7 +5,8 @@ Handles system-wide operations with proper soft delete, audit tracking, and RLS 
 """
 import logging
 from typing import Any, Dict, List, cast as typing_cast  # Alias typing.cast so endpoint-local narrowing never shadows SQLAlchemy helpers in future edits.
-from fastapi import APIRouter, Depends, HTTPException, status
+from decimal import Decimal
+from fastapi import APIRouter, Body, Depends, HTTPException, status
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 
@@ -20,14 +21,21 @@ from app.models.users import User as User
 # --- DIRECT CRUD IMPORTS ---
 # We point directly to the files to avoid __init__.py circular/missing reference issues
 from app.crud.users import user as user_crud
+from app.crud.agencies import agency as agency_crud
+from app.crud.agent_profiles import agent_profile as agent_profile_crud
+from app.crud.locations import location as location_crud
 from app.crud.properties import property as property_crud
+from app.crud.property_types import property_type as property_type_crud
 from app.crud.inquiries import inquiry as inquiry_crud
 from app.services.analytics_services import analytics_service 
 
 # --- DIRECT SCHEMA IMPORTS ---
 # from app.schemas.users import UserResponse, UserCreate, UserUpdate
 from app.schemas.users import UserResponse, UserCreate, UserUpdate
+from app.schemas.agencies import AgencyCreate
+from app.schemas.agent_profiles import AgentProfileCreate
 from app.schemas.properties import PropertyResponse, PropertyUpdate, ListingStatus
+from app.schemas.properties import PropertyCreate, ListingType as PropertyListingType
 from app.schemas.inquiries import InquiryResponse
 from app.schemas.stats import SystemStatsResponse as SystemStats
 
@@ -460,6 +468,122 @@ def read_all_inquiries(
         "total": total,
         "page": pagination["skip"] // pagination["limit"] + 1 if pagination["limit"] else 1,
         "pages": (total + pagination["limit"] - 1) // pagination["limit"] if pagination["limit"] else 1
+    }
+
+
+@router.post("/bootstrap/demo-data", response_model=Dict[str, Any])
+def bootstrap_demo_data(
+    *,
+    db: Session = Depends(get_db),
+    agent_user_id: int = Body(..., embed=True),
+    current_user: UserResponse = Depends(get_current_admin_user),
+    _: None = Depends(validate_request_size)
+) -> Any:
+    """
+    Idempotently bootstrap the minimum production data needed for journey smoke tests.
+
+    Requires an existing agent user so the seeded property chain is attached to a
+    real account rather than a hidden synthetic seed user.
+    """
+    agent_user = user_crud.get(db, user_id=agent_user_id)
+    if agent_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent user not found"
+        )
+
+    if not user_crud.is_agent(agent_user):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="bootstrap/demo-data requires an existing agent user"
+        )
+
+    actor_supabase_id = str(current_user.supabase_id)
+
+    location = location_crud.get_or_create(
+        db,
+        state="lagos",
+        city="lekki",
+        neighborhood="phase 1",
+        latitude=6.4474,
+        longitude=3.4746,
+    )
+
+    property_type = property_type_crud.get_or_create(
+        db,
+        name="Apartment",
+        description="Default seeded property type for production smoke tests."
+    )
+
+    agency = agency_crud.get_by_name(db, name="RealtorNet Demo Agency")
+    if agency is None:
+        agency = agency_crud.create(
+            db,
+            obj_in=AgencyCreate(
+                name="RealtorNet Demo Agency",
+                email="demo-agency@realtornet.example",
+                phone_number="+2347000000000",
+                address="Lekki Phase 1, Lagos",
+                description="Seeded agency for production smoke tests."
+            ),
+            created_by=actor_supabase_id
+        )
+
+    agent_agency_id = typing_cast(int | None, agent_user.agency_id)
+    if agent_agency_id != agency.agency_id:
+        agent_user = user_crud.update(
+            db,
+            db_obj=agent_user,
+            obj_in={"agency_id": agency.agency_id},
+            updated_by=actor_supabase_id
+        )
+
+    agent_profile = agent_profile_crud.get_by_user_id(db, user_id=agent_user_id)
+    if agent_profile is None:
+        agent_profile = agent_profile_crud.create(
+            db,
+            obj_in=AgentProfileCreate(
+                user_id=agent_user_id,
+                agency_id=agency.agency_id,
+                company_name=agency.name,
+                specialization="Residential sales",
+                bio="Seeded agent profile for production smoke tests."
+            ),
+            created_by=actor_supabase_id
+        )
+
+    created_property = None
+    if property_crud.count(db, user_id=agent_user_id) == 0:
+        created_property = property_crud.create_with_owner(
+            db,
+            obj_in=PropertyCreate(
+                title="Seeded Demo Apartment",
+                description="Seeded listing used to unblock production smoke journeys.",
+                property_type_id=property_type.property_type_id,
+                location_id=location.location_id,
+                price=Decimal("85000000"),
+                bedrooms=3,
+                bathrooms=3,
+                property_size=Decimal("145"),
+                listing_type=PropertyListingType.sale,
+                agency_id=agency.agency_id,
+                latitude=6.4474,
+                longitude=3.4746,
+                has_security=True,
+                has_garden=False,
+                has_swimming_pool=False,
+            ),
+            user_id=agent_user_id,
+            created_by=actor_supabase_id
+        )
+
+    return {
+        "location_id": location.location_id,
+        "property_type_id": property_type.property_type_id,
+        "agency_id": agency.agency_id,
+        "agent_profile_id": agent_profile.profile_id,
+        "property_id": typing_cast(int | None, created_property.property_id) if created_property is not None else None,
+        "agent_user_id": agent_user_id
     }
 
 

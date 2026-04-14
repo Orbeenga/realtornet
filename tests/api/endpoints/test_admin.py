@@ -907,3 +907,27 @@ class TestAdminGetStatsOverview:
         )
         assert response.status_code == 500
         assert "Unable to generate statistics" in response.json()["detail"]
+
+
+class TestAdminBootstrapDemoData:
+    def test_admin_bootstrap_demo_data_creates_minimum_chain(
+        self, client: TestClient, admin_token_headers, agent_user, db
+    ):
+        response = client.post(
+            "/api/v1/admin/bootstrap/demo-data",
+            headers=admin_token_headers,
+            json={"agent_user_id": agent_user.user_id}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["agent_user_id"] == agent_user.user_id
+        assert data["location_id"] is not None
+        assert data["property_type_id"] is not None
+        assert data["agency_id"] is not None
+        assert data["agent_profile_id"] is not None
+
+        profile = admin_api.agent_profile_crud.get_by_user_id(db, user_id=agent_user.user_id)
+        assert profile is not None
+        assert profile.user_id == agent_user.user_id
+        assert admin_api.property_crud.count(db, user_id=agent_user.user_id) >= 1
