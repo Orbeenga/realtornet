@@ -85,6 +85,7 @@ python-json-logger>=3.3.0
 structlog>=25.2.0
 colorama>=0.4.6
 deprecation>=2.1.0
+sentry-sdk[fastapi]>=2.20.0
 
 # CLI Utilities & Developer Tools
 click>=8.1.8
