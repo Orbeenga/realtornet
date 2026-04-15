@@ -926,8 +926,17 @@ class TestAdminBootstrapDemoData:
         assert data["property_type_id"] is not None
         assert data["agency_id"] is not None
         assert data["agent_profile_id"] is not None
+        assert data["property_id"] is not None
 
         profile = admin_api.agent_profile_crud.get_by_user_id(db, user_id=agent_user.user_id)
         assert profile is not None
         assert profile.user_id == agent_user.user_id
         assert admin_api.property_crud.count(db, user_id=agent_user.user_id) >= 1
+
+        prop = admin_api.property_crud.get(db, property_id=data["property_id"])
+        assert prop is not None
+        assert prop.is_verified is True
+        assert str(getattr(prop.listing_status, "value", prop.listing_status)) == "available"
+
+        public_props = admin_api.property_crud.get_multi_by_params_approved(db, skip=0, limit=100)
+        assert any(p.property_id == data["property_id"] for p in public_props)
