@@ -21,3 +21,11 @@ Pre-launch: investigate `prepared_statement_cache_size=0` on the psycopg3 connec
 Phase D backend work removed the backend data blocker for the selector by ensuring the amenities catalogue is seeded with 15 items and the amenity payload shape is stable for consumers.
 
 Resolved status: backend support is complete. Any future visual rendering-only regression should be tracked separately in the frontend workstream rather than kept open as a backend deferred item.
+
+## RLS Not Enabled on Production Tables
+
+- All 14 public tables have RLS policies written but RLS not enabled
+- Policies are currently unenforced - backend JWT auth is the only protection
+- Must be resolved before any public launch
+- Fix: enable RLS on all 14 tables in Supabase dashboard or via migration
+- Assigned to: backend agent
