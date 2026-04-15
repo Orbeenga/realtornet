@@ -552,9 +552,18 @@ def bootstrap_demo_data(
             created_by=actor_supabase_id
         )
 
-    created_property = None
-    if property_crud.count(db, user_id=agent_user_id) == 0:
-        created_property = property_crud.create_with_owner(
+    bootstrap_property = None
+    existing_properties = property_crud.get_by_owner(
+        db,
+        user_id=agent_user_id,
+        skip=0,
+        limit=1,
+    )
+
+    if existing_properties:
+        bootstrap_property = existing_properties[0]
+    else:
+        bootstrap_property = property_crud.create_with_owner(
             db,
             obj_in=PropertyCreate(
                 title="Seeded Demo Apartment",
@@ -577,12 +586,29 @@ def bootstrap_demo_data(
             created_by=actor_supabase_id
         )
 
+    if not typing_cast(bool, bootstrap_property.is_verified):
+        bootstrap_property = property_crud.verify_property(
+            db,
+            property_id=bootstrap_property.property_id,
+            is_verified=True,
+            updated_by=actor_supabase_id,
+        )
+
+    property_listing_status = str(getattr(bootstrap_property.listing_status, "value", bootstrap_property.listing_status))
+    if property_listing_status != "available":
+        bootstrap_property = property_crud.update_listing_status(
+            db,
+            property_id=bootstrap_property.property_id,
+            listing_status=ListingStatus.available,
+            updated_by=actor_supabase_id,
+        )
+
     return {
         "location_id": location.location_id,
         "property_type_id": property_type.property_type_id,
         "agency_id": agency.agency_id,
         "agent_profile_id": agent_profile.profile_id,
-        "property_id": typing_cast(int | None, created_property.property_id) if created_property is not None else None,
+        "property_id": typing_cast(int | None, bootstrap_property.property_id) if bootstrap_property is not None else None,
         "agent_user_id": agent_user_id
     }
 
