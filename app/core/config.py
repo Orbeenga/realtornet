@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     
     # Security configuration
     SECRET_KEY: str = ""  # Must be 64+ chars (256-bit) in production
+    SENTRY_DSN: str = ""
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     ALGORITHM: str = "HS256"

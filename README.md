@@ -92,6 +92,7 @@ DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/realtornet?ss
 BACKEND_CORS_ORIGINS=http://localhost:3000,http://localhost:5173
 REDIS_CELERY_BROKER=redis://localhost:6379/1
 REDIS_CELERY_BACKEND=redis://localhost:6379/2
+SENTRY_DSN=
 DEBUG=true
 ```
 
