@@ -473,6 +473,10 @@ class PropertyCRUD:
 
         # Agency_id is schema-only (permission check), not a DB column
         create_data.pop('agency_id', None)
+        latitude = create_data.pop('latitude', None)
+        longitude = create_data.pop('longitude', None)
+        create_data.pop('amenity_ids', None)
+        create_data.pop('image_urls', None)
         
         db_obj = Property(
             **create_data,
@@ -480,6 +484,9 @@ class PropertyCRUD:
             is_verified=False,
             created_by=created_by
         )
+
+        if latitude is not None and longitude is not None:
+            setattr(db_obj, "geom", WKTElement(f'POINT({longitude} {latitude})', srid=4326))
         
         db.add(db_obj)
         db.flush()
