@@ -163,6 +163,17 @@ class PropertyUpdate(BaseModel):
         return v
 
 
+class PropertyVerificationUpdate(BaseModel):
+    """
+    Schema for the publish-review step of the listing workflow.
+
+    This is separate from PropertyUpdate on purpose: keeping verification in its
+    own payload makes it obvious in the code and in the API that "editing a
+    listing" and "making a listing public" are different actions.
+    """
+    is_verified: bool = True
+
+
 # Response Schema (includes DB-controlled fields)
 class PropertyResponse(PropertyBase):
     """Schema for property responses (includes DB-generated fields)"""
