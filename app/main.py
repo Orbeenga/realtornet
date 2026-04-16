@@ -13,6 +13,7 @@ from app.core.database import engine
 from app.core.exceptions import ApplicationException, ErrorHandler
 from app.core.logging import logger
 from app.middleware.request_middleware import RedisRateLimitMiddleware
+from app.services.storage_bucket_bootstrap import ensure_required_storage_buckets
 
 
 @asynccontextmanager
@@ -41,6 +42,15 @@ async def lifespan(app: FastAPI):
             "Running in development mode - ensure DB is migrated via Alembic. "
             "Never use Base.metadata.create_all() for schema management."
         )
+
+    if settings.ENV != "test":
+        bucket_results = ensure_required_storage_buckets()
+        app.state.storage_bucket_bootstrap = {
+            "ready": True,
+            "results": [result.__dict__ for result in bucket_results],
+        }
+    else:
+        app.state.storage_bucket_bootstrap = {"ready": True, "results": []}
 
     yield
     logger.info("RealtorNet application shutting down")
@@ -87,7 +97,10 @@ def health_check():
 
 @app.get("/healthz")
 def health_simple():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "storage": getattr(app.state, "storage_bucket_bootstrap", {"ready": False}),
+    }
 
 
 @app.get("/health")
