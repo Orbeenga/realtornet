@@ -14,6 +14,7 @@ Missing lines from coverage report:
 """
 
 import pytest
+from unittest.mock import Mock
 from sqlalchemy.orm import Session
 from app.crud.users import user as user_crud
 from app.schemas.users import UserCreate, UserUpdate
@@ -463,6 +464,38 @@ class TestUserAuthentication:
         # last_login should be updated
         db.refresh(user)
         assert user.last_login != original_last_login
+
+    def test_authenticate_returns_user_when_last_login_update_fails(self, db: Session, monkeypatch):
+        """A bookkeeping failure must not block otherwise-valid authentication."""
+        user = user_crud.create(
+            db,
+            obj_in=UserCreate(
+                email="lastlogin.fail@test.com",
+                password="Test123!",
+                first_name="Last",
+                last_name="Login",
+                user_role=UserRole.SEEKER
+            ),
+            supabase_id=str(uuid.uuid4())
+        )
+
+        warning_spy = Mock()
+        monkeypatch.setattr("app.crud.users.logger.warning", warning_spy)
+
+        def raise_on_update(*args, **kwargs):
+            raise RuntimeError("write failed")
+
+        monkeypatch.setattr(user_crud, "update_last_login", raise_on_update)
+
+        authenticated = user_crud.authenticate(
+            db,
+            email="lastlogin.fail@test.com",
+            password="Test123!"
+        )
+
+        assert authenticated is not None
+        assert authenticated.user_id == user.user_id
+        assert warning_spy.called
 
 
 class TestUserRoleChecks:
