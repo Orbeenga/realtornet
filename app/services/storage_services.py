@@ -11,6 +11,7 @@ from PIL import Image
 import logging
 
 from app.core.config import settings
+from app.services.storage_bucket_bootstrap import get_required_storage_bucket_specs
 from app.utils.supabase_client import get_supabase_admin_client
 
 
@@ -23,7 +24,9 @@ AGENCY_LOGO_SIZE: Tuple[int, int] = (512, 512)
 PROPERTY_IMAGE_SIZE: Tuple[int, int] = (1200, 800)
 
 # Allowed storage buckets (security whitelist)
-ALLOWED_BUCKETS = {"property-images", "profile-images", "agency-logos"}
+ALLOWED_BUCKETS = {
+    spec.name for spec in get_required_storage_bucket_specs()
+}
 
 # Supported image formats
 SUPPORTED_FORMATS = {"JPEG", "PNG", "WEBP"}
@@ -155,7 +158,7 @@ async def upload_profile_image(user_id: int, file_data: bytes, file_name: str) -
         Public URL of uploaded image
     """
     safe_filename = ''.join(c for c in file_name if c.isalnum() or c in '._-')
-    bucket_name = "profile-images"
+    bucket_name = settings.STORAGE_PROFILE_IMAGES_BUCKET
     file_path = f"{user_id}/{safe_filename}"
     resized_image = resize_image(file_data, size=PROFILE_IMAGE_SIZE)
     return await upload_file(bucket_name, file_path, resized_image)
@@ -174,7 +177,7 @@ async def upload_agency_logo(agency_id: int, file_data: bytes, file_name: str) -
         Public URL of uploaded image
     """
     safe_filename = ''.join(c for c in file_name if c.isalnum() or c in '._-')
-    bucket_name = "agency-logos"
+    bucket_name = settings.STORAGE_AGENCY_LOGOS_BUCKET
     file_path = f"{agency_id}/{safe_filename}"
     resized_image = resize_image(file_data, size=AGENCY_LOGO_SIZE)
     return await upload_file(bucket_name, file_path, resized_image)
@@ -194,7 +197,7 @@ async def upload_property_image(property_id: int, contents: bytes, filename: str
         Public URL of uploaded image
     """
     safe_filename = ''.join(c for c in filename if c.isalnum() or c in '._-')
-    bucket_name = "property-images"
+    bucket_name = settings.STORAGE_PROPERTY_IMAGES_BUCKET
     file_path = f"{property_id}/{safe_filename}"
     
     # Resize to optimal property image size (larger than profiles/logos)
