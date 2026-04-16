@@ -3,6 +3,7 @@
 Authentication endpoints - Canonical compliant
 Handles login, registration, token refresh with proper soft delete and audit tracking
 """
+import logging
 from uuid import UUID
 from typing import Any, cast as typing_cast  # Alias typing.cast so endpoint-local narrowing stays explicit without affecting runtime token helpers.
 from fastapi import APIRouter, Depends, HTTPException, status, Body
@@ -29,6 +30,17 @@ from app.schemas.agent_profiles import AgentProfileCreate
 from app.tasks.email_tasks import send_welcome_email
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+def _serialize_user_role(user_role: Any) -> str | None:
+    """Normalize ORM enum or raw-string roles for JWT payloads."""
+    if user_role is None:
+        return None
+    role_value = getattr(user_role, "value", user_role)
+    if isinstance(role_value, str):
+        return role_value
+    return str(role_value)
 
 
 @router.post("/login", response_model=Token)
@@ -72,7 +84,7 @@ def login_access_token(
     # Uses both supabase_id (UUID) and user_id (BIGINT)
     user_supabase_id: UUID = typing_cast(UUID, user.supabase_id)  # Narrow the ORM-backed Supabase UUID before passing it into the token helper.
     user_id_value: int = typing_cast(int, user.user_id)  # Narrow the ORM-backed user ID before passing it into the token helper.
-    user_role_value: str | None = typing_cast(str | None, user.user_role.value if user.user_role is not None else None)  # Narrow the optional ORM-backed role value without changing token contents.
+    user_role_value = _serialize_user_role(user.user_role)
     user_agency_id: int | None = typing_cast(int | None, user.agency_id)  # Narrow the optional ORM-backed agency ID before passing it into the token helper.
     access_token = generate_access_token(
         supabase_id=user_supabase_id,
@@ -249,12 +261,19 @@ def register_user(
         </body>
     </html>
     """
-    email_task.delay(
-        user.email,
-        welcome_subject,
-        welcome_text,
-        welcome_html
-    )
+    try:
+        email_task.delay(
+            user.email,
+            welcome_subject,
+            welcome_text,
+            welcome_html
+        )
+    except Exception:
+        logger.warning(
+            "Welcome email dispatch failed during registration; continuing without blocking signup",
+            extra={"email": user.email, "user_id": user.user_id},
+            exc_info=True,
+        )
     
     return user
 

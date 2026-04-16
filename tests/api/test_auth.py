@@ -8,6 +8,7 @@ import pytest
 from fastapi import status
 from unittest.mock import patch
 from app.core.config import settings
+from app.models.users import UserRole
 from tests.utils import get_auth_headers
 
 
@@ -27,6 +28,22 @@ class TestAuth:
         assert "refresh_token" in tokens
         assert tokens["token_type"] == "bearer"
         assert "expires_in" in tokens
+
+    def test_login_success_with_string_backed_role(self, client, normal_user, monkeypatch):
+        """Login should tolerate ORM role values arriving as raw strings."""
+        normal_user.user_role = "seeker"
+
+        def fake_is_active(user):
+            return True
+
+        monkeypatch.setattr("app.api.endpoints.auth.user_crud.is_active", fake_is_active)
+
+        data = {"username": "user@example.com", "password": "password"}
+        response = client.post(f"{settings.API_V1_STR}/auth/login", data=data)
+
+        assert response.status_code == status.HTTP_200_OK
+        tokens = response.json()
+        assert "access_token" in tokens
     
     def test_login_wrong_password(self, client, normal_user):
         """Test login with incorrect password fails."""
@@ -126,9 +143,30 @@ class TestAuth:
             response = client.post(
                 f"{settings.API_V1_STR}/auth/register", 
                 json=user_data
-            )
+        )
         
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY  # Pydantic validation
+
+    def test_register_succeeds_when_email_dispatch_fails(self, client):
+        """Registration should not fail if the async welcome-email enqueue fails."""
+        user_data = {
+            "email": "mailfail@example.com",
+            "password": "strongpassword123",
+            "first_name": "Mail",
+            "last_name": "Fail",
+            "phone_number": "+1234567800",
+            "user_role": UserRole.SEEKER.value,
+        }
+        with patch("app.api.endpoints.auth.send_welcome_email") as mock_email:
+            mock_email.delay.side_effect = RuntimeError("broker unavailable")
+            response = client.post(
+                f"{settings.API_V1_STR}/auth/register",
+                json=user_data
+            )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["email"] == user_data["email"]
     
     def test_register_invalid_email(self, client):
         """Test registration with invalid email format fails."""

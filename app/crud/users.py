@@ -378,8 +378,15 @@ class UserCRUD:
             logger.warning("Password verification error during authentication")
             return None
         
-        # Update last login timestamp
-        self.update_last_login(db, user_id=cast(int, user.user_id))  # Narrow ORM descriptor-backed primary key to the runtime int value.
+        # Best effort only: a bookkeeping write should not block login.
+        try:
+            self.update_last_login(db, user_id=cast(int, user.user_id))  # Narrow ORM descriptor-backed primary key to the runtime int value.
+        except Exception:
+            logger.warning(
+                "Failed to update last_login during authentication",
+                extra={"user_id": cast(int, user.user_id)},
+                exc_info=True,
+            )
         
         return user
     
