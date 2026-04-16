@@ -28,6 +28,7 @@ from app.schemas.properties import (
     PropertyResponse,
     PropertyCreate,
     PropertyUpdate,
+    PropertyVerificationUpdate,
     PropertyFilter,
     ListingStatus as PropertyListingStatus,
     ListingType as PropertyListingType,
@@ -302,6 +303,59 @@ def update_property(
         updated_by_supabase_id=updated_by_supabase_id
     )
     
+    return property
+
+
+@router.patch("/{property_id}/verify", response_model=PropertyResponse)
+def verify_property(
+    *,
+    db: Session = Depends(get_db),
+    property_id: int,
+    verification_in: PropertyVerificationUpdate,
+    current_user: UserResponse = Depends(get_current_active_user),
+    _: None = Depends(validate_request_size)
+) -> Any:
+    """
+    Update the public-verification state of a property listing.
+
+    Permissions:
+    - Admins can verify or unverify any listing
+    - The owning agent can verify or unverify their own listing
+
+    This endpoint exists separately from the general update endpoint so the UI
+    can expose a clear "verification" action without asking operators to edit
+    raw listing fields or fall back to manual SQL.
+    """
+    property = property_crud.get(db=db, property_id=property_id)
+
+    if not property:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Property not found"
+        )
+
+    current_user_model: User = typing_cast(User, current_user)  # Narrow the authenticated dependency result to the ORM-backed user type used by permission helpers.
+    property_user_id: int = typing_cast(int, property.user_id)  # Narrow the ORM integer attribute to the runtime int carried on the loaded entity.
+    is_admin = user_crud.is_admin(current_user_model)
+    is_agent_owner = (
+        property_user_id == current_user.user_id
+        and user_crud.is_agent(current_user_model)
+    )
+
+    if not is_admin and not is_agent_owner:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough permissions to verify this property"
+        )
+
+    updated_by_supabase_id: str = str(current_user.supabase_id)  # Normalize the authenticated UUID to the string audit format expected by the CRUD layer.
+    property = property_crud.verify_property(
+        db=db,
+        property_id=property_id,
+        is_verified=verification_in.is_verified,
+        updated_by=updated_by_supabase_id
+    )
+
     return property
 
 

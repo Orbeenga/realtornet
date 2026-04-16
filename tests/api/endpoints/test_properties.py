@@ -446,6 +446,166 @@ class TestUpdateProperty:
 
 
 # ===========================================================================
+# PATCH /{property_id}/verify  —  verification workflow
+# ===========================================================================
+
+class TestVerifyProperty:
+    """Covers the UI-facing verification flow for property listings."""
+
+    def test_admin_can_verify_property(
+        self, client: TestClient, admin_token_headers, unverified_property
+    ):
+        """Admins can still publish listings from the review flow."""
+        response = client.patch(
+            f"/api/v1/properties/{unverified_property.property_id}/verify",
+            json={"is_verified": True},
+            headers=admin_token_headers
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["is_verified"] is True
+        assert data["verification_date"] is not None
+
+    def test_admin_verified_property_becomes_publicly_visible(
+        self, client: TestClient, admin_token_headers, unverified_property
+    ):
+        """
+        Admin verification should move the listing into the public feed.
+
+        This test checks the user-facing outcome, not just the database flag,
+        because the whole point of the workflow is to remove the old SQL-only
+        publishing step.
+        """
+        before_response = client.get(
+            "/api/v1/properties/",
+            params={"search": unverified_property.title}
+        )
+        assert before_response.status_code == 200
+        assert all(
+            item["property_id"] != unverified_property.property_id
+            for item in before_response.json()
+        )
+
+        verify_response = client.patch(
+            f"/api/v1/properties/{unverified_property.property_id}/verify",
+            json={"is_verified": True},
+            headers=admin_token_headers
+        )
+        assert verify_response.status_code == 200
+
+        after_response = client.get(
+            "/api/v1/properties/",
+            params={"search": unverified_property.title}
+        )
+        assert after_response.status_code == 200
+        assert any(
+            item["property_id"] == unverified_property.property_id
+            for item in after_response.json()
+        )
+
+    def test_owner_agent_can_verify_own_property(
+        self, client: TestClient, owner_token_headers, unverified_property_owned_by_agent
+    ):
+        """Agent owners can verify their own listing through the same endpoint."""
+        response = client.patch(
+            f"/api/v1/properties/{unverified_property_owned_by_agent.property_id}/verify",
+            json={"is_verified": True},
+            headers=owner_token_headers
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["is_verified"] is True
+        assert data["verification_date"] is not None
+
+    def test_owner_agent_can_unverify_own_property(
+        self, client: TestClient, owner_token_headers, verified_property
+    ):
+        """Owners may withdraw their own listing from public view."""
+        response = client.patch(
+            f"/api/v1/properties/{verified_property.property_id}/verify",
+            json={"is_verified": False},
+            headers=owner_token_headers
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["is_verified"] is False
+        assert data["verification_date"] is None
+
+    def test_owner_verified_property_becomes_publicly_visible(
+        self, client: TestClient, owner_token_headers, unverified_property_owned_by_agent
+    ):
+        """
+        Agent-owner verification should also move the listing into the public feed.
+
+        This is the backend proof that the old manual SQL workaround is no
+        longer required for the listing verification step.
+        """
+        before_response = client.get(
+            "/api/v1/properties/",
+            params={"search": unverified_property_owned_by_agent.title}
+        )
+        assert before_response.status_code == 200
+        assert all(
+            item["property_id"] != unverified_property_owned_by_agent.property_id
+            for item in before_response.json()
+        )
+
+        response = client.patch(
+            f"/api/v1/properties/{unverified_property_owned_by_agent.property_id}/verify",
+            json={"is_verified": True},
+            headers=owner_token_headers
+        )
+        assert response.status_code == 200
+
+        after_response = client.get(
+            "/api/v1/properties/",
+            params={"search": unverified_property_owned_by_agent.title}
+        )
+        assert after_response.status_code == 200
+        assert any(
+            item["property_id"] == unverified_property_owned_by_agent.property_id
+            for item in after_response.json()
+        )
+
+    def test_non_owner_non_admin_cannot_verify(
+        self, client: TestClient, normal_user_token_headers, unverified_property
+    ):
+        response = client.patch(
+            f"/api/v1/properties/{unverified_property.property_id}/verify",
+            json={"is_verified": True},
+            headers=normal_user_token_headers
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Not enough permissions to verify this property"
+
+    def test_unauthenticated_cannot_verify(
+        self, client: TestClient, unverified_property
+    ):
+        response = client.patch(
+            f"/api/v1/properties/{unverified_property.property_id}/verify",
+            json={"is_verified": True}
+        )
+
+        assert response.status_code == 401
+
+    def test_verify_property_not_found_returns_404(
+        self, client: TestClient, admin_token_headers
+    ):
+        response = client.patch(
+            "/api/v1/properties/999999/verify",
+            json={"is_verified": True},
+            headers=admin_token_headers
+        )
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Property not found"
+
+
+# ===========================================================================
 # DELETE /{property_id}  —  soft delete
 # ===========================================================================
 
