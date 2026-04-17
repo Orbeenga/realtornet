@@ -45,6 +45,25 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _serialize_property_items(properties: List[Any]) -> List[dict[str, Any]]:
+    """
+    Convert ORM property rows into plain JSON-safe dictionaries.
+
+    We do this explicitly instead of handing raw ORM objects to
+    `jsonable_encoder` because the property model carries a PostGIS geography
+    field. That field is useful in the database layer, but it is not something
+    the admin dashboard needs in the API response and it can trigger 500 errors
+    when FastAPI tries to encode the whole ORM object directly.
+    """
+    return [
+        typing_cast(
+            dict[str, Any],
+            PropertyResponse.model_validate(property_obj).model_dump(mode="json"),
+        )
+        for property_obj in properties
+    ]
+
+
 # USER MANAGEMENT ENDPOINTS
 
 @router.get("/users", response_model=Dict[str, Any])
@@ -310,12 +329,17 @@ def get_properties(
     
     Returns only non-deleted properties (deleted_at IS NULL).
     CRUD layer enforces soft delete filtering.
+
+    The admin dashboard only needs the schema-backed listing fields, so we
+    serialize through `PropertyResponse` instead of exposing the raw ORM model.
+    That avoids production-only encoding failures from the database geometry
+    column while keeping the response shape stable for the frontend.
     """
     properties = property_crud.get_multi(db, **pagination,)
     total = property_crud.count_active(db)  # Use CRUD method that filters deleted_at
     
     return {
-        "items": jsonable_encoder(properties),
+        "items": _serialize_property_items(properties),
         "total": total,
         "page": pagination["skip"] // pagination["limit"] + 1 if pagination["limit"] else 1,
         "pages": (total + pagination["limit"] - 1) // pagination["limit"] if pagination["limit"] else 1
@@ -552,18 +576,24 @@ def bootstrap_demo_data(
             created_by=actor_supabase_id
         )
 
-    bootstrap_property = None
     existing_properties = property_crud.get_by_owner(
         db,
         user_id=agent_user_id,
         skip=0,
-        limit=1,
+        limit=50,
     )
 
-    if existing_properties:
-        bootstrap_property = existing_properties[0]
-    else:
-        bootstrap_property = property_crud.create_with_owner(
+    verified_property = next(
+        (property_item for property_item in existing_properties if typing_cast(bool, property_item.is_verified)),
+        None
+    )
+    pending_property = next(
+        (property_item for property_item in existing_properties if not typing_cast(bool, property_item.is_verified)),
+        None
+    )
+
+    if verified_property is None:
+        verified_property = property_crud.create_with_owner(
             db,
             obj_in=PropertyCreate(
                 title="Seeded Demo Apartment",
@@ -586,21 +616,47 @@ def bootstrap_demo_data(
             created_by=actor_supabase_id
         )
 
-    if not typing_cast(bool, bootstrap_property.is_verified):
-        bootstrap_property = property_crud.verify_property(
+    if not typing_cast(bool, verified_property.is_verified):
+        verified_property = property_crud.verify_property(
             db,
-            property_id=bootstrap_property.property_id,
+            property_id=verified_property.property_id,
             is_verified=True,
             updated_by=actor_supabase_id,
         )
 
-    property_listing_status = str(getattr(bootstrap_property.listing_status, "value", bootstrap_property.listing_status))
+    property_listing_status = str(getattr(verified_property.listing_status, "value", verified_property.listing_status))
     if property_listing_status != "available":
-        bootstrap_property = property_crud.update_listing_status(
+        verified_property = property_crud.update_listing_status(
             db,
-            property_id=bootstrap_property.property_id,
+            property_id=verified_property.property_id,
             listing_status=ListingStatus.available,
             updated_by=actor_supabase_id,
+        )
+
+    if pending_property is None:
+        # We keep one seeded listing unverified on purpose so the moderation UI
+        # always has a real "pending review" record to work with in production.
+        pending_property = property_crud.create_with_owner(
+            db,
+            obj_in=PropertyCreate(
+                title="Seeded Pending Verification Listing",
+                description="Seeded unverified listing used to test the admin verification workflow without SQL.",
+                property_type_id=property_type.property_type_id,
+                location_id=location.location_id,
+                price=Decimal("91000000"),
+                bedrooms=4,
+                bathrooms=3,
+                property_size=Decimal("168"),
+                listing_type=PropertyListingType.sale,
+                agency_id=agency.agency_id,
+                latitude=6.4474,
+                longitude=3.4746,
+                has_security=True,
+                has_garden=True,
+                has_swimming_pool=False,
+            ),
+            user_id=agent_user_id,
+            created_by=actor_supabase_id
         )
 
     return {
@@ -608,7 +664,9 @@ def bootstrap_demo_data(
         "property_type_id": property_type.property_type_id,
         "agency_id": agency.agency_id,
         "agent_profile_id": agent_profile.profile_id,
-        "property_id": typing_cast(int | None, bootstrap_property.property_id) if bootstrap_property is not None else None,
+        "property_id": typing_cast(int | None, verified_property.property_id) if verified_property is not None else None,
+        "verified_property_id": typing_cast(int | None, verified_property.property_id) if verified_property is not None else None,
+        "pending_property_id": typing_cast(int | None, pending_property.property_id) if pending_property is not None else None,
         "agent_user_id": agent_user_id
     }
 
