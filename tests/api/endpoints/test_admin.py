@@ -8,6 +8,7 @@ Admin endpoints have the widest blast radius:
 """
 import uuid
 from fastapi.testclient import TestClient
+from geoalchemy2.elements import WKTElement
 
 from app.crud.users import user as user_crud
 from app.crud.properties import property as property_crud
@@ -16,6 +17,7 @@ from app.schemas.properties import PropertyCreate
 from app.schemas.inquiries import InquiryCreate
 from app.schemas.users import UserCreate
 from app.api.endpoints import admin as admin_api
+from app.models.properties import Property, ListingType, ListingStatus
 
 
 def _create_property(db, user_id, location, property_type, agency, title):
@@ -514,6 +516,41 @@ class TestAdminDeactivateUser:
 
 
 class TestAdminGetProperties:
+    def test_property_serializer_drops_geom_from_json_payload(
+        self, db, normal_user, location, property_type
+    ):
+        """
+        The admin property list must stay JSON-safe even when geom is present.
+
+        Production stores PostGIS geometry as a WKBElement. This test mirrors
+        that shape directly so we do not regress back to the `WKBElement`
+        serialization crash on the admin moderation screen.
+        """
+        property_obj = Property(
+            title="Admin Geometry Property",
+            description="Property used to prove admin serialization ignores geom.",
+            user_id=normal_user.user_id,
+            property_type_id=property_type.property_type_id,
+            location_id=location.location_id,
+            geom=WKTElement("POINT(3.3488 6.6018)", srid=4326),
+            price=21000000,
+            bedrooms=3,
+            bathrooms=2,
+            property_size=110.0,
+            listing_type=ListingType.sale,
+            listing_status=ListingStatus.available,
+            is_verified=False,
+        )
+        db.add(property_obj)
+        db.flush()
+        db.refresh(property_obj)
+
+        serialized = admin_api._serialize_property_item(property_obj)
+
+        assert serialized["property_id"] == property_obj.property_id
+        assert "geom" not in serialized
+        assert "location" not in serialized
+
     def test_admin_can_list_all_properties(
         self, client: TestClient, admin_token_headers,
         db, normal_user, location, property_type, agency
