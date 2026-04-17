@@ -531,6 +531,7 @@ class TestAdminGetProperties:
         data = response.json()
         assert isinstance(data["items"], list)
         assert data["total"] >= 1
+        assert "geom" not in data["items"][0]
 
     def test_admin_list_properties_non_admin_returns_403(
         self, client: TestClient, normal_user_token_headers
@@ -927,16 +928,23 @@ class TestAdminBootstrapDemoData:
         assert data["agency_id"] is not None
         assert data["agent_profile_id"] is not None
         assert data["property_id"] is not None
+        assert data["verified_property_id"] is not None
+        assert data["pending_property_id"] is not None
 
         profile = admin_api.agent_profile_crud.get_by_user_id(db, user_id=agent_user.user_id)
         assert profile is not None
         assert profile.user_id == agent_user.user_id
-        assert admin_api.property_crud.count(db, user_id=agent_user.user_id) >= 1
+        assert admin_api.property_crud.count(db, user_id=agent_user.user_id) >= 2
 
-        prop = admin_api.property_crud.get(db, property_id=data["property_id"])
-        assert prop is not None
-        assert prop.is_verified is True
-        assert str(getattr(prop.listing_status, "value", prop.listing_status)) == "available"
+        verified_prop = admin_api.property_crud.get(db, property_id=data["verified_property_id"])
+        assert verified_prop is not None
+        assert verified_prop.is_verified is True
+        assert str(getattr(verified_prop.listing_status, "value", verified_prop.listing_status)) == "available"
+
+        pending_prop = admin_api.property_crud.get(db, property_id=data["pending_property_id"])
+        assert pending_prop is not None
+        assert pending_prop.is_verified is False
 
         public_props = admin_api.property_crud.get_multi_by_params_approved(db, skip=0, limit=100)
-        assert any(p.property_id == data["property_id"] for p in public_props)
+        assert any(p.property_id == data["verified_property_id"] for p in public_props)
+        assert all(p.property_id != data["pending_property_id"] for p in public_props)
