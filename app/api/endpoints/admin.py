@@ -45,6 +45,34 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+PROPERTY_RESPONSE_FIELD_NAMES = tuple(PropertyResponse.model_fields.keys())
+
+
+def _serialize_property_item(property_obj: Any) -> dict[str, Any]:
+    """
+    Build a property response from explicit schema fields only.
+
+    The first fix attempted to hand the whole ORM object to
+    `PropertyResponse.model_validate(...)`. That works in most places, but it
+    still gives Pydantic a live SQLAlchemy object to inspect. On production, the
+    property model carries a PostGIS `geom` value (`WKBElement`), and that extra
+    attribute can still surface during serialization even though the API schema
+    does not expose it.
+
+    By copying only the fields that `PropertyResponse` actually defines, we make
+    the response builder blind to `geom`, `location.geom`, and any other ORM-only
+    attributes the admin dashboard does not need.
+    """
+    raw_payload = {
+        field_name: getattr(property_obj, field_name, None)
+        for field_name in PROPERTY_RESPONSE_FIELD_NAMES
+    }
+    return typing_cast(
+        dict[str, Any],
+        PropertyResponse.model_validate(raw_payload).model_dump(mode="json"),
+    )
+
+
 def _serialize_property_items(properties: List[Any]) -> List[dict[str, Any]]:
     """
     Convert ORM property rows into plain JSON-safe dictionaries.
@@ -55,13 +83,7 @@ def _serialize_property_items(properties: List[Any]) -> List[dict[str, Any]]:
     the admin dashboard needs in the API response and it can trigger 500 errors
     when FastAPI tries to encode the whole ORM object directly.
     """
-    return [
-        typing_cast(
-            dict[str, Any],
-            PropertyResponse.model_validate(property_obj).model_dump(mode="json"),
-        )
-        for property_obj in properties
-    ]
+    return [_serialize_property_item(property_obj) for property_obj in properties]
 
 
 # USER MANAGEMENT ENDPOINTS
