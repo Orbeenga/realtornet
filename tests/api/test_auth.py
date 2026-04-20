@@ -114,7 +114,9 @@ class TestAuth:
             # "supabase_id": "550e8400-e29b-41d4-a716-446655440000"
             # supabase_id NOT needed - API generates it!
         }
-        with patch("app.api.endpoints.auth.send_welcome_email") as mock_email:
+        with patch("app.api.endpoints.auth.create_supabase_auth_user_for_registration") as mock_signup, \
+             patch("app.api.endpoints.auth.send_welcome_email") as mock_email:
+            mock_signup.return_value = "550e8400-e29b-41d4-a716-446655440000"
             mock_email.delay.return_value = None
             response = client.post(
                 f"{settings.API_V1_STR}/auth/register", 
@@ -138,7 +140,9 @@ class TestAuth:
             "last_name": "User",
             "phone_number": "+1234567898"
         }
-        with patch("app.api.endpoints.auth.send_welcome_email") as mock_email:
+        with patch("app.api.endpoints.auth.create_supabase_auth_user_for_registration") as mock_signup, \
+             patch("app.api.endpoints.auth.send_welcome_email") as mock_email:
+            mock_signup.return_value = "550e8400-e29b-41d4-a716-446655440001"
             mock_email.delay.return_value = None
             response = client.post(
                 f"{settings.API_V1_STR}/auth/register", 
@@ -157,7 +161,9 @@ class TestAuth:
             "phone_number": "+1234567800",
             "user_role": UserRole.SEEKER.value,
         }
-        with patch("app.api.endpoints.auth.send_welcome_email") as mock_email:
+        with patch("app.api.endpoints.auth.create_supabase_auth_user_for_registration") as mock_signup, \
+             patch("app.api.endpoints.auth.send_welcome_email") as mock_email:
+            mock_signup.return_value = "550e8400-e29b-41d4-a716-446655440002"
             mock_email.delay.side_effect = RuntimeError("broker unavailable")
             response = client.post(
                 f"{settings.API_V1_STR}/auth/register",

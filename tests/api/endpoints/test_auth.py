@@ -213,7 +213,9 @@ class TestRegisterBranches:
         Celery must be mocked to prevent connection error in test environment.
         """
         import uuid
-        with patch("app.api.endpoints.auth.send_welcome_email") as mock_email:
+        with patch("app.api.endpoints.auth.create_supabase_auth_user_for_registration") as mock_signup, \
+             patch("app.api.endpoints.auth.send_welcome_email") as mock_email:
+            mock_signup.return_value = "550e8400-e29b-41d4-a716-446655440010"
             mock_email.delay.return_value = None
             response = client.post(
                 "/api/v1/auth/register",
@@ -248,7 +250,9 @@ class TestRegisterBranches:
         db.add(deleted_user)
         db.flush()
 
-        with patch("app.api.endpoints.auth.send_welcome_email") as mock_email:
+        with patch("app.api.endpoints.auth.create_supabase_auth_user_for_registration") as mock_signup, \
+             patch("app.api.endpoints.auth.send_welcome_email") as mock_email:
+            mock_signup.return_value = "550e8400-e29b-41d4-a716-446655440011"
             mock_email.delay.return_value = None
             response = client.post(
                 "/api/v1/auth/register",
@@ -267,7 +271,9 @@ class TestRegisterBranches:
         """
         Register with an already active email returns 400.
         """
-        with patch("app.api.endpoints.auth.send_welcome_email") as mock_email:
+        with patch("app.api.endpoints.auth.create_supabase_auth_user_for_registration") as mock_signup, \
+             patch("app.api.endpoints.auth.send_welcome_email") as mock_email:
+            mock_signup.return_value = "550e8400-e29b-41d4-a716-446655440012"
             mock_email.delay.return_value = None
             response = client.post(
                 "/api/v1/auth/register",
@@ -288,9 +294,12 @@ class TestRegisterBranches:
         """
         import uuid
         from app.crud.agent_profiles import agent_profile as agent_profile_crud
+        from app.crud.profiles import profile as profile_crud
 
         email = f"agent_{uuid.uuid4().hex[:6]}@example.com"
-        with patch("app.api.endpoints.auth.send_welcome_email") as mock_email:
+        with patch("app.api.endpoints.auth.create_supabase_auth_user_for_registration") as mock_signup, \
+             patch("app.api.endpoints.auth.send_welcome_email") as mock_email:
+            mock_signup.return_value = "550e8400-e29b-41d4-a716-446655440013"
             mock_email.delay.return_value = None
             response = client.post(
                 "/api/v1/auth/register",
@@ -305,9 +314,81 @@ class TestRegisterBranches:
 
         assert response.status_code == 200
         user_id = response.json()["user_id"]
-        profile = agent_profile_crud.get_by_user_id(db, user_id=user_id)
+        agent_profile = agent_profile_crud.get_by_user_id(db, user_id=user_id)
+        user_profile = profile_crud.get_by_user_id(db, user_id=user_id)
+        assert agent_profile is not None
+        assert agent_profile.user_id == user_id
+        assert user_profile is not None
+        assert user_profile.full_name == "Agent User"
+
+    def test_register_creates_baseline_profile_for_seeker(self, client: TestClient, db):
+        """
+        Public signup should create the normal profile row used by /profiles/me.
+        """
+        import uuid
+        from app.crud.profiles import profile as profile_crud
+
+        email = f"seeker_{uuid.uuid4().hex[:6]}@example.com"
+        with patch("app.api.endpoints.auth.create_supabase_auth_user_for_registration") as mock_signup, \
+             patch("app.api.endpoints.auth.send_welcome_email") as mock_email:
+            mock_signup.return_value = "550e8400-e29b-41d4-a716-446655440014"
+            mock_email.delay.return_value = None
+            response = client.post(
+                "/api/v1/auth/register",
+                json={
+                    "email": email,
+                    "password": "ValidPass123!",
+                    "first_name": "Seeker",
+                    "last_name": "User",
+                    "phone_number": "+1234567000",
+                    "profile_image_url": "https://example.com/avatar.jpg",
+                    "user_role": "seeker"
+                }
+            )
+
+        assert response.status_code == 200
+        user_id = response.json()["user_id"]
+        profile = profile_crud.get_by_user_id(db, user_id=user_id)
         assert profile is not None
-        assert profile.user_id == user_id
+        assert profile.full_name == "Seeker User"
+        assert profile.phone_number == "+1234567000"
+        assert profile.profile_picture == "https://example.com/avatar.jpg"
+
+    def test_register_rolls_back_supabase_user_when_local_write_fails(
+        self, client: TestClient, monkeypatch
+    ):
+        """
+        If the local transaction fails after Auth signup, delete the Auth user.
+        """
+        deleted_ids: list[str] = []
+
+        def fake_delete_user(supabase_id: str) -> None:
+            deleted_ids.append(supabase_id)
+
+        monkeypatch.setattr(
+            "app.api.endpoints.auth.delete_supabase_auth_user",
+            fake_delete_user
+        )
+
+        with patch("app.api.endpoints.auth.create_supabase_auth_user_for_registration") as mock_signup, \
+             patch("app.api.endpoints.auth.send_welcome_email") as mock_email, \
+             patch("app.api.endpoints.auth.profile_crud.create") as mock_profile_create:
+            mock_signup.return_value = "550e8400-e29b-41d4-a716-446655440015"
+            mock_email.delay.return_value = None
+            mock_profile_create.side_effect = RuntimeError("db write failed")
+            response = client.post(
+                "/api/v1/auth/register",
+                json={
+                    "email": "rollback@example.com",
+                    "password": "ValidPass123!",
+                    "first_name": "Roll",
+                    "last_name": "Back",
+                    "user_role": "seeker"
+                }
+            )
+
+        assert response.status_code == 500
+        assert deleted_ids == ["550e8400-e29b-41d4-a716-446655440015"]
 
 
 class TestMeEndpoint:
