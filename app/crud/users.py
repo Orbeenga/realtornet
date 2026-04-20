@@ -20,7 +20,47 @@ logger = logging.getLogger(__name__)
 
 class UserCRUD:
     """CRUD operations for User model - DB-first canonical implementation"""
-    
+
+    def _ensure_agent_profile_exists(
+        self,
+        db: Session,
+        *,
+        db_obj: User,
+        actor_supabase_id: Optional[str] = None,
+    ) -> None:
+        """
+        Keep agent role changes and agent_profiles in sync.
+
+        Plain-English rule: if a user is persisted as an agent, they must also
+        have the matching one-to-one agent profile row. We enforce that here so
+        callers cannot forget a second write and strand the dashboard in a
+        half-promoted state.
+        """
+        if cast(UserRole, db_obj.user_role) != UserRole.AGENT:
+            return
+
+        # Flush the role change first. SessionLocal disables autoflush in this
+        # codebase, and the agent profile CRUD validates that the user is
+        # already an agent with a fresh SELECT in the same transaction.
+        db.flush()
+
+        from app.crud.agent_profiles import agent_profile as agent_profile_crud
+        from app.schemas.agent_profiles import AgentProfileCreate
+
+        existing_profile = agent_profile_crud.get_by_user_id(
+            db, cast(int, db_obj.user_id)
+        )
+        if existing_profile is not None:
+            return
+
+        agent_profile_crud.create(
+            db,
+            obj_in=AgentProfileCreate(
+                user_id=cast(int, db_obj.user_id),
+                agency_id=cast(Optional[int], db_obj.agency_id),
+            ),
+            created_by=actor_supabase_id,
+        )
     
     # READ OPERATIONS
         
@@ -176,6 +216,11 @@ class UserCRUD:
         )
         
         db.add(db_obj)
+        self._ensure_agent_profile_exists(
+            db,
+            db_obj=db_obj,
+            actor_supabase_id=created_by,
+        )
         db.flush()  # FIX: Preserve test transaction isolation.
         db.refresh(db_obj)
         return db_obj
@@ -230,6 +275,11 @@ class UserCRUD:
         # updated_at handled by DB trigger automatically
         
         db.add(db_obj)
+        self._ensure_agent_profile_exists(
+            db,
+            db_obj=db_obj,
+            actor_supabase_id=updater,
+        )
         db.flush()  # FIX: Preserve test transaction isolation.
         db.refresh(db_obj)
         return db_obj
