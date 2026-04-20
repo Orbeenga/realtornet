@@ -50,6 +50,17 @@ def _serialize_user_role(user_role: Any) -> str | None:
     return str(role_value)
 
 
+def _normalize_public_registration(user_in: UserCreate) -> UserCreate:
+    """
+    Force public self-registration into the lowest-privilege role.
+
+    The role model in this codebase is backend-owned. Browsers can suggest many
+    things in a request body, but they must never be able to mint `agent` or
+    `admin` permissions during a public signup flow.
+    """
+    return user_in.model_copy(update={"user_role": UserRole.SEEKER})
+
+
 @router.post("/login", response_model=Token)
 def login_access_token(
     db: Session = Depends(get_db),
@@ -213,6 +224,10 @@ def register_user(
     - User data meets schema requirements
     - Supabase Auth identity is created before local domain records
     """
+    # Public registration always creates seekers. Higher-trust roles are granted
+    # later through internal workflows, never directly from browser input.
+    user_in = _normalize_public_registration(user_in)
+
     # Check if user with email already exists
     # CRUD checks both active and soft-deleted users
     user = user_crud.get_by_email(db, email=user_in.email)
