@@ -174,6 +174,28 @@ class TestAuth:
         body = response.json()
         assert body["email"] == user_data["email"]
     
+    def test_register_admin_role_is_forced_to_seeker(self, client):
+        """Public registration must never mint admin privileges from body input."""
+        user_data = {
+            "email": "adminattempt@example.com",
+            "password": "strongpassword123",
+            "first_name": "Admin",
+            "last_name": "Attempt",
+            "phone_number": "+1234567801",
+            "user_role": UserRole.ADMIN.value,
+        }
+        with patch("app.api.endpoints.auth.create_supabase_auth_user_for_registration") as mock_signup, \
+             patch("app.api.endpoints.auth.send_welcome_email") as mock_email:
+            mock_signup.return_value = "550e8400-e29b-41d4-a716-446655440003"
+            mock_email.delay.return_value = None
+            response = client.post(
+                f"{settings.API_V1_STR}/auth/register",
+                json=user_data
+            )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["user_role"] == UserRole.SEEKER.value
+    
     def test_register_invalid_email(self, client):
         """Test registration with invalid email format fails."""
         user_data = {

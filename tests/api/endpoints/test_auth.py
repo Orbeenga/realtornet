@@ -288,13 +288,17 @@ class TestRegisterBranches:
         assert response.status_code == 400
         assert "already exists" in response.json()["detail"]
 
-    def test_register_agent_creates_agent_profile(self, client: TestClient, db):
+    def test_register_agent_payload_is_downgraded_to_seeker(self, client: TestClient, db):
         """
-        Agent registration must bootstrap the 1:1 agent profile row atomically.
+        Public registration must ignore an agent role in the request body.
+
+        Agent promotion is an internal workflow. A browser submitting
+        `user_role="agent"` must still end up with a seeker account.
         """
         import uuid
         from app.crud.agent_profiles import agent_profile as agent_profile_crud
         from app.crud.profiles import profile as profile_crud
+        from app.crud.users import user as user_crud
 
         email = f"agent_{uuid.uuid4().hex[:6]}@example.com"
         with patch("app.api.endpoints.auth.create_supabase_auth_user_for_registration") as mock_signup, \
@@ -314,12 +318,51 @@ class TestRegisterBranches:
 
         assert response.status_code == 200
         user_id = response.json()["user_id"]
+        user = user_crud.get(db, user_id=user_id)
         agent_profile = agent_profile_crud.get_by_user_id(db, user_id=user_id)
         user_profile = profile_crud.get_by_user_id(db, user_id=user_id)
-        assert agent_profile is not None
-        assert agent_profile.user_id == user_id
+        assert user is not None
+        assert str(user.user_role) == "UserRole.SEEKER" or getattr(user.user_role, "value", user.user_role) == "seeker"
+        assert response.json()["user_role"] == "seeker"
+        assert agent_profile is None
         assert user_profile is not None
         assert user_profile.full_name == "Agent User"
+
+    def test_register_admin_payload_is_downgraded_to_seeker(self, client: TestClient, db):
+        """
+        Public registration must ignore an admin role in the request body.
+
+        This closes the critical pre-launch security gap where a browser could
+        previously self-assign admin permissions.
+        """
+        import uuid
+        from app.crud.agent_profiles import agent_profile as agent_profile_crud
+        from app.crud.users import user as user_crud
+
+        email = f"admin_{uuid.uuid4().hex[:6]}@example.com"
+        with patch("app.api.endpoints.auth.create_supabase_auth_user_for_registration") as mock_signup, \
+             patch("app.api.endpoints.auth.send_welcome_email") as mock_email:
+            mock_signup.return_value = "550e8400-e29b-41d4-a716-446655440016"
+            mock_email.delay.return_value = None
+            response = client.post(
+                "/api/v1/auth/register",
+                json={
+                    "email": email,
+                    "password": "ValidPass123!",
+                    "first_name": "Admin",
+                    "last_name": "Attempt",
+                    "user_role": "admin"
+                }
+            )
+
+        assert response.status_code == 200
+        user_id = response.json()["user_id"]
+        user = user_crud.get(db, user_id=user_id)
+        assert user is not None
+        assert response.json()["user_role"] == "seeker"
+        assert getattr(user.user_role, "value", user.user_role) == "seeker"
+        assert getattr(user, "is_admin", False) is False
+        assert agent_profile_crud.get_by_user_id(db, user_id=user_id) is None
 
     def test_register_creates_baseline_profile_for_seeker(self, client: TestClient, db):
         """
