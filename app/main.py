@@ -1,6 +1,7 @@
 # app/main.py
 import os
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,6 +15,41 @@ from app.core.exceptions import ApplicationException, ErrorHandler
 from app.core.logging import logger
 from app.middleware.request_middleware import RedisRateLimitMiddleware
 from app.services.storage_bucket_bootstrap import ensure_required_storage_buckets
+
+
+def _run_storage_bucket_bootstrap() -> dict[str, Any]:
+    """
+    Run storage bootstrap without making process startup depend on it.
+
+    Railway marks the service unhealthy if the process exits before `/healthz`
+    can respond. Storage provisioning is important, but it is an external
+    dependency call to Supabase and should not stop the API from starting when
+    the real problem might be a missing env var, a temporary network issue, or a
+    slow storage API. We surface the failure in health output instead so runtime
+    logs remain reachable and the service can still start far enough for
+    diagnosis.
+    """
+    if settings.ENV == "test":
+        return {"ready": True, "results": [], "error": None}
+
+    try:
+        bucket_results = ensure_required_storage_buckets()
+        return {
+            "ready": True,
+            "results": [result.__dict__ for result in bucket_results],
+            "error": None,
+        }
+    except Exception as exc:
+        logger.error(
+            "Storage bucket bootstrap failed during startup",
+            extra={"error": exc.__class__.__name__},
+            exc_info=True,
+        )
+        return {
+            "ready": False,
+            "results": [],
+            "error": str(exc),
+        }
 
 
 @asynccontextmanager
@@ -43,14 +79,7 @@ async def lifespan(app: FastAPI):
             "Never use Base.metadata.create_all() for schema management."
         )
 
-    if settings.ENV != "test":
-        bucket_results = ensure_required_storage_buckets()
-        app.state.storage_bucket_bootstrap = {
-            "ready": True,
-            "results": [result.__dict__ for result in bucket_results],
-        }
-    else:
-        app.state.storage_bucket_bootstrap = {"ready": True, "results": []}
+    app.state.storage_bucket_bootstrap = _run_storage_bucket_bootstrap()
 
     yield
     logger.info("RealtorNet application shutting down")
