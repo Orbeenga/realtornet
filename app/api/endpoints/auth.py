@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 # --- DIRECT CRUD IMPORTS ---
 from app.crud.agent_profiles import agent_profile as agent_profile_crud
+from app.crud.profiles import profile as profile_crud
 from app.crud.users import user as user_crud
 
 # --- DIRECT DEPENDENCY IMPORTS ---
@@ -25,9 +26,15 @@ from app.core.config import settings
 from app.schemas.token import Token, TokenRefresh
 from app.schemas.users import UserCreate, UserResponse, UserRole
 from app.schemas.agent_profiles import AgentProfileCreate
+from app.schemas.profiles import ProfileCreate
 
 # --- TASK IMPORTS ---
 from app.tasks.email_tasks import send_welcome_email
+from app.services.auth_registration_service import (
+    SupabaseRegistrationError,
+    create_supabase_auth_user_for_registration,
+    delete_supabase_auth_user,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -204,6 +211,7 @@ def register_user(
     Validates:
     - Email not already registered (including soft-deleted users)
     - User data meets schema requirements
+    - Supabase Auth identity is created before local domain records
     """
     # Check if user with email already exists
     # CRUD checks both active and soft-deleted users
@@ -221,28 +229,67 @@ def register_user(
             detail="User with this email already exists",
         )
     
-    # Create new user
-    # Generate supabase_id for registration (in real app, this comes from Supabase Auth)
-    import uuid
-    supabase_id = str(uuid.uuid4())  # In production, this would come from Supabase Auth callback
-    
-    # Pass supabase_id to create
-    user = user_crud.create(
-        db,
-        obj_in=user_in,
-        supabase_id=supabase_id,
-        created_by=supabase_id
-    )
+    try:
+        supabase_id = create_supabase_auth_user_for_registration(user_in)
+    except SupabaseRegistrationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to create Supabase auth user during registration",
+        ) from exc
+    except Exception as exc:
+        error_text = str(exc).lower()
+        if "already" in error_text and ("registered" in error_text or "exists" in error_text):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="User with this email already exists in Supabase Auth",
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Supabase auth registration failed",
+        ) from exc
 
-    if user_in.user_role == UserRole.AGENT:
-        agent_profile_crud.create(
+    try:
+        user = user_crud.create(
             db,
-            obj_in=AgentProfileCreate(
-                user_id=user.user_id,
-                agency_id=user.agency_id
-            ),
+            obj_in=user_in,
+            supabase_id=supabase_id,
             created_by=supabase_id
         )
+
+        # The profile endpoints already assume each user has a baseline profile.
+        # Creating it here keeps registration and later profile editing aligned.
+        full_name = f"{user_in.first_name} {user_in.last_name}".strip()
+        profile_crud.create(
+            db,
+            obj_in=ProfileCreate(
+                full_name=full_name,
+                phone_number=user_in.phone_number,
+                profile_picture=user_in.profile_image_url,
+            ),
+            user_id=user.user_id,
+            created_by=supabase_id
+        )
+
+        if user_in.user_role == UserRole.AGENT:
+            agent_profile_crud.create(
+                db,
+                obj_in=AgentProfileCreate(
+                    user_id=user.user_id,
+                    agency_id=user.agency_id
+                ),
+                created_by=supabase_id
+            )
+    except Exception:
+        db.rollback()
+        try:
+            delete_supabase_auth_user(supabase_id)
+        except Exception:
+            logger.warning(
+                "Supabase auth rollback failed after local registration error",
+                extra={"supabase_id": supabase_id, "email": user_in.email},
+                exc_info=True,
+            )
+        raise
     
     # Send welcome email as a background task
     email_task = typing_cast(Any, send_welcome_email)  # Narrow the Celery task wrapper locally so pyright accepts the generated delay method.
