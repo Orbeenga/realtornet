@@ -17,10 +17,70 @@ import pytest
 from unittest.mock import Mock
 from sqlalchemy.orm import Session
 from app.crud.users import user as user_crud
+from app.crud.agent_profiles import agent_profile as agent_profile_crud
 from app.schemas.users import UserCreate, UserUpdate
 from app.models.users import User, UserRole
 from datetime import datetime, timezone
 import uuid
+
+
+class TestUserAgentPromotionInvariant:
+    """Regression coverage for keeping agent role and agent profile in sync."""
+
+    def test_create_agent_also_creates_agent_profile(self, db: Session):
+        """Internal agent creation must leave a usable dashboard profile behind."""
+        created = user_crud.create(
+            db,
+            obj_in=UserCreate(
+                email="created.agent@test.com",
+                password="Test123!",
+                first_name="Created",
+                last_name="Agent",
+                user_role=UserRole.AGENT,
+            ),
+            supabase_id=str(uuid.uuid4()),
+            created_by=str(uuid.uuid4()),
+        )
+
+        profile = agent_profile_crud.get_by_user_id(db, created.user_id)
+
+        assert created.user_role == UserRole.AGENT
+        assert profile is not None
+        assert profile.user_id == created.user_id
+
+    def test_promoting_seeker_to_agent_creates_agent_profile(self, db: Session):
+        """
+        Promotion must be atomic from the caller's point of view.
+
+        If the role becomes agent, the companion agent_profiles row must exist
+        in the same transaction so the listings dashboard can load immediately.
+        """
+        seeker = user_crud.create(
+            db,
+            obj_in=UserCreate(
+                email="promoted.agent@test.com",
+                password="Test123!",
+                first_name="Promoted",
+                last_name="Agent",
+                user_role=UserRole.SEEKER,
+            ),
+            supabase_id=str(uuid.uuid4()),
+        )
+
+        assert agent_profile_crud.get_by_user_id(db, seeker.user_id) is None
+
+        updated = user_crud.update(
+            db,
+            db_obj=seeker,
+            obj_in=UserUpdate(user_role=UserRole.AGENT),
+            updated_by_supabase_id=str(uuid.uuid4()),
+        )
+
+        profile = agent_profile_crud.get_by_user_id(db, updated.user_id)
+
+        assert updated.user_role == UserRole.AGENT
+        assert profile is not None
+        assert profile.user_id == updated.user_id
 
 
 class TestUserGetMultiFilters:
