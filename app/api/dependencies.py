@@ -79,16 +79,37 @@ def get_current_user(
 
         s_id_str = str(s_id)
 
-        # Step 3: Query user
+        # Step 3: Query user by the Supabase UUID carried in the token.
+        # This is the normal path for healthy accounts.
         user = db.query(User).filter(
             User.supabase_id == s_id_str,
             User.deleted_at.is_(None)
         ).first()
 
         if user is None:
-            # Extra debug: check if user exists at all (ignore soft delete)
-            user_any = db.query(User).filter(User.supabase_id == s_id_str).first()
-            raise credentials_exception
+            token_user_id = token_payload.user_id
+
+            # Some older rows can drift away from the UUID stored in our own
+            # first-party JWTs. When the token also includes the signed
+            # internal user_id, we can safely fall back to that row and heal
+            # the stale supabase_id in the same request.
+            if token_user_id is None:
+                raise credentials_exception
+
+            user = db.query(User).filter(
+                User.user_id == token_user_id,
+                User.deleted_at.is_(None)
+            ).first()
+
+            if user is None:
+                raise credentials_exception
+
+            db_supabase_id = cast(UUID | None, user.supabase_id)
+            if str(db_supabase_id) != s_id_str:
+                user.supabase_id = UUID(s_id_str)
+                db.add(user)
+                db.flush()
+                db.refresh(user)
 
         # Step 4: Verify user_id if present
         resolved_user_id = cast(int, user.user_id)
