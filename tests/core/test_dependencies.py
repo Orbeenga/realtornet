@@ -89,6 +89,32 @@ class TestCurrentUser:
             deps.get_current_user(db=db, token=token)
         assert exc.value.status_code == 401
 
+    def test_get_current_user_falls_back_to_signed_user_id_and_heals_supabase_id(self, db, normal_user):
+        """
+        First-party JWTs carry both supabase_id and user_id.
+
+        If the UUID on the local row is stale but the signed user_id still
+        matches, the dependency should recover that account and write the fresh
+        Supabase UUID back to the row instead of breaking the session.
+        """
+        stale_uuid = normal_user.supabase_id
+        repaired_uuid = uuid4()
+        normal_user.supabase_id = stale_uuid
+        db.add(normal_user)
+        db.commit()
+
+        token = create_token(
+            supabase_id=repaired_uuid,
+            user_id=normal_user.user_id,
+            user_role=normal_user.user_role.value
+        )
+
+        resolved_user = deps.get_current_user(db=db, token=token)
+
+        db.refresh(normal_user)
+        assert resolved_user.user_id == normal_user.user_id
+        assert normal_user.supabase_id == repaired_uuid
+
     def test_get_current_user_unexpected_exception_raises(self, db, monkeypatch):
         """
         Unexpected decode errors must surface as 401.
