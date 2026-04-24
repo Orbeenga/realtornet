@@ -37,3 +37,25 @@ Verification snapshot:
 
 Follow-up:
 - Keep using `scripts/check_rls.sql` for future environment verification after restores, clones, or manual dashboard changes
+
+## DEF-G-MOD-001: Full moderation status workflow
+
+Phase G should replace the current `is_verified` boolean with an explicit `moderation_status` enum covering `pending_review`, `verified`, `rejected`, and `revoked`.
+
+Scope:
+- Add a rejection reason field
+- Add backend-driven notifications
+- Add an agent inbox experience contract
+- Add moderation history
+- Add admin moderation filters
+- Add a resubmit flow
+
+Constraint: design the backend schema and workflow contract first before any frontend work begins.
+
+## DEF-002: Audit log retention
+
+Deferred to Phase G. No real traffic data to size policy against.
+
+Revisit after 60 days of production usage. Decision at that point:
+- rolling window (e.g. 90 days)
+- archive-to-cold-storage strategy

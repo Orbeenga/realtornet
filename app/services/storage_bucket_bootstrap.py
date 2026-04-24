@@ -11,6 +11,8 @@ from dataclasses import dataclass
 import logging
 from typing import Any
 
+from storage3.types import CreateOrUpdateBucketOptions
+
 from app.core.config import settings
 from app.utils.supabase_client import get_supabase_admin_client
 
@@ -26,7 +28,7 @@ class StorageBucketSpec:
     public: bool = True
     allowed_mime_types: tuple[str, ...] = IMAGE_BUCKET_ALLOWED_MIME_TYPES
 
-    def to_update_options(self) -> dict[str, Any]:
+    def to_update_options(self) -> CreateOrUpdateBucketOptions:
         return {
             "public": self.public,
             "allowed_mime_types": list(self.allowed_mime_types),

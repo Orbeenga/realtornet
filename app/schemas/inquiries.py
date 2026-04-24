@@ -80,10 +80,16 @@ class InquiryResponse(InquiryBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class InquiryUserSummary(BaseModel):
+    """Minimal seeker contact details exposed to listing owners."""
+    full_name: str
+    email: str
+
+
 # Extended Response (with nested user/property data)
 class InquiryExtendedResponse(InquiryResponse):
     """Extended response with related data"""
-    user: Optional[dict] = None  # Can be replaced with UserResponse
+    user: Optional[InquiryUserSummary] = None
     property: Optional[dict] = None  # Can be replaced with PropertyResponse
 
     model_config = ConfigDict(from_attributes=True)

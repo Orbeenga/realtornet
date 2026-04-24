@@ -36,6 +36,9 @@ class UserCRUD:
         callers cannot forget a second write and strand the dashboard in a
         half-promoted state.
         """
+        if actor_supabase_id is None:
+            return
+
         if cast(UserRole, db_obj.user_role) != UserRole.AGENT:
             return
 

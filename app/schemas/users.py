@@ -76,6 +76,7 @@ class UserUpdate(BaseModel):
     last_name: Optional[str] = None
     phone_number: Optional[str] = None
     profile_image_url: Optional[str] = None
+    user_role: Optional[UserRole] = None
     # Password change (if provided, must be validated)
     password: Optional[str] = None
 

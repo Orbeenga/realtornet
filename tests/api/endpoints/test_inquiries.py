@@ -118,6 +118,41 @@ class TestReadReceivedInquiries:
         assert response.status_code == 200
         assert isinstance(response.json(), list)
 
+    def test_received_inquiries_include_seeker_contact_details(
+        self,
+        client: TestClient,
+        normal_user_token_headers,
+        normal_user,
+        agent_token_headers,
+        unverified_property_owned_by_agent,
+    ):
+        inquiry_data = {
+            "property_id": unverified_property_owned_by_agent.property_id,
+            "message": "Please contact me about this listing",
+        }
+        create_response = client.post(
+            "/api/v1/inquiries/",
+            json=inquiry_data,
+            headers=normal_user_token_headers,
+        )
+        assert create_response.status_code == 201
+
+        response = client.get(
+            "/api/v1/inquiries/received",
+            headers=agent_token_headers,
+        )
+        assert response.status_code == 200
+
+        matching_inquiry = next(
+            inquiry_obj
+            for inquiry_obj in response.json()
+            if inquiry_obj["inquiry_id"] == create_response.json()["inquiry_id"]
+        )
+        assert matching_inquiry["user"] == {
+            "full_name": f"{normal_user.first_name} {normal_user.last_name}",
+            "email": normal_user.email,
+        }
+
     def test_received_inquiries_excludes_deleted_property(
         self, client: TestClient, normal_user_token_headers, agent_token_headers,
         unverified_property_owned_by_agent, admin_token_headers
