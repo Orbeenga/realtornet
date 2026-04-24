@@ -28,6 +28,10 @@ from app.crud.properties import property as property_crud
 from app.crud.property_types import property_type as property_type_crud
 from app.crud.inquiries import inquiry as inquiry_crud
 from app.services.analytics_services import analytics_service 
+from app.services.auth_user_sync_service import (
+    SupabaseUserSyncError,
+    sync_supabase_auth_user_metadata,
+)
 
 # --- DIRECT SCHEMA IMPORTS ---
 # from app.schemas.users import UserResponse, UserCreate, UserUpdate
@@ -201,12 +205,30 @@ def update_user(
         )
     
     # Update with audit tracking
-    db_user = user_crud.update(
-        db, 
-        db_obj=db_user, 
-        obj_in=user_in,
-        updated_by=str(current_user.supabase_id)  # Normalize the admin Supabase UUID to the CRUD audit string type at the call site.
-    )
+    update_data = user_in.dict(exclude_unset=True)
+    should_sync_supabase_auth = "user_role" in update_data
+
+    try:
+        db_user = user_crud.update(
+            db, 
+            db_obj=db_user, 
+            obj_in=user_in,
+            updated_by=str(current_user.supabase_id)  # Normalize the admin Supabase UUID to the CRUD audit string type at the call site.
+        )
+
+        if should_sync_supabase_auth:
+            sync_supabase_auth_user_metadata(db_user)
+    except SupabaseUserSyncError as exc:
+        db.rollback()
+        logger.warning(
+            "Admin user update rolled back because Supabase Auth sync failed",
+            extra={"target_user_id": user_id},
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
     
     logger.info(f"User updated: {user_id} by admin {current_user.user_id}")
     return db_user
