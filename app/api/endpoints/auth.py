@@ -281,7 +281,7 @@ def register_user(
                 phone_number=user_in.phone_number,
                 profile_picture=user_in.profile_image_url,
             ),
-            user_id=user.user_id,
+            user_id=typing_cast(int, user.user_id),
             created_by=supabase_id
         )
 
@@ -289,12 +289,12 @@ def register_user(
             agent_profile_crud.create(
                 db,
                 obj_in=AgentProfileCreate(
-                    user_id=user.user_id,
-                    agency_id=user.agency_id
+                    user_id=typing_cast(int, user.user_id),
+                    agency_id=typing_cast(int | None, user.agency_id)
                 ),
                 created_by=supabase_id
             )
-    except Exception:
+    except Exception as exc:
         db.rollback()
         try:
             delete_supabase_auth_user(supabase_id)
@@ -304,7 +304,10 @@ def register_user(
                 extra={"supabase_id": supabase_id, "email": user_in.email},
                 exc_info=True,
             )
-        raise
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="User registration failed",
+        ) from exc
     
     # Send welcome email as a background task
     email_task = typing_cast(Any, send_welcome_email)  # Narrow the Celery task wrapper locally so pyright accepts the generated delay method.

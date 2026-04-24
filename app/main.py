@@ -2,6 +2,8 @@
 import os
 from contextlib import asynccontextmanager
 from typing import Any
+import importlib
+import importlib.util
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -58,13 +60,12 @@ async def lifespan(app: FastAPI):
     logger.info("RealtorNet application starting up")
 
     if settings.SENTRY_DSN:
-        try:
-            import sentry_sdk
-        except ImportError:
+        if importlib.util.find_spec("sentry_sdk") is None:
             logger.warning(
                 "SENTRY_DSN is set but sentry-sdk is not installed; skipping Sentry initialization"
             )
         else:
+            sentry_sdk = importlib.import_module("sentry_sdk")
             sentry_sdk.init(
                 dsn=settings.SENTRY_DSN,
                 environment=settings.ENV,

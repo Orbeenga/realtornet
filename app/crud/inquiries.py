@@ -186,6 +186,7 @@ class InquiryCRUD:
         """
         stmt = (
             select(Inquiry)
+            .options(joinedload(Inquiry.user))
             .join(Property, Inquiry.property_id == Property.property_id)
             .where(
                 and_(

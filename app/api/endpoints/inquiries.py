@@ -24,9 +24,43 @@ from app.api.dependencies import (
 
 # --- DIRECT SCHEMA IMPORTS ---
 from app.schemas.users import UserResponse
-from app.schemas.inquiries import InquiryResponse, InquiryCreate, InquiryUpdate
+from app.schemas.inquiries import (
+    InquiryCreate,
+    InquiryExtendedResponse,
+    InquiryResponse,
+    InquiryUpdate,
+)
 
 router = APIRouter()
+
+
+def _build_inquiry_extended_response(inquiry: Any) -> dict[str, Any]:
+    """Serialize an inquiry with lightweight seeker contact details for owners."""
+    inquiry_user = getattr(inquiry, "user", None)
+    user_payload = None
+    if inquiry_user is not None:
+        first_name = str(getattr(inquiry_user, "first_name", "") or "").strip()
+        last_name = str(getattr(inquiry_user, "last_name", "") or "").strip()
+        full_name = f"{first_name} {last_name}".strip() or str(getattr(inquiry_user, "full_name", "") or "").strip()
+        email = str(getattr(inquiry_user, "email", "") or "").strip()
+        if full_name or email:
+            user_payload = {
+                "full_name": full_name,
+                "email": email,
+            }
+
+    return {
+        "inquiry_id": inquiry.inquiry_id,
+        "user_id": inquiry.user_id,
+        "property_id": inquiry.property_id,
+        "message": inquiry.message,
+        "inquiry_status": inquiry.inquiry_status,
+        "created_at": inquiry.created_at,
+        "updated_at": inquiry.updated_at,
+        "deleted_at": inquiry.deleted_at,
+        "deleted_by": inquiry.deleted_by,
+        "user": user_payload,
+    }
 
 
 @router.post("/", response_model=InquiryResponse, status_code=status.HTTP_201_CREATED)
@@ -86,7 +120,7 @@ def read_user_inquiries(
     return inquiries
 
 
-@router.get("/received", response_model=List[InquiryResponse])
+@router.get("/received", response_model=List[InquiryExtendedResponse])
 def read_received_inquiries(
     db: Session = Depends(get_db),
     current_user: UserResponse = Depends(get_current_active_user),
@@ -111,7 +145,7 @@ def read_received_inquiries(
         owner_user_id=current_user.user_id,
         **pagination,
     )
-    return inquiries
+    return [_build_inquiry_extended_response(inquiry) for inquiry in inquiries]
 
 
 @router.get("/{inquiry_id}", response_model=InquiryResponse)

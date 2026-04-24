@@ -586,12 +586,14 @@ def bootstrap_demo_data(
 
     agent_profile = agent_profile_crud.get_by_user_id(db, user_id=agent_user_id)
     if agent_profile is None:
+        agency_id_value = typing_cast(int | None, agency.agency_id)
+        agency_name_value = typing_cast(str | None, agency.name)
         agent_profile = agent_profile_crud.create(
             db,
             obj_in=AgentProfileCreate(
                 user_id=agent_user_id,
-                agency_id=agency.agency_id,
-                company_name=agency.name,
+                agency_id=agency_id_value,
+                company_name=agency_name_value,
                 specialization="Residential sales",
                 bio="Seeded agent profile for production smoke tests."
             ),
@@ -615,19 +617,22 @@ def bootstrap_demo_data(
     )
 
     if verified_property is None:
+        property_type_id_value = typing_cast(int | None, property_type.property_type_id)
+        location_id_value = typing_cast(int | None, location.location_id)
+        agency_id_value = typing_cast(int | None, agency.agency_id)
         verified_property = property_crud.create_with_owner(
             db,
             obj_in=PropertyCreate(
                 title="Seeded Demo Apartment",
                 description="Seeded listing used to unblock production smoke journeys.",
-                property_type_id=property_type.property_type_id,
-                location_id=location.location_id,
+                property_type_id=property_type_id_value,
+                location_id=location_id_value,
                 price=Decimal("85000000"),
                 bedrooms=3,
                 bathrooms=3,
                 property_size=Decimal("145"),
                 listing_type=PropertyListingType.sale,
-                agency_id=agency.agency_id,
+                agency_id=agency_id_value,
                 latitude=6.4474,
                 longitude=3.4746,
                 has_security=True,
@@ -641,36 +646,40 @@ def bootstrap_demo_data(
     if not typing_cast(bool, verified_property.is_verified):
         verified_property = property_crud.verify_property(
             db,
-            property_id=verified_property.property_id,
+            property_id=typing_cast(int, verified_property.property_id),
             is_verified=True,
             updated_by=actor_supabase_id,
         )
 
-    property_listing_status = str(getattr(verified_property.listing_status, "value", verified_property.listing_status))
+    verified_property_value = typing_cast(Any, verified_property)
+    property_listing_status = str(getattr(verified_property_value.listing_status, "value", verified_property_value.listing_status))
     if property_listing_status != "available":
         verified_property = property_crud.update_listing_status(
             db,
-            property_id=verified_property.property_id,
-            listing_status=ListingStatus.available,
+            property_id=typing_cast(int, verified_property_value.property_id),
+            listing_status=typing_cast(Any, ListingStatus.available),
             updated_by=actor_supabase_id,
         )
 
     if pending_property is None:
         # We keep one seeded listing unverified on purpose so the moderation UI
         # always has a real "pending review" record to work with in production.
+        property_type_id_value = typing_cast(int | None, property_type.property_type_id)
+        location_id_value = typing_cast(int | None, location.location_id)
+        agency_id_value = typing_cast(int | None, agency.agency_id)
         pending_property = property_crud.create_with_owner(
             db,
             obj_in=PropertyCreate(
                 title="Seeded Pending Verification Listing",
                 description="Seeded unverified listing used to test the admin verification workflow without SQL.",
-                property_type_id=property_type.property_type_id,
-                location_id=location.location_id,
+                property_type_id=property_type_id_value,
+                location_id=location_id_value,
                 price=Decimal("91000000"),
                 bedrooms=4,
                 bathrooms=3,
                 property_size=Decimal("168"),
                 listing_type=PropertyListingType.sale,
-                agency_id=agency.agency_id,
+                agency_id=agency_id_value,
                 latitude=6.4474,
                 longitude=3.4746,
                 has_security=True,
