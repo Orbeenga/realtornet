@@ -7,6 +7,7 @@ Admin endpoints have the widest blast radius:
 - They are gated exclusively by admin privileges
 """
 import uuid
+from unittest.mock import patch
 from fastapi.testclient import TestClient
 from geoalchemy2.elements import WKTElement
 
@@ -301,6 +302,47 @@ class TestAdminUpdateUser:
             json={"first_name": "Nope"}
         )
         assert response.status_code == 401
+
+    def test_admin_role_promotion_syncs_supabase_auth_metadata(
+        self, client: TestClient, admin_token_headers, normal_user, db
+    ):
+        """
+        Role promotions must update both the local user row and Supabase Auth.
+        """
+        with patch(
+            "app.api.endpoints.admin.sync_supabase_auth_user_metadata"
+        ) as mock_sync:
+            response = client.put(
+                f"/api/v1/admin/users/{normal_user.user_id}",
+                headers=admin_token_headers,
+                json={"user_role": "agent"}
+            )
+
+        assert response.status_code == 200
+        db.refresh(normal_user)
+        assert getattr(normal_user.user_role, "value", normal_user.user_role) == "agent"
+        mock_sync.assert_called_once()
+        synced_user = mock_sync.call_args.args[0]
+        assert synced_user.user_id == normal_user.user_id
+
+    def test_admin_role_promotion_rolls_back_when_supabase_sync_fails(
+        self, client: TestClient, admin_token_headers, normal_user
+    ):
+        """
+        A DB-only promotion is not allowed; failed auth sync must roll back.
+        """
+        with patch(
+            "app.api.endpoints.admin.sync_supabase_auth_user_metadata",
+            side_effect=admin_api.SupabaseUserSyncError("User has no linked Supabase Auth identity to sync."),
+        ):
+            response = client.put(
+                f"/api/v1/admin/users/{normal_user.user_id}",
+                headers=admin_token_headers,
+                json={"user_role": "agent"}
+        )
+
+        assert response.status_code == 502
+        assert "no linked Supabase Auth identity" in response.json()["detail"]
 
 
 class TestAdminDeleteUser:
