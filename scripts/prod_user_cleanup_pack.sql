@@ -16,6 +16,7 @@
 WITH preserved_emails(email) AS (
     VALUES
         ('apineorbeenga@gmail.com'),
+        ('godwinemagun@gmail.com'),
         ('apineorbeenga@outlook.com'),
         ('apineorbeenga@yahoo.com')
 ),
@@ -45,6 +46,7 @@ ORDER BY user_id;
 WITH preserved_emails(email) AS (
     VALUES
         ('apineorbeenga@gmail.com'),
+        ('godwinemagun@gmail.com'),
         ('apineorbeenga@outlook.com'),
         ('apineorbeenga@yahoo.com')
 ),
@@ -138,6 +140,7 @@ ORDER BY table_name;
 WITH preserved_emails(email) AS (
     VALUES
         ('apineorbeenga@gmail.com'),
+        ('godwinemagun@gmail.com'),
         ('apineorbeenga@outlook.com'),
         ('apineorbeenga@yahoo.com')
 ),
@@ -159,6 +162,7 @@ ORDER BY p.user_id, p.profile_id;
 WITH preserved_emails(email) AS (
     VALUES
         ('apineorbeenga@gmail.com'),
+        ('godwinemagun@gmail.com'),
         ('apineorbeenga@outlook.com'),
         ('apineorbeenga@yahoo.com')
 ),
@@ -180,6 +184,7 @@ ORDER BY ap.user_id, ap.profile_id;
 WITH preserved_emails(email) AS (
     VALUES
         ('apineorbeenga@gmail.com'),
+        ('godwinemagun@gmail.com'),
         ('apineorbeenga@outlook.com'),
         ('apineorbeenga@yahoo.com')
 ),
@@ -201,6 +206,7 @@ ORDER BY p.user_id, p.property_id;
 WITH preserved_emails(email) AS (
     VALUES
         ('apineorbeenga@gmail.com'),
+        ('godwinemagun@gmail.com'),
         ('apineorbeenga@outlook.com'),
         ('apineorbeenga@yahoo.com')
 ),
@@ -222,6 +228,7 @@ ORDER BY f.user_id, f.property_id;
 WITH preserved_emails(email) AS (
     VALUES
         ('apineorbeenga@gmail.com'),
+        ('godwinemagun@gmail.com'),
         ('apineorbeenga@outlook.com'),
         ('apineorbeenga@yahoo.com')
 ),
@@ -255,6 +262,7 @@ ORDER BY cp.user_id, cp.property_id, f.user_id;
 WITH preserved_emails(email) AS (
     VALUES
         ('apineorbeenga@gmail.com'),
+        ('godwinemagun@gmail.com'),
         ('apineorbeenga@outlook.com'),
         ('apineorbeenga@yahoo.com')
 ),
@@ -276,6 +284,7 @@ ORDER BY i.user_id, i.inquiry_id;
 WITH preserved_emails(email) AS (
     VALUES
         ('apineorbeenga@gmail.com'),
+        ('godwinemagun@gmail.com'),
         ('apineorbeenga@outlook.com'),
         ('apineorbeenga@yahoo.com')
 ),
@@ -311,6 +320,7 @@ ORDER BY cp.user_id, cp.property_id, i.inquiry_id;
 WITH preserved_emails(email) AS (
     VALUES
         ('apineorbeenga@gmail.com'),
+        ('godwinemagun@gmail.com'),
         ('apineorbeenga@outlook.com'),
         ('apineorbeenga@yahoo.com')
 ),
@@ -332,6 +342,7 @@ ORDER BY s.user_id, s.search_id;
 WITH preserved_emails(email) AS (
     VALUES
         ('apineorbeenga@gmail.com'),
+        ('godwinemagun@gmail.com'),
         ('apineorbeenga@outlook.com'),
         ('apineorbeenga@yahoo.com')
 ),
@@ -353,6 +364,7 @@ ORDER BY r.user_id, r.review_id;
 WITH preserved_emails(email) AS (
     VALUES
         ('apineorbeenga@gmail.com'),
+        ('godwinemagun@gmail.com'),
         ('apineorbeenga@outlook.com'),
         ('apineorbeenga@yahoo.com')
 ),
@@ -374,6 +386,7 @@ ORDER BY r.agent_id, r.review_id;
 WITH preserved_emails(email) AS (
     VALUES
         ('apineorbeenga@gmail.com'),
+        ('godwinemagun@gmail.com'),
         ('apineorbeenga@outlook.com'),
         ('apineorbeenga@yahoo.com')
 ),
@@ -401,6 +414,7 @@ ORDER BY cp.user_id, cp.property_id, pi.image_id;
 WITH preserved_emails(email) AS (
     VALUES
         ('apineorbeenga@gmail.com'),
+        ('godwinemagun@gmail.com'),
         ('apineorbeenga@outlook.com'),
         ('apineorbeenga@yahoo.com')
 ),
@@ -444,6 +458,7 @@ BEGIN;
 WITH preserved_emails(email) AS (
     VALUES
         ('apineorbeenga@gmail.com'),
+        ('godwinemagun@gmail.com'),
         ('apineorbeenga@outlook.com'),
         ('apineorbeenga@yahoo.com')
 ),
@@ -470,6 +485,7 @@ COMMIT;
 WITH preserved_emails(email) AS (
     VALUES
         ('apineorbeenga@gmail.com'),
+        ('godwinemagun@gmail.com'),
         ('apineorbeenga@outlook.com'),
         ('apineorbeenga@yahoo.com')
 )
@@ -479,3 +495,4 @@ WHERE lower(email) NOT IN (
     SELECT lower(email) FROM preserved_emails
 )
 ORDER BY user_id;
+
