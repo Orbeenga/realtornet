@@ -153,7 +153,7 @@ def health_check_full():  # pragma: no cover
                 {
                     "status": "unhealthy",
                     "database": "unreachable",
-                    "detail": str(e),
+                    "detail": "database connection failed",
                 }
             ),
             status_code=503,

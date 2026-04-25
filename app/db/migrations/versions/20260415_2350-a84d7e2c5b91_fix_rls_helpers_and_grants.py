@@ -54,9 +54,23 @@ END;
 $function$;
 
 GRANT USAGE ON SCHEMA public TO anon, authenticated;
-GRANT SELECT ON public.agencies, public.agent_profiles, public.amenities, public.locations, public.properties, public.property_amenities, public.property_images, public.property_types, public.reviews, public.users TO anon, authenticated;
+GRANT SELECT ON public.agencies, public.agent_profiles, public.amenities, public.locations, public.properties, public.property_amenities, public.property_images, public.property_types, public.reviews TO anon, authenticated;
+GRANT SELECT ON public.users TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.agencies, public.agent_profiles, public.amenities, public.favorites, public.inquiries, public.locations, public.profiles, public.properties, public.property_amenities, public.property_images, public.property_types, public.reviews, public.saved_searches, public.users TO authenticated;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO authenticated;
+REVOKE SELECT ON public.users FROM anon;
+
+CREATE OR REPLACE VIEW public.agent_public_profiles AS
+SELECT
+    user_id,
+    concat_ws(' ', first_name, last_name) AS full_name,
+    profile_image_url AS avatar_url,
+    agency_id
+FROM public.users
+WHERE user_role = 'agent'::user_role_enum
+  AND deleted_at IS NULL;
+
+GRANT SELECT ON public.agent_public_profiles TO anon, authenticated;
 """
 
 
@@ -65,6 +79,7 @@ REVOKE USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public FROM authenticated;
 REVOKE SELECT, INSERT, UPDATE, DELETE ON public.agencies, public.agent_profiles, public.amenities, public.favorites, public.inquiries, public.locations, public.profiles, public.properties, public.property_amenities, public.property_images, public.property_types, public.reviews, public.saved_searches, public.users FROM authenticated;
 REVOKE SELECT ON public.agencies, public.agent_profiles, public.amenities, public.locations, public.properties, public.property_amenities, public.property_images, public.property_types, public.reviews, public.users FROM anon, authenticated;
 REVOKE USAGE ON SCHEMA public FROM anon, authenticated;
+DROP VIEW IF EXISTS public.agent_public_profiles;
 """
 
 
