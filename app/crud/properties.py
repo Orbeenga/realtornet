@@ -6,7 +6,7 @@ Canonical Rules: Main entity with geography, enums, soft delete
 """
 
 from typing import List, Optional, Dict, Any, Tuple, Union, cast as type_cast
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import select, func, and_, or_, cast, Float, String, update, delete
 from datetime import datetime, timezone
 from fastapi import HTTPException
@@ -30,7 +30,7 @@ class PropertyCRUD:
         # FIX: Default read path excludes soft-deleted rows.
         if property_id is None:
             return None
-        stmt = select(Property).where(
+        stmt = select(Property).options(joinedload(Property.agency)).where(
             Property.property_id == property_id,
             Property.deleted_at.is_(None)
         )
@@ -64,7 +64,7 @@ class PropertyCRUD:
         skip = max(0, skip)
         limit = max(0, limit)
 
-        query = select(Property)
+        query = select(Property).options(joinedload(Property.agency))
 
         if filters:
             # Normalize: accept both Pydantic models and plain dicts.
@@ -471,16 +471,17 @@ class PropertyCRUD:
         
         create_data = obj_in.model_dump(mode='python', exclude_unset=True)
 
-        # Agency_id is schema-only (permission check), not a DB column
-        create_data.pop('agency_id', None)
         latitude = create_data.pop('latitude', None)
         longitude = create_data.pop('longitude', None)
         create_data.pop('amenity_ids', None)
         create_data.pop('image_urls', None)
         
+        agency_id = create_data.pop('agency_id', None)
+
         db_obj = Property(
             **create_data,
             user_id=user_id,
+            agency_id=agency_id,
             is_verified=False,
             created_by=created_by
         )
@@ -491,7 +492,7 @@ class PropertyCRUD:
         db.add(db_obj)
         db.flush()
         db.refresh(db_obj)
-        return db_obj
+        return self.get(db, int(db_obj.property_id)) or db_obj
     
     
     # UPDATE OPERATIONS
@@ -640,13 +641,11 @@ class PropertyCRUD:
         return db_obj
     
     def count_by_agency(self, db: Session, *, agency_id: int) -> int:
-        """Count active properties for an agency via user relationship."""
-        from app.models.users import User
+        """Count active properties for an agency."""
         stmt = (
             select(func.count(Property.property_id))
-            .join(User, Property.user_id == User.user_id)
             .where(
-                User.agency_id == agency_id,
+                Property.agency_id == agency_id,
                 Property.deleted_at.is_(None)
             )
         )
@@ -660,13 +659,11 @@ class PropertyCRUD:
         skip: int = 0,
         limit: int = 100
     ) -> List[Property]:
-        """Get verified, non-deleted properties for an agency via user relationship."""
-        from app.models.users import User
+        """Get verified, non-deleted properties for an agency."""
         stmt = (
-            select(Property)
-            .join(User, Property.user_id == User.user_id)
+            select(Property).options(joinedload(Property.agency))
             .where(
-                User.agency_id == agency_id,
+                Property.agency_id == agency_id,
                 Property.is_verified == True,
                 Property.deleted_at.is_(None)
             )
@@ -1058,7 +1055,7 @@ class PropertyCRUD:
         """Agent view — verified properties OR their own (any status)."""
         # FIX: Use one SQL query so skip/limit semantics stay correct.
         filters = params.model_dump(exclude_unset=True) if params else {}
-        query = select(Property).where(
+        query = select(Property).options(joinedload(Property.agency)).where(
             Property.deleted_at.is_(None),
             or_(
                 Property.is_verified.is_(True),
@@ -1155,7 +1152,7 @@ class PropertyCRUD:
         Replaces two-query Python merge that broke pagination under load.
         """
         query = (
-            select(Property)
+            select(Property).options(joinedload(Property.agency))
             .where(
                 Property.deleted_at.is_(None),
                 Property.location_id == location_id,
@@ -1238,7 +1235,7 @@ class PropertyCRUD:
         point = ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)
         radius_meters = radius * 1000
         query = (
-            select(Property)
+            select(Property).options(joinedload(Property.agency))
             .where(
                 and_(
                     Property.deleted_at.is_(None),

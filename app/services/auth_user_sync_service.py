@@ -44,6 +44,7 @@ def sync_supabase_auth_user_metadata(user: User) -> None:
             "app_metadata": {
                 "role": getattr(getattr(user, "user_role", None), "value", user.user_role),
                 "is_admin": bool(user.is_admin),
+                "agency_id": getattr(user, "agency_id", None),
             }
         },
     )

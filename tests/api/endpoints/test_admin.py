@@ -303,6 +303,86 @@ class TestAdminUpdateUser:
         )
         assert response.status_code == 401
 
+
+class TestAdminAgencyApplications:
+    def test_admin_lists_agencies_with_status_filter(
+        self, client: TestClient, admin_token_headers, db
+    ):
+        from app.models.agencies import Agency
+
+        pending_agency = Agency(
+            name=f"Pending Agency {uuid.uuid4().hex[:6]}",
+            status="pending",
+            owner_email=f"pending_owner_{uuid.uuid4().hex[:6]}@example.com",
+            owner_name="Pending Owner",
+        )
+        db.add(pending_agency)
+        db.flush()
+        db.refresh(pending_agency)
+
+        response = client.get(
+            "/api/v1/admin/agencies/",
+            params={"status": "pending"},
+            headers=admin_token_headers,
+        )
+
+        assert response.status_code == 200
+        assert any(item["agency_id"] == pending_agency.agency_id for item in response.json())
+        assert all(item["status"] == "pending" for item in response.json())
+
+    def test_admin_approves_agency_and_promotes_owner(
+        self, client: TestClient, admin_token_headers, normal_user, db
+    ):
+        from app.models.agencies import Agency
+
+        pending_agency = Agency(
+            name=f"Approval Agency {uuid.uuid4().hex[:6]}",
+            status="pending",
+            owner_email=normal_user.email,
+            owner_name="Owner Name",
+        )
+        db.add(pending_agency)
+        db.flush()
+        db.refresh(pending_agency)
+
+        with patch("app.api.endpoints.admin.sync_supabase_auth_user_metadata") as mock_sync:
+            response = client.patch(
+                f"/api/v1/admin/agencies/{pending_agency.agency_id}/approve/",
+                headers=admin_token_headers,
+            )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "approved"
+        db.refresh(normal_user)
+        assert getattr(normal_user.user_role, "value", normal_user.user_role) == "agency_owner"
+        assert normal_user.agency_id == pending_agency.agency_id
+        mock_sync.assert_called_once()
+
+    def test_admin_rejects_agency_with_reason(
+        self, client: TestClient, admin_token_headers, db
+    ):
+        from app.models.agencies import Agency
+
+        pending_agency = Agency(
+            name=f"Rejected Agency {uuid.uuid4().hex[:6]}",
+            status="pending",
+            owner_email=f"reject_owner_{uuid.uuid4().hex[:6]}@example.com",
+            owner_name="Reject Owner",
+        )
+        db.add(pending_agency)
+        db.flush()
+        db.refresh(pending_agency)
+
+        response = client.patch(
+            f"/api/v1/admin/agencies/{pending_agency.agency_id}/reject/",
+            headers=admin_token_headers,
+            json={"reason": "Incomplete documentation"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "rejected"
+        assert response.json()["rejection_reason"] == "Incomplete documentation"
+
     def test_admin_role_promotion_syncs_supabase_auth_metadata(
         self, client: TestClient, admin_token_headers, normal_user, db
     ):

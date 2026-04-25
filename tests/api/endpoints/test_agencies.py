@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 import uuid
 from app.api.endpoints import agencies as agencies_api
 from app.models.users import User, UserRole
+from app.core.security import decode_token
 
 
 class TestReadAgencies:
@@ -32,6 +33,123 @@ class TestReadAgency:
         data = response.json()
         assert data["agency_id"] == agency.agency_id
         assert data["name"] == agency.name
+
+
+class TestAgencyApplication:
+
+    def test_public_agency_application_creates_pending_agency(
+        self, client: TestClient, db
+    ):
+        email = f"owner_{uuid.uuid4().hex[:6]}@example.com"
+        response = client.post(
+            "/api/v1/agencies/apply/",
+            json={
+                "name": f"Applicant Agency {uuid.uuid4().hex[:6]}",
+                "description": "Pending application",
+                "address": "Lagos",
+                "owner_email": email,
+                "owner_name": "Applicant Owner",
+                "owner_phone_number": "+234700000001",
+            },
+        )
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["agency_id"] is not None
+        assert data["status"] == "pending"
+
+    def test_agency_owner_can_invite_to_own_agency(
+        self, client: TestClient, agency, agency_owner_token_headers
+    ):
+        response = client.post(
+            f"/api/v1/agencies/{agency.agency_id}/invite/",
+            json={"email": "newagent@example.com"},
+            headers=agency_owner_token_headers,
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["agency_id"] == agency.agency_id
+        assert data["invite_token"]
+
+    def test_agency_owner_cannot_invite_to_other_agency(
+        self, client: TestClient, other_agency, agency_owner_token_headers
+    ):
+        response = client.post(
+            f"/api/v1/agencies/{other_agency.agency_id}/invite/",
+            json={"email": "newagent@example.com"},
+            headers=agency_owner_token_headers,
+        )
+
+        assert response.status_code == 403
+
+    def test_accept_invite_promotes_existing_user(
+        self, client: TestClient, db, agency, agency_owner_token_headers, normal_user
+    ):
+        invite_response = client.post(
+            f"/api/v1/agencies/{agency.agency_id}/invite/",
+            json={"email": normal_user.email},
+            headers=agency_owner_token_headers,
+        )
+        assert invite_response.status_code == 200
+
+        response = client.post(
+            "/api/v1/agencies/accept-invite/",
+            json={"invite_token": invite_response.json()["invite_token"]},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "accepted"
+
+    def test_accept_invite_for_missing_user_returns_register_redirect(
+        self, client: TestClient, agency, agency_owner_token_headers
+    ):
+        invite_response = client.post(
+            f"/api/v1/agencies/{agency.agency_id}/invite/",
+            json={"email": f"missing_{uuid.uuid4().hex[:6]}@example.com"},
+            headers=agency_owner_token_headers,
+        )
+        assert invite_response.status_code == 200
+
+        response = client.post(
+            "/api/v1/agencies/accept-invite/",
+            json={"invite_token": invite_response.json()["invite_token"]},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "registration_required"
+        assert response.json()["redirect_url"].startswith("/register?invite_token=")
+
+    def test_accept_invite_rejects_malformed_token(self, client: TestClient):
+        response = client.post(
+            "/api/v1/agencies/accept-invite/",
+            json={"invite_token": "not-a-valid-token"},
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Invalid or expired invite token"
+
+    def test_agency_owner_token_claim_passes_agent_gated_property_endpoint(
+        self, client: TestClient, agency_owner_user
+    ):
+        from app.core.security import generate_access_token
+
+        token = generate_access_token(
+            supabase_id=agency_owner_user.supabase_id,
+            user_id=agency_owner_user.user_id,
+            user_role=agency_owner_user.user_role.value,
+            agency_id=agency_owner_user.agency_id,
+        )
+        payload = decode_token(token)
+
+        assert payload.role == "agency_owner"
+        assert payload.agency_id == agency_owner_user.agency_id
+
+        response = client.get(
+            "/api/v1/properties/",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
 
 
 class TestCreateAgency:
@@ -353,6 +471,7 @@ class TestReadAgencyProperties:
             title="Serialized Agency Property",
             description="Agency listing for serialization test",
             user_id=agent_user.user_id,
+            agency_id=agency.agency_id,
             property_type_id=property_type.property_type_id,
             location_id=location.location_id,
             geom=WKTElement('POINT(3.3488 6.6018)', srid=4326),

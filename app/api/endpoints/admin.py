@@ -6,7 +6,7 @@ Handles system-wide operations with proper soft delete, audit tracking, and RLS 
 import logging
 from typing import Any, Dict, List, cast as typing_cast  # Alias typing.cast so endpoint-local narrowing never shadows SQLAlchemy helpers in future edits.
 from decimal import Decimal
-from fastapi import APIRouter, Body, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 
@@ -35,8 +35,8 @@ from app.services.auth_user_sync_service import (
 
 # --- DIRECT SCHEMA IMPORTS ---
 # from app.schemas.users import UserResponse, UserCreate, UserUpdate
-from app.schemas.users import UserResponse, UserCreate, UserUpdate
-from app.schemas.agencies import AgencyCreate
+from app.schemas.users import UserResponse, UserCreate, UserUpdate, UserRole
+from app.schemas.agencies import AgencyCreate, AgencyRejectRequest, AgencyResponse
 from app.schemas.agent_profiles import AgentProfileCreate
 from app.schemas.properties import PropertyResponse, PropertyUpdate, ListingStatus
 from app.schemas.properties import PropertyCreate, ListingType as PropertyListingType
@@ -91,6 +91,121 @@ def _serialize_property_items(properties: List[Any]) -> List[dict[str, Any]]:
 
 
 # USER MANAGEMENT ENDPOINTS
+
+@router.get("/agencies/", response_model=List[AgencyResponse])
+def get_admin_agencies(
+    db: Session = Depends(get_db),
+    status_filter: str | None = Query(default=None, alias="status"),
+    pagination: dict = Depends(pagination_params),
+    current_user: UserResponse = Depends(get_current_admin_user)
+) -> Any:
+    """List agencies for admin review, optionally filtered by status."""
+    if status_filter is not None and status_filter not in {"pending", "approved", "rejected"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid agency status",
+        )
+    return agency_crud.get_multi(db, **pagination, status=status_filter)
+
+
+@router.patch("/agencies/{agency_id}/approve/", response_model=AgencyResponse)
+def approve_agency_application(
+    *,
+    db: Session = Depends(get_db),
+    agency_id: int,
+    current_user: UserResponse = Depends(get_current_admin_user),
+    _: None = Depends(validate_request_size)
+) -> Any:
+    """
+    Approve a pending agency and promote the applicant atomically.
+
+    The applicant is resolved by agencies.owner_email. If Supabase Auth metadata
+    sync fails, the transaction is rolled back so local DB role and external JWT
+    claims cannot drift.
+    """
+    agency = agency_crud.get(db, agency_id=agency_id)
+    if agency is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agency not found",
+        )
+
+    owner_email = typing_cast(str | None, agency.owner_email)
+    if owner_email is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Agency application has no owner email",
+        )
+
+    owner_user = user_crud.get_by_email(db, email=owner_email)
+    if owner_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Applicant user account not found",
+        )
+
+    actor_supabase_id = str(current_user.supabase_id)
+    try:
+        owner_user = user_crud.update(
+            db,
+            db_obj=owner_user,
+            obj_in={"user_role": UserRole.AGENCY_OWNER, "agency_id": agency_id},
+            updated_by=actor_supabase_id,
+        )
+        agency = agency_crud.update(
+            db,
+            db_obj=agency,
+            obj_in={
+                "status": "approved",
+                "is_verified": True,
+                "rejection_reason": None,
+            },
+            updated_by=actor_supabase_id,
+        )
+        sync_supabase_auth_user_metadata(owner_user)
+    except SupabaseUserSyncError as exc:
+        db.rollback()
+        logger.warning(
+            "Agency approval rolled back because Supabase Auth sync failed",
+            extra={"agency_id": agency_id, "owner_email": owner_email},
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+    return agency
+
+
+@router.patch("/agencies/{agency_id}/reject/", response_model=AgencyResponse)
+def reject_agency_application(
+    *,
+    db: Session = Depends(get_db),
+    agency_id: int,
+    reject_in: AgencyRejectRequest | None = None,
+    current_user: UserResponse = Depends(get_current_admin_user),
+    _: None = Depends(validate_request_size)
+) -> Any:
+    """Reject a pending agency application with an optional reason."""
+    agency = agency_crud.get(db, agency_id=agency_id)
+    if agency is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agency not found",
+        )
+
+    reason = reject_in.reason if reject_in is not None else None
+    return agency_crud.update(
+        db,
+        db_obj=agency,
+        obj_in={
+            "status": "rejected",
+            "is_verified": False,
+            "rejection_reason": reason,
+        },
+        updated_by=str(current_user.supabase_id),
+    )
 
 @router.get("/users", response_model=Dict[str, Any])
 def get_users(

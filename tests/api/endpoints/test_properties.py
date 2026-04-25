@@ -242,7 +242,7 @@ class TestCreateProperty:
         assert "longitude" in response.json()["detail"].lower()
 
     def test_agent_creates_property_success(
-        self, client: TestClient, agent_token_headers, property_create_payload
+        self, client: TestClient, agent_token_headers, property_create_payload, agency
     ):
         """Agent with valid agency creates property → 201."""
         response = client.post(
@@ -253,6 +253,8 @@ class TestCreateProperty:
         assert response.status_code == 201
         data = response.json()
         assert "property_id" in data
+        assert data["agency_id"] == agency.agency_id
+        assert data["agency_name"] == agency.name
 
     def test_admin_creates_property_success(
         self, client: TestClient, admin_token_headers, property_create_payload

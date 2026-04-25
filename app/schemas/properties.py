@@ -179,6 +179,8 @@ class PropertyResponse(PropertyBase):
     """Schema for property responses (includes DB-generated fields)"""
     property_id: int
     user_id: int
+    agency_id: Optional[int] = None
+    agency_name: Optional[str] = None
     is_featured: bool
     listing_status: ListingStatus
     is_verified: bool

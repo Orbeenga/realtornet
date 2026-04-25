@@ -171,7 +171,7 @@ class AgentProfileCRUD:
             raise ValueError("User not found or is inactive")
         
         user_role = cast(UserRole, user.user_role)  # Cast the loaded ORM enum value to the concrete runtime role before comparing it.
-        if user_role != UserRole.AGENT:
+        if user_role not in {UserRole.AGENT, UserRole.AGENCY_OWNER}:
             raise ValueError(f"User must have agent role (current role: {user_role})")
         
         return user

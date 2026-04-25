@@ -12,10 +12,14 @@ from datetime import datetime, timezone
 import logging
 
 from app.models.agencies import Agency
-from app.schemas.agencies import AgencyCreate, AgencyUpdate
+from app.schemas.agencies import AgencyApplicationCreate, AgencyCreate, AgencyUpdate
 
 
 logger = logging.getLogger(__name__)
+
+
+def _status_value(value: Any) -> str:
+    return str(getattr(value, "value", value))
 
 
 class AgencyCRUD:
@@ -66,7 +70,8 @@ class AgencyCRUD:
         *, 
         skip: int = 0, 
         limit: int = 100,
-        is_verified: Optional[bool] = None
+        is_verified: Optional[bool] = None,
+        status: Optional[str] = None,
     ) -> List[Agency]:
         """
         Get multiple agencies with optional verification filter and pagination.
@@ -77,6 +82,8 @@ class AgencyCRUD:
         # Apply verification filter
         if is_verified is not None:
             query = query.where(Agency.is_verified == is_verified)
+        if status is not None:
+            query = query.where(Agency.status == status)
         
         # Order by name alphabetically
         query = query.order_by(Agency.name.asc())
@@ -115,7 +122,13 @@ class AgencyCRUD:
         
         return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence return to the declared concrete list type.
     
-    def count(self, db: Session, *, is_verified: Optional[bool] = None) -> int:
+    def count(
+        self,
+        db: Session,
+        *,
+        is_verified: Optional[bool] = None,
+        status: Optional[str] = None,
+    ) -> int:
         """Count non-deleted agencies with optional verification filter"""
         query = select(func.count(Agency.agency_id)).where(
             Agency.deleted_at.is_(None)
@@ -123,6 +136,8 @@ class AgencyCRUD:
         
         if is_verified is not None:
             query = query.where(Agency.is_verified == is_verified)
+        if status is not None:
+            query = query.where(Agency.status == status)
         
         return int(db.execute(query).scalar() or 0)  # Count queries can surface None to the type checker even though callers expect an int.
     
@@ -157,7 +172,12 @@ class AgencyCRUD:
             description=create_data.get("description"),
             logo_url=create_data.get("logo_url"),
             website_url=create_data.get("website_url"),
-            is_verified=False,
+            is_verified=create_data.get("is_verified", False),
+            status=_status_value(create_data.get("status", "approved")),
+            owner_email=create_data.get("owner_email"),
+            owner_name=create_data.get("owner_name"),
+            owner_phone_number=create_data.get("owner_phone_number"),
+            rejection_reason=create_data.get("rejection_reason"),
             created_by=created_by
             # Timestamps handled by DB DEFAULT now()
         )
@@ -175,6 +195,30 @@ class AgencyCRUD:
             }
         )
         
+        return db_obj
+
+    def create_application(
+        self,
+        db: Session,
+        *,
+        obj_in: AgencyApplicationCreate,
+    ) -> Agency:
+        """Create a pending public agency application."""
+        db_obj = Agency(
+            name=obj_in.name,
+            email=obj_in.email.lower() if obj_in.email is not None else obj_in.owner_email.lower(),
+            phone_number=obj_in.phone_number or obj_in.owner_phone_number,
+            address=obj_in.address,
+            description=obj_in.description,
+            is_verified=False,
+            status="pending",
+            owner_email=obj_in.owner_email.lower(),
+            owner_name=obj_in.owner_name,
+            owner_phone_number=obj_in.owner_phone_number,
+        )
+        db.add(db_obj)
+        db.flush()
+        db.refresh(db_obj)
         return db_obj
     
     
@@ -229,6 +273,9 @@ class AgencyCRUD:
         protected_fields = {"agency_id", "created_at", "created_by"}
         for field in protected_fields:
             update_data.pop(field, None)
+
+        if "status" in update_data:
+            update_data["status"] = _status_value(update_data["status"])
         
         # Apply updates
         for field, value in update_data.items():

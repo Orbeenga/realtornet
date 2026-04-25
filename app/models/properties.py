@@ -35,6 +35,7 @@ class Property(Base, AuditMixin, SoftDeleteMixin):
     title = Column(String, nullable=False)
     description = Column(Text, nullable=False)
     user_id = Column(BigInteger, ForeignKey("users.user_id"), nullable=True)
+    agency_id = Column(BigInteger, ForeignKey("agencies.agency_id"), nullable=True, index=True)
     property_type_id = Column(BigInteger, ForeignKey("property_types.property_type_id"), nullable=True)
     location_id = Column(BigInteger, ForeignKey("locations.location_id"), nullable=True)
     geom = Column(Geography(geometry_type='POINT', srid=4326), nullable=True)
@@ -74,6 +75,7 @@ class Property(Base, AuditMixin, SoftDeleteMixin):
 
     # Relationships
     owner = relationship("User", back_populates="properties", foreign_keys=[user_id])
+    agency = relationship("Agency")
     property_type = relationship("PropertyType", back_populates="properties")
     location = relationship("Location", back_populates="properties")
     images = relationship("PropertyImage", back_populates="property")
@@ -89,3 +91,11 @@ class Property(Base, AuditMixin, SoftDeleteMixin):
         property_id = self.__dict__.get("property_id", "unknown")
         title = self.__dict__.get("title", "unknown")
         return f"<Property(property_id={property_id}, title={title})>"
+
+    @property
+    def agency_name(self) -> str | None:
+        """Expose joined agency branding for response serializers."""
+        agency_obj = self.__dict__.get("agency")
+        if agency_obj is None:
+            return None
+        return getattr(agency_obj, "name", None)

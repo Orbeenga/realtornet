@@ -3,8 +3,10 @@
 Agencies management endpoints - Canonical compliant
 Handles real estate agencies (multi-tenant hub) with full audit trail and soft delete
 """
+from datetime import datetime, timedelta, timezone
 from typing import Any, List, cast  # Narrow dependency-backed values locally without changing the frozen endpoint contract.
 from fastapi import APIRouter, Depends, HTTPException, status
+from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 import logging
 
@@ -19,6 +21,7 @@ from app.api.dependencies import (
     get_db,
     get_current_user,
     get_current_active_user,
+    get_current_agency_owner_user,
     get_current_admin_user,
     validate_request_size,
     pagination_params,
@@ -29,16 +32,58 @@ from app.schemas.users import UserResponse
 from app.models.users import User  # Narrow endpoint-local user values back to the ORM shape expected by CRUD permission helpers.
 from app.schemas.agencies import (
     AgencyResponse,
+    AgencyApplicationCreate,
+    AgencyApplicationResponse,
     AgencyCreate,
+    AgencyInviteAcceptRequest,
+    AgencyInviteAcceptResponse,
+    AgencyInviteCreate,
+    AgencyInviteResponse,
     AgencyUpdate
 )
 from app.schemas.agent_profiles import AgentProfileResponse
 from app.schemas.properties import PropertyResponse
+from app.core.config import settings
+from app.models.users import UserRole
 
 router = APIRouter()
 
 # Set up logging
 logger = logging.getLogger(__name__)
+
+AGENCY_INVITE_TOKEN_TYPE = "agency_invite"
+
+
+def _create_agency_invite_token(*, agency_id: int, email: str) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(days=7)
+    return jwt.encode(
+        {
+            "token_type": AGENCY_INVITE_TOKEN_TYPE,
+            "agency_id": agency_id,
+            "email": email.lower(),
+            "exp": int(expire.timestamp()),
+            "iat": int(datetime.now(timezone.utc).timestamp()),
+        },
+        settings.SECRET_KEY,
+        algorithm=settings.ALGORITHM,
+    )
+
+
+def _decode_agency_invite_token(token: str) -> dict[str, Any]:
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    except JWTError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired invite token",
+        ) from exc
+
+    if payload.get("token_type") != AGENCY_INVITE_TOKEN_TYPE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid invite token",
+        )
+    return payload
 
 
 @router.get("/", response_model=List[AgencyResponse])
@@ -55,6 +100,83 @@ def read_agencies(
     """
     agencies = agency_crud.get_multi(db, **pagination,)
     return agencies
+
+
+@router.post("/apply/", response_model=AgencyApplicationResponse, status_code=status.HTTP_201_CREATED)
+def apply_for_agency(
+    *,
+    db: Session = Depends(get_db),
+    agency_in: AgencyApplicationCreate,
+    _: None = Depends(validate_request_size),
+) -> Any:
+    """
+    Public agency application.
+
+    Applications start pending. Admin approval later promotes the owner account
+    attached to owner_email.
+    """
+    if agency_crud.get_by_name(db, name=agency_in.name):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Agency with this name already exists",
+        )
+
+    agency_email = agency_in.email or agency_in.owner_email
+    if agency_email and agency_crud.get_by_email(db, email=str(agency_email)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Agency with this email already exists",
+        )
+
+    agency = agency_crud.create_application(db, obj_in=agency_in)
+    return {"agency_id": agency.agency_id, "status": agency.status}
+
+
+@router.post("/accept-invite/", response_model=AgencyInviteAcceptResponse)
+def accept_agency_invite(
+    *,
+    db: Session = Depends(get_db),
+    invite_in: AgencyInviteAcceptRequest,
+    _: None = Depends(validate_request_size),
+) -> Any:
+    payload = _decode_agency_invite_token(invite_in.invite_token)
+    email = str(payload.get("email", "")).lower()
+    raw_agency_id = payload.get("agency_id")
+    if raw_agency_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid invite token",
+        )
+    agency_id = int(raw_agency_id)
+
+    agency = agency_crud.get(db, agency_id=agency_id)
+    if agency is None or str(agency.status) != "approved":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agency not found",
+        )
+
+    invited_user = user_crud.get_by_email(db, email=email)
+    if invited_user is None:
+        return {
+            "status": "registration_required",
+            "agency_id": agency_id,
+            "redirect_url": f"/register?invite_token={invite_in.invite_token}",
+            "email": email,
+        }
+
+    invited_user = user_crud.update(
+        db,
+        db_obj=invited_user,
+        obj_in={"user_role": UserRole.AGENT, "agency_id": agency_id},
+        updated_by=str(invited_user.supabase_id),
+    )
+    return {
+        "status": "accepted",
+        "agency_id": agency_id,
+        "user_id": invited_user.user_id,
+        "email": email,
+    }
 
 
 @router.get("/{agency_id}", response_model=AgencyResponse)
@@ -305,6 +427,47 @@ def read_agency_properties(
         **pagination,
     )
     return properties
+
+
+@router.post("/{agency_id}/invite/", response_model=AgencyInviteResponse)
+def invite_agency_agent(
+    *,
+    db: Session = Depends(get_db),
+    agency_id: int,
+    invite_in: AgencyInviteCreate,
+    current_user: UserResponse = Depends(get_current_agency_owner_user),
+    _: None = Depends(validate_request_size),
+) -> Any:
+    """
+    Create a signed agency invite token.
+
+    Email delivery is intentionally deferred; Phase G returns the token directly
+    so the accept-invite flow can be exercised end to end.
+    """
+    current_user_model = cast(User, current_user)
+    current_agency_id = cast(int | None, current_user_model.agency_id)
+    if current_agency_id != agency_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Agency owners can only invite agents to their own agency",
+        )
+
+    agency = agency_crud.get(db, agency_id=agency_id)
+    if agency is None or str(agency.status) != "approved":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agency not found",
+        )
+
+    invite_token = _create_agency_invite_token(
+        agency_id=agency_id,
+        email=str(invite_in.email),
+    )
+    return {
+        "invite_token": invite_token,
+        "agency_id": agency_id,
+        "email": invite_in.email,
+    }
 
 
 @router.get("/{agency_id}/stats")

@@ -152,6 +152,8 @@ class TestReadReceivedInquiries:
             "full_name": f"{normal_user.first_name} {normal_user.last_name}",
             "email": normal_user.email,
         }
+        assert matching_inquiry["property"]["property_id"] == unverified_property_owned_by_agent.property_id
+        assert matching_inquiry["property"]["title"] == unverified_property_owned_by_agent.title
 
     def test_received_inquiries_excludes_deleted_property(
         self, client: TestClient, normal_user_token_headers, agent_token_headers,

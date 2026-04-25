@@ -39,7 +39,7 @@ class UserCRUD:
         if actor_supabase_id is None:
             return
 
-        if cast(UserRole, db_obj.user_role) != UserRole.AGENT:
+        if cast(UserRole, db_obj.user_role) not in {UserRole.AGENT, UserRole.AGENCY_OWNER}:
             return
 
         # Flush the role change first. SessionLocal disables autoflush in this
@@ -452,7 +452,11 @@ class UserCRUD:
     
     def is_agent(self, user: User) -> bool:
         """Check if user has agent role"""
-        return cast(UserRole, user.user_role) == UserRole.AGENT  # Narrow ORM descriptor-backed enum field to the runtime user role value.
+        return cast(UserRole, user.user_role) in {UserRole.AGENT, UserRole.AGENCY_OWNER}  # Narrow ORM descriptor-backed enum field to the runtime user role value.
+
+    def is_agency_owner(self, user: User) -> bool:
+        """Check if user owns an agency."""
+        return cast(UserRole, user.user_role) == UserRole.AGENCY_OWNER
     
     def is_admin(self, user: User) -> bool:
         """Check if user has admin privileges"""

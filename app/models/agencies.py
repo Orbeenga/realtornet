@@ -44,6 +44,11 @@ class Agency(Base, AuditMixin, SoftDeleteMixin):
     
     # Verification status
     is_verified = Column(Boolean, nullable=True, server_default=text('false'))
+    status = Column(String, nullable=False, server_default=text("'approved'"))
+    owner_email = Column(String, nullable=True)
+    owner_name = Column(String, nullable=True)
+    owner_phone_number = Column(String, nullable=True)
+    rejection_reason = Column(Text, nullable=True)
     
     # Timestamps + audit + soft delete inherited from mixins:
     # - created_at, updated_at, updated_by (AuditMixin)
@@ -58,6 +63,10 @@ class Agency(Base, AuditMixin, SoftDeleteMixin):
         CheckConstraint(
             "phone_number IS NULL OR length(trim(phone_number)) > 0",
             name="agencies_phone_number_not_empty_check"
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'approved', 'rejected')",
+            name="agencies_status_check"
         ),
     )
     

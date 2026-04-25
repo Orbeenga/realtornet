@@ -43,6 +43,13 @@ with engine.connect() as conn:
     conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis;"))
     conn.execute(text("""
         DO $$ BEGIN
+            CREATE TYPE user_role_enum AS ENUM ('seeker', 'agent', 'agency_owner', 'admin');
+        EXCEPTION WHEN duplicate_object THEN
+            ALTER TYPE user_role_enum ADD VALUE IF NOT EXISTS 'agency_owner';
+        END $$;
+    """))
+    conn.execute(text("""
+        DO $$ BEGIN
             CREATE TYPE listing_type_enum AS ENUM ('sale', 'rent', 'lease');
         EXCEPTION WHEN duplicate_object THEN null;
         END $$;
@@ -55,7 +62,7 @@ with engine.connect() as conn:
     """))
     conn.execute(text("""
         DO $$ BEGIN
-            CREATE TYPE profile_status_enum AS ENUM ('active', 'inactive', 'pending');
+            CREATE TYPE profile_status_enum AS ENUM ('active', 'inactive', 'pending', 'suspended');
         EXCEPTION WHEN duplicate_object THEN null;
         END $$;
     """))
@@ -149,6 +156,26 @@ def agent_user(db, agency):
 
 
 @pytest.fixture(scope="function")
+def agency_owner_user(db, agency):
+    """Agency owner user — belongs to the default agency."""
+    user = User(
+        email="agency_owner@example.com",
+        password_hash=get_password_hash("password"),
+        first_name="Agency",
+        last_name="Owner",
+        phone_number="+1234567893",
+        user_role=UserRole.AGENCY_OWNER,
+        is_verified=True,
+        supabase_id=uuid.uuid4(),
+        agency_id=agency.agency_id,
+    )
+    db.add(user)
+    db.flush()
+    db.refresh(user)
+    return user
+
+
+@pytest.fixture(scope="function")
 def admin_user(db):
     user = User(
         email="admin@example.com",
@@ -187,6 +214,17 @@ def agent_token_headers(agent_user):
         supabase_id=agent_user.supabase_id,
         user_id=agent_user.user_id,
         user_role=agent_user.user_role.value,
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def agency_owner_token_headers(agency_owner_user):
+    token = generate_access_token(
+        supabase_id=agency_owner_user.supabase_id,
+        user_id=agency_owner_user.user_id,
+        user_role=agency_owner_user.user_role.value,
+        agency_id=agency_owner_user.agency_id,
     )
     return {"Authorization": f"Bearer {token}"}
 
