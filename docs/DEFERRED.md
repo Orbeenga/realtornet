@@ -59,3 +59,25 @@ Deferred to Phase G. No real traffic data to size policy against.
 Revisit after 60 days of production usage. Decision at that point:
 - rolling window (e.g. 90 days)
 - archive-to-cold-storage strategy
+
+## DEF-G-INQ-002: Inquiry cards missing property title/link on agent inbox
+
+Agent `/account/inquiries` cards currently show seeker contact details but no property title or property link.
+
+Observed behavior:
+- secondary fetch for `GET /api/v1/properties/{id}/` returns `204` with no body
+- origin is still unknown
+- backend route inspection rules out an intentional `204` from the FastAPI property handler
+- frontend normalization was reviewed separately and reported clean
+- suspected layer is Vercel -> Railway proxy behavior, but this is not yet proven
+
+Backend gap also exists:
+- `GET /api/v1/inquiries/received` does not join or serialize related property data
+- current frontend relies on N+1 hydration using `property_id`
+
+Phase decision:
+- accept for Phase F
+- defer full investigation and cleanup to Phase G
+
+Next verification step:
+- inspect the live browser Network tab with auth headers visible for the failing property fetches

@@ -165,9 +165,23 @@ AS $function$
 $function$;
 
 GRANT USAGE ON SCHEMA public TO anon, authenticated;
-GRANT SELECT ON public.agencies, public.agent_profiles, public.amenities, public.locations, public.properties, public.property_amenities, public.property_images, public.property_types, public.reviews, public.users TO anon, authenticated;
+GRANT SELECT ON public.agencies, public.agent_profiles, public.amenities, public.locations, public.properties, public.property_amenities, public.property_images, public.property_types, public.reviews TO anon, authenticated;
+GRANT SELECT ON public.users TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.agencies, public.agent_profiles, public.amenities, public.favorites, public.inquiries, public.locations, public.profiles, public.properties, public.property_amenities, public.property_images, public.property_types, public.reviews, public.saved_searches, public.users TO authenticated;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO authenticated;
+REVOKE SELECT ON public.users FROM anon;
+
+CREATE OR REPLACE VIEW public.agent_public_profiles AS
+SELECT
+    user_id,
+    concat_ws(' ', first_name, last_name) AS full_name,
+    profile_image_url AS avatar_url,
+    agency_id
+FROM public.users
+WHERE user_role = 'agent'::user_role_enum
+  AND deleted_at IS NULL;
+
+GRANT SELECT ON public.agent_public_profiles TO anon, authenticated;
 
 CREATE POLICY agencies_select_public
 ON public.agencies
@@ -654,15 +668,6 @@ FOR DELETE
 TO authenticated
 USING (user_id = public.current_user_id());
 
-CREATE POLICY users_select_public_realtors
-ON public.users
-FOR SELECT
-TO anon, authenticated
-USING (
-    deleted_at IS NULL
-    AND user_role = 'agent'
-);
-
 CREATE POLICY users_select_self_or_admin
 ON public.users
 FOR SELECT
@@ -741,6 +746,7 @@ DROP FUNCTION IF EXISTS public.is_current_user_admin();
 DROP FUNCTION IF EXISTS public.current_user_id();
 DROP FUNCTION IF EXISTS public.current_request_role();
 DROP FUNCTION IF EXISTS public.current_supabase_id();
+DROP VIEW IF EXISTS public.agent_public_profiles;
 """
 
 
