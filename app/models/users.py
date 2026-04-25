@@ -27,6 +27,7 @@ class UserRole(str, enum.Enum):
     # User role enum - matches DB CHECK constraint exactly.
     SEEKER = "seeker"
     AGENT = "agent"
+    AGENCY_OWNER = "agency_owner"
     ADMIN = "admin"
 
 class User(Base, AuditMixin, SoftDeleteMixin):
@@ -117,7 +118,7 @@ class User(Base, AuditMixin, SoftDeleteMixin):
             name="users_phone_number_not_empty_check"
         ),
         CheckConstraint(
-            "user_role::text = ANY (ARRAY['seeker'::text, 'agent'::text, 'admin'::text])",
+            "user_role::text = ANY (ARRAY['seeker'::text, 'agent'::text, 'agency_owner'::text, 'admin'::text])",
             name="users_user_role_check"
         ),
     )

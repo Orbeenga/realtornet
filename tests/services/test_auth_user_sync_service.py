@@ -45,7 +45,7 @@ def test_sync_supabase_auth_user_metadata_updates_role_and_admin_flags():
 
     mock_update.assert_called_once_with(
         user.supabase_id,
-        {"app_metadata": {"role": "agent", "is_admin": True}},
+        {"app_metadata": {"role": "agent", "is_admin": True, "agency_id": None}},
     )
 
 
@@ -66,7 +66,7 @@ def test_sync_supabase_auth_user_metadata_accepts_string_roles():
 
     mock_update.assert_called_once_with(
         user.supabase_id,
-        {"app_metadata": {"role": "seeker", "is_admin": False}},
+        {"app_metadata": {"role": "seeker", "is_admin": False, "agency_id": None}},
     )
 
 

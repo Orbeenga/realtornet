@@ -17,6 +17,7 @@ class UserRole(str, Enum):
     """User role enum - matches DB user_role_enum"""
     SEEKER = "seeker"
     AGENT = "agent"
+    AGENCY_OWNER = "agency_owner"
     ADMIN = "admin"
 
 
@@ -28,6 +29,7 @@ class UserBase(BaseModel):
     last_name: str
     phone_number: Optional[str] = None
     user_role: UserRole
+    agency_id: Optional[int] = None
     profile_image_url: Optional[str] = None
 
     @field_validator('email')

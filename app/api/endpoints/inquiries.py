@@ -30,6 +30,7 @@ from app.schemas.inquiries import (
     InquiryResponse,
     InquiryUpdate,
 )
+from app.schemas.properties import PropertyResponse
 
 router = APIRouter()
 
@@ -49,6 +50,11 @@ def _build_inquiry_extended_response(inquiry: Any) -> dict[str, Any]:
                 "email": email,
             }
 
+    property_payload = None
+    inquiry_property = getattr(inquiry, "property", None)
+    if inquiry_property is not None:
+        property_payload = PropertyResponse.model_validate(inquiry_property).model_dump(mode="json")
+
     return {
         "inquiry_id": inquiry.inquiry_id,
         "user_id": inquiry.user_id,
@@ -60,6 +66,7 @@ def _build_inquiry_extended_response(inquiry: Any) -> dict[str, Any]:
         "deleted_at": inquiry.deleted_at,
         "deleted_by": inquiry.deleted_by,
         "user": user_payload,
+        "property": property_payload,
     }
 
 
