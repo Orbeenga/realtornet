@@ -3,7 +3,7 @@
 ## Entry State
 
 FastAPI backend deployed on Railway. Sentry is instrumented.
-Phase D and Phase E are closed. Phase F is still active.
+Phase F is at the exit-checklist stage pending production cleanup verification and final live retests.
 
 Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this file for backend-specific state.
 
@@ -18,10 +18,13 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 
 - Database: Supabase PostgreSQL
 - Auth source of truth: Supabase Auth
+- Production Supabase project ref: `avkhpachzsbgmbnkfnhu`
+- Dev Supabase project ref: `umhtnqxdvffpifqbdtjs`
 - Public registration creates a Supabase Auth identity first, then mirrors that UUID into the local `users` row
 - Registration rollback deletes the Supabase Auth user if the local DB write fails
 - Runtime auth is still based on backend-issued JWTs after login, not direct validation of raw Supabase access tokens
 - Legacy account reconciliation is still an open backend concern
+- Never mix production and dev Supabase projects during cleanup, verification, or auth debugging
 
 ## RLS State
 
@@ -46,6 +49,7 @@ F.2 is closed.
 - Property creation currently enforces agency membership via `users.agency_id`
 - Agent promotion must atomically create an `agent_profiles` row in the same transaction
 - Pagination and visibility assumptions should always be pulled from actual endpoint code, not memory
+- Trailing slashes matter on authenticated endpoints because 308 redirects can drop Bearer headers on some clients; frontend OPEN-001 normalized paths and is deployed
 
 ## Open Backend Items
 
@@ -63,6 +67,7 @@ F.2 is closed.
 - Admin and agent roles are internal grants, never browser-assigned
 - Promoting a user to agent must leave both `users.user_role = 'agent'` and a live `agent_profiles` row
 - Property creation for agents depends on `users.agency_id`
+- Agency-wide inquiries remain deferred to Phase G; do not build aggregation shortcuts that create N+1 behavior
 
 ## Reference Data
 
@@ -87,3 +92,11 @@ Do not answer from stale docs when the router, schema, or CRUD layer says otherw
 - `pyright` must stay at zero errors
 - `pytest` coverage should not regress
 - Any non-obvious workaround, invariant, or guard clause added during a task must be documented inline in touched files
+
+## Next Session Handover
+
+- Verify production cleanup removed test accounts and seed-owned property noise safely
+- Re-test inquiry and admin-user flows after cleanup
+- Run the Phase F exit checklist end to end
+- Declare Phase F closed only after those checks pass
+- Open Phase G immediately after closure
