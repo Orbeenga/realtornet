@@ -19,6 +19,10 @@
 - Prefer migration-safe, dependency-ordered changes
 - Flag any ORM/schema/router drift from DB truth
 
+## Current phase state
+- Phase F is closed
+- Phase G is open
+
 ## Locked environment decisions
 - Production Supabase project ref: `avkhpachzsbgmbnkfnhu`
 - Dev Supabase project ref: `umhtnqxdvffpifqbdtjs`
@@ -31,6 +35,19 @@
 - Agency-wide inquiry rollup is deferred to Phase G; do not aggregate per-property inquiry calls in the frontend
 - Public signup remains seeker-only; admin and agent are backend-authoritative roles
 
+## Phase G backlog
+- `DEF-G-INQ-002` - inquiry property hydration / 204 investigation
+- `DEF-G-TBT-001` - TBT < 100ms (RSC evaluation)
+- `DEF-G-MOD-001` - full moderation status enum
+- `DEF-G-AG-001` - agency name on property cards
+- `DEF-G-POLYFILL-001` - residual core-js
+- `DEF-002` - audit log retention
+- `DEF-007` - psycopg3 dev restart
+- Advanced map (Mapbox)
+- Admin analytics
+- Saved search notifications
+- Custom domain
+
 ## Review priorities
 1. DB to ORM alignment
 2. Migration safety
@@ -41,8 +58,7 @@
 7. Minimal, maintainable diffs
 
 ## Next session handover
-- Verify production cleanup removed test accounts and seed-owned noise safely
-- Close OPEN-001 and OPEN-002 with live retests
-- Run the Phase F exit checklist end to end
-- Declare Phase F closed only after those checks pass
-- Open Phase G immediately after closure
+- Start Phase G with `DEF-G-INQ-002`
+- Keep production vs dev Supabase separation strict during all investigations
+- Treat agency card branding as blocked on backend enrichment, not frontend fetch fan-out
+- Use the backlog above as the opening queue for planning and execution
