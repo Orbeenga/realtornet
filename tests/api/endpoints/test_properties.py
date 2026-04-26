@@ -467,7 +467,75 @@ class TestVerifyProperty:
         assert response.status_code == 200
         data = response.json()
         assert data["is_verified"] is True
+        assert data["moderation_status"] == "verified"
         assert data["verification_date"] is not None
+
+    @pytest.mark.parametrize(
+        ("moderation_status", "expected_verified"),
+        [
+            ("pending_review", False),
+            ("verified", True),
+            ("rejected", False),
+            ("revoked", False),
+        ],
+    )
+    def test_admin_can_set_all_moderation_statuses(
+        self,
+        client: TestClient,
+        admin_token_headers,
+        unverified_property,
+        moderation_status,
+        expected_verified,
+    ):
+        response = client.patch(
+            f"/api/v1/properties/{unverified_property.property_id}/verify",
+            json={
+                "moderation_status": moderation_status,
+                "moderation_reason": f"Reason for {moderation_status}",
+            },
+            headers=admin_token_headers,
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["moderation_status"] == moderation_status
+        assert data["moderation_reason"] == f"Reason for {moderation_status}"
+        assert data["is_verified"] is expected_verified
+
+    def test_rejected_property_is_hidden_from_public_feed(
+        self, client: TestClient, admin_token_headers, verified_property
+    ):
+        response = client.patch(
+            f"/api/v1/properties/{verified_property.property_id}/verify",
+            json={
+                "moderation_status": "rejected",
+                "moderation_reason": "Photos do not match the listing",
+            },
+            headers=admin_token_headers,
+        )
+        assert response.status_code == 200
+
+        feed_response = client.get(
+            "/api/v1/properties/",
+            params={"search": verified_property.title},
+        )
+        assert feed_response.status_code == 200
+        assert all(
+            item["property_id"] != verified_property.property_id
+            for item in feed_response.json()
+        )
+
+    def test_agent_cannot_reject_or_revoke_moderation(
+        self, client: TestClient, owner_token_headers, unverified_property_owned_by_agent
+    ):
+        response = client.patch(
+            f"/api/v1/properties/{unverified_property_owned_by_agent.property_id}/verify",
+            json={"moderation_status": "revoked"},
+            headers=owner_token_headers,
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Only admins can reject or revoke property moderation"
 
     def test_admin_verified_property_becomes_publicly_visible(
         self, client: TestClient, admin_token_headers, unverified_property
@@ -519,6 +587,7 @@ class TestVerifyProperty:
         assert response.status_code == 200
         data = response.json()
         assert data["is_verified"] is True
+        assert data["moderation_status"] == "verified"
         assert data["verification_date"] is not None
 
     def test_owner_agent_can_unverify_own_property(
@@ -534,6 +603,7 @@ class TestVerifyProperty:
         assert response.status_code == 200
         data = response.json()
         assert data["is_verified"] is False
+        assert data["moderation_status"] == "pending_review"
         assert data["verification_date"] is None
 
     def test_owner_verified_property_becomes_publicly_visible(
