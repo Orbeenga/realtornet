@@ -115,6 +115,15 @@ class AgencyJoinRequestResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class MyAgencyJoinRequestResponse(BaseModel):
+    join_request_id: int
+    agency_id: int
+    agency_name: str
+    status: AgencyJoinRequestStatus
+    rejection_reason: Optional[str] = None
+    submitted_at: datetime
+
+
 class AgencyInviteCreate(BaseModel):
     email: EmailStr
 
