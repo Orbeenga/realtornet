@@ -38,7 +38,7 @@ from app.services.auth_user_sync_service import (
 from app.schemas.users import UserResponse, UserCreate, UserUpdate, UserRole
 from app.schemas.agencies import AgencyCreate, AgencyRejectRequest, AgencyResponse
 from app.schemas.agent_profiles import AgentProfileCreate
-from app.schemas.properties import PropertyResponse, PropertyUpdate, ListingStatus
+from app.schemas.properties import PropertyResponse, PropertyUpdate, ListingStatus, PropertyVerificationUpdate
 from app.schemas.properties import PropertyCreate, ListingType as PropertyListingType
 from app.schemas.inquiries import InquiryResponse
 from app.schemas.stats import SystemStatsResponse as SystemStats
@@ -600,6 +600,7 @@ def verify_property(
     *,
     db: Session = Depends(get_db),
     property_id: int,
+    verification_in: PropertyVerificationUpdate | None = None,
     current_user: UserResponse = Depends(get_current_admin_user),
     _: None = Depends(validate_request_size)
 ) -> Any:
@@ -618,15 +619,16 @@ def verify_property(
             detail="Property not found",
         )
 
-    # FIX: Idempotent endpoint behavior for already-verified properties.
-    property_is_verified: bool = bool(prop.is_verified)  # Narrow the ORM-backed verification flag before the idempotency check.
-    if property_is_verified:
-        return prop
+    moderation_update = verification_in or PropertyVerificationUpdate()
+    requested_status = moderation_update.resolved_moderation_status
 
     # Use CRUD method with audit tracking
     prop = property_crud.verify_property(
         db,
         property_id=property_id,
+        is_verified=requested_status.value == "verified",
+        moderation_status=requested_status.value,
+        moderation_reason=moderation_update.moderation_reason,
         updated_by=str(current_user.supabase_id)  # Normalize the admin Supabase UUID to the CRUD audit string type at the call site.
     )
     

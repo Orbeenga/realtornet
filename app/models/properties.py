@@ -26,6 +26,15 @@ class ListingStatus(str, enum.Enum):
     rented = "rented"
     unavailable = "unavailable"
 
+
+class ModerationStatus(str, enum.Enum):
+    # Listing moderation lifecycle for admin review.
+    pending_review = "pending_review"
+    verified = "verified"
+    rejected = "rejected"
+    revoked = "revoked"
+
+
 class Property(Base, AuditMixin, SoftDeleteMixin):
     # Property listing model.
     # Primary Key: property_id (bigint GENERATED ALWAYS AS IDENTITY).
@@ -55,6 +64,12 @@ class Property(Base, AuditMixin, SoftDeleteMixin):
         server_default=text("'available'::listing_status_enum")
     )
     is_verified = Column(Boolean, nullable=True, server_default=text("false"))
+    moderation_status = Column(
+        ENUM(ModerationStatus, name="moderation_status_enum", create_type=False),
+        nullable=False,
+        server_default=text("'pending_review'::moderation_status_enum"),
+    )
+    moderation_reason = Column(Text, nullable=True)
     verification_date = Column(DateTime(timezone=True), nullable=True)
     
     # New amenity/feature columns

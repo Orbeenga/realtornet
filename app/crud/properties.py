@@ -13,7 +13,7 @@ from fastapi import HTTPException
 from geoalchemy2.functions import ST_DWithin, ST_Distance, ST_MakeEnvelope, ST_SetSRID, ST_MakePoint
 from geoalchemy2.elements import WKTElement
 
-from app.models.properties import Property, ListingType, ListingStatus
+from app.models.properties import Property, ListingType, ListingStatus, ModerationStatus
 from app.models.locations import Location
 from app.schemas.properties import PropertyCreate, PropertyUpdate, PropertyFilter
 from app.models.property_types import PropertyType
@@ -21,6 +21,13 @@ from app.models.property_types import PropertyType
 
 class PropertyCRUD:
     """CRUD operations for Property model - DB-first canonical implementation"""
+
+    def _verified_visibility_filter(self) -> Any:
+        """Return the public visibility predicate during the enum transition."""
+        return or_(
+            Property.moderation_status == ModerationStatus.verified,
+            Property.is_verified.is_(True),
+        )
     
     
     # READ OPERATIONS
@@ -126,6 +133,10 @@ class PropertyCRUD:
             # Boolean filters
             if filters.get("is_verified") is not None:
                 query = query.where(Property.is_verified == filters["is_verified"])
+            if filters.get("moderation_status") is not None:
+                query = query.where(
+                    func.lower(cast(Property.moderation_status, String)) == str(filters["moderation_status"]).lower()
+                )
             if filters.get("is_featured") is not None:
                 query = query.where(Property.is_featured == filters["is_featured"])
 
@@ -219,7 +230,7 @@ class PropertyCRUD:
             db.execute(
                 select(func.count(Property.property_id)).where(
                     Property.deleted_at.is_(None),
-                    Property.is_verified.is_(True)
+                    self._verified_visibility_filter()
                 )
             ).scalar() or 0
         )
@@ -230,7 +241,11 @@ class PropertyCRUD:
             db.execute(
                 select(func.count(Property.property_id)).where(
                     Property.deleted_at.is_(None),
-                    or_(Property.is_verified.is_(False), Property.is_verified.is_(None))
+                    or_(
+                        Property.moderation_status != ModerationStatus.verified,
+                        Property.is_verified.is_(False),
+                        Property.is_verified.is_(None),
+                    )
                 )
             ).scalar() or 0
         )
@@ -373,6 +388,10 @@ class PropertyCRUD:
         # Verified filter
         if filters.is_verified is not None:
             query = query.where(Property.is_verified == filters.is_verified)
+        if filters.moderation_status is not None:
+            query = query.where(
+                func.lower(cast(Property.moderation_status, String)) == str(filters.moderation_status).lower()
+            )
         
         # Sorting
         if filters.sort_by == "price_asc":
@@ -581,6 +600,8 @@ class PropertyCRUD:
         *,
         property_id: int,
         is_verified: bool = True,
+        moderation_status: Optional[str] = None,
+        moderation_reason: Optional[str] = None,
         updated_by_supabase_id: Optional[str] = None,
         updated_by: Optional[str] = None
     ) -> Optional[Property]:
@@ -589,8 +610,22 @@ class PropertyCRUD:
         if not db_obj:
             return None
 
+        status_value = moderation_status or (
+            ModerationStatus.verified.value if is_verified else ModerationStatus.pending_review.value
+        )
+        next_is_verified = status_value == ModerationStatus.verified.value
+
         # FIX: Idempotent verify/unverify to avoid timestamp churn on no-op calls.
-        if type_cast(bool, db_obj.is_verified) == is_verified:
+        current_status = getattr(
+            type_cast(Any, db_obj).moderation_status,
+            "value",
+            type_cast(Any, db_obj).moderation_status,
+        )
+        if (
+            type_cast(bool, db_obj.is_verified) == next_is_verified
+            and current_status == status_value
+            and type_cast(str | None, db_obj.moderation_reason) == moderation_reason
+        ):
             actor_supabase_id = updated_by if updated_by is not None else updated_by_supabase_id
             if actor_supabase_id:
                 db_obj.updated_by = actor_supabase_id
@@ -599,8 +634,10 @@ class PropertyCRUD:
                 db.refresh(db_obj)
             return db_obj
 
-        type_cast(Any, db_obj).is_verified = is_verified  # Narrow ORM instance attribute assignment to its runtime bool field.
-        if is_verified:
+        type_cast(Any, db_obj).is_verified = next_is_verified  # Narrow ORM instance attribute assignment to its runtime bool field.
+        type_cast(Any, db_obj).moderation_status = status_value
+        type_cast(Any, db_obj).moderation_reason = moderation_reason
+        if next_is_verified:
             type_cast(Any, db_obj).verification_date = datetime.now(timezone.utc)  # Narrow ORM instance attribute assignment to its runtime datetime field.
         else:
             type_cast(Any, db_obj).verification_date = None  # Narrow ORM instance attribute assignment to its runtime nullable datetime field.
@@ -664,7 +701,7 @@ class PropertyCRUD:
             select(Property).options(joinedload(Property.agency))
             .where(
                 Property.agency_id == agency_id,
-                Property.is_verified == True,
+                self._verified_visibility_filter(),
                 Property.deleted_at.is_(None)
             )
             .offset(skip)
@@ -899,6 +936,8 @@ class PropertyCRUD:
         """Bulk verify/unverify properties."""
         values = {
             "is_verified": is_verified,
+            "moderation_status": ModerationStatus.verified if is_verified else ModerationStatus.pending_review,
+            "moderation_reason": None,
             "verification_date": func.now() if is_verified else None,
         }
 
@@ -1058,7 +1097,7 @@ class PropertyCRUD:
         query = select(Property).options(joinedload(Property.agency)).where(
             Property.deleted_at.is_(None),
             or_(
-                Property.is_verified.is_(True),
+                self._verified_visibility_filter(),
                 Property.user_id == agent_user_id
             )
         )
@@ -1093,6 +1132,10 @@ class PropertyCRUD:
         if filters.get("listing_status") is not None:
             query = query.where(
                 func.lower(cast(Property.listing_status, String)) == str(filters["listing_status"]).lower()
+            )
+        if filters.get("moderation_status") is not None:
+            query = query.where(
+                func.lower(cast(Property.moderation_status, String)) == str(filters["moderation_status"]).lower()
             )
         if filters.get("is_featured") is not None:
             query = query.where(Property.is_featured == filters["is_featured"])
@@ -1157,7 +1200,7 @@ class PropertyCRUD:
                 Property.deleted_at.is_(None),
                 Property.location_id == location_id,
                 or_(
-                    Property.is_verified.is_(True),
+                    self._verified_visibility_filter(),
                     Property.user_id == agent_user_id,
                 ),
             )
@@ -1239,7 +1282,7 @@ class PropertyCRUD:
             .where(
                 and_(
                     Property.deleted_at.is_(None),
-                    Property.is_verified.is_(True),
+                    self._verified_visibility_filter(),
                     Property.geom.isnot(None),
                     ST_DWithin(Property.geom, point, radius_meters)
                 )
@@ -1277,7 +1320,7 @@ class PropertyCRUD:
                     Property.geom.isnot(None),
                     ST_DWithin(Property.geom, point, radius_meters),
                     or_(
-                        Property.is_verified.is_(True),
+                        self._verified_visibility_filter(),
                         Property.user_id == agent_user_id,
                     ),
                 )

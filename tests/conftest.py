@@ -18,7 +18,7 @@ from app.core.database import Base, get_db
 from app.main import app
 from app.models.users import User, UserRole
 from app.core.security import get_password_hash, generate_access_token
-from app.models.properties import Property, ListingType, ListingStatus
+from app.models.properties import Property, ListingType, ListingStatus, ModerationStatus
 from app.models.property_types import PropertyType
 from app.models.locations import Location
 from app.models.agencies import Agency
@@ -63,6 +63,12 @@ with engine.connect() as conn:
     """))
     conn.execute(text("""
         DO $$ BEGIN
+            CREATE TYPE moderation_status_enum AS ENUM ('pending_review', 'verified', 'rejected', 'revoked');
+        EXCEPTION WHEN duplicate_object THEN null;
+        END $$;
+    """))
+    conn.execute(text("""
+        DO $$ BEGIN
             CREATE TYPE profile_status_enum AS ENUM ('active', 'inactive', 'pending', 'suspended');
         EXCEPTION WHEN duplicate_object THEN null;
         END $$;
@@ -79,6 +85,17 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=True, bind=engine
 @pytest.fixture(scope="function")
 def db():
     Base.metadata.create_all(bind=engine)
+    with engine.begin() as schema_conn:
+        schema_conn.execute(text("""
+            ALTER TABLE properties
+            ADD COLUMN IF NOT EXISTS moderation_status moderation_status_enum
+            DEFAULT 'pending_review'::moderation_status_enum
+            NOT NULL;
+        """))
+        schema_conn.execute(text("""
+            ALTER TABLE properties
+            ADD COLUMN IF NOT EXISTS moderation_reason TEXT;
+        """))
     connection = engine.connect()
     transaction = connection.begin()
     db = TestingSessionLocal(bind=connection)

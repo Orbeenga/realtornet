@@ -5,7 +5,7 @@ Follows BaseSchema/CreateSchema/UpdateSchema pattern.
 100% aligned with normalized DB schema.
 """
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from typing import Optional, List
 from datetime import datetime
 from uuid import UUID
@@ -27,6 +27,15 @@ class ListingStatus(str, Enum):
     sold = "sold"
     rented = "rented"
     unavailable = "unavailable"
+
+
+class ModerationStatus(str, Enum):
+    """Schema enum - values match moderation_status_enum exactly"""
+    pending_review = "pending_review"
+    verified = "verified"
+    rejected = "rejected"
+    revoked = "revoked"
+
 
 # Base Schema (shared fields for responses)
 class PropertyBase(BaseModel):
@@ -171,7 +180,23 @@ class PropertyVerificationUpdate(BaseModel):
     own payload makes it obvious in the code and in the API that "editing a
     listing" and "making a listing public" are different actions.
     """
-    is_verified: bool = True
+    is_verified: Optional[bool] = None
+    moderation_status: Optional[ModerationStatus] = None
+    moderation_reason: Optional[str] = None
+
+    model_config = ConfigDict(use_enum_values=True)
+
+    @model_validator(mode="after")
+    def require_status_or_legacy_flag(self) -> "PropertyVerificationUpdate":
+        if self.is_verified is None and self.moderation_status is None:
+            self.moderation_status = ModerationStatus.verified
+        return self
+
+    @property
+    def resolved_moderation_status(self) -> ModerationStatus:
+        if self.moderation_status is not None:
+            return ModerationStatus(self.moderation_status)
+        return ModerationStatus.verified if self.is_verified else ModerationStatus.pending_review
 
 
 # Response Schema (includes DB-controlled fields)
@@ -184,6 +209,8 @@ class PropertyResponse(PropertyBase):
     is_featured: bool
     listing_status: ListingStatus
     is_verified: bool
+    moderation_status: ModerationStatus = ModerationStatus.pending_review
+    moderation_reason: Optional[str] = None
     verification_date: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
@@ -238,6 +265,7 @@ class PropertyFilter(BaseModel):
     listing_status: Optional[ListingStatus] = None
     is_featured: Optional[bool] = None
     is_verified: Optional[bool] = None
+    moderation_status: Optional[ModerationStatus] = None
 
     # Amenity filters
     min_year_built: Optional[int] = None

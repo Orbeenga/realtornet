@@ -32,10 +32,11 @@ from app.schemas.properties import (
     PropertyFilter,
     ListingStatus as PropertyListingStatus,
     ListingType as PropertyListingType,
+    ModerationStatus,
 )
 
 # --- DIRECT MODEL ENUM IMPORTS ---
-from app.models.properties import ListingStatus, ListingType
+from app.models.properties import ListingStatus, ListingType, ModerationStatus as PropertyModerationStatus
 from app.models.users import User
 
 router = APIRouter()
@@ -53,6 +54,7 @@ def read_properties(
     bathrooms: Optional[float] = None,
     listing_type: Optional[ListingType] = None,
     listing_status: Optional[ListingStatus] = None,
+    moderation_status: Optional[ModerationStatus] = None,
     current_user: Optional[UserResponse] = Depends(get_current_user_optional)
 ) -> Any:
     """
@@ -77,7 +79,8 @@ def read_properties(
         bedrooms=bedrooms,
         bathrooms=bathrooms_value,
         listing_type=listing_type_value,
-        listing_status=listing_status_value
+        listing_status=listing_status_value,
+        moderation_status=moderation_status,
     )
     
     # Determine visibility based on user role
@@ -215,7 +218,15 @@ def read_property(
     if current_user:
         current_user_model: User = typing_cast(User, current_user)  # Narrow the optional dependency result before calling ORM-oriented role helpers.
         property_user_id: int = typing_cast(int, property.user_id)  # Narrow the ORM integer attribute to the runtime int carried on the loaded entity.
-        property_is_verified: bool = typing_cast(bool, property.is_verified)  # Narrow the ORM boolean attribute to the runtime bool carried on the loaded entity.
+        property_status = getattr(
+            typing_cast(Any, property).moderation_status,
+            "value",
+            typing_cast(Any, property).moderation_status,
+        )
+        property_is_verified: bool = (
+            property_status == PropertyModerationStatus.verified.value
+            or typing_cast(bool, property.is_verified)
+        )
         if user_crud.is_admin(current_user_model):
             # Admins can see any property
             return property
@@ -232,7 +243,15 @@ def read_property(
             )
     else:
         # Anonymous users can only see verified
-        property_is_verified: bool = typing_cast(bool, property.is_verified)  # Narrow the ORM boolean attribute to the runtime bool carried on the loaded entity.
+        property_status = getattr(
+            typing_cast(Any, property).moderation_status,
+            "value",
+            typing_cast(Any, property).moderation_status,
+        )
+        property_is_verified: bool = (
+            property_status == PropertyModerationStatus.verified.value
+            or typing_cast(bool, property.is_verified)
+        )
         if property_is_verified:
             return property
         else:
@@ -319,8 +338,8 @@ def verify_property(
     Update the public-verification state of a property listing.
 
     Permissions:
-    - Admins can verify or unverify any listing
-    - The owning agent can verify or unverify their own listing
+    - Admins can set any moderation status
+    - The owning agent can verify or return their own listing to pending review
 
     This endpoint exists separately from the general update endpoint so the UI
     can expose a clear "verification" action without asking operators to edit
@@ -348,11 +367,20 @@ def verify_property(
             detail="Not enough permissions to verify this property"
         )
 
+    requested_status = verification_in.resolved_moderation_status
+    if not is_admin and requested_status in {ModerationStatus.rejected, ModerationStatus.revoked}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can reject or revoke property moderation",
+        )
+
     updated_by_supabase_id: str = str(current_user.supabase_id)  # Normalize the authenticated UUID to the string audit format expected by the CRUD layer.
     property = property_crud.verify_property(
         db=db,
         property_id=property_id,
-        is_verified=verification_in.is_verified,
+        is_verified=requested_status == ModerationStatus.verified,
+        moderation_status=requested_status.value,
+        moderation_reason=verification_in.moderation_reason,
         updated_by=updated_by_supabase_id
     )
 
