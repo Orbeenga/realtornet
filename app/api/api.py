@@ -31,6 +31,7 @@ from app.api.endpoints import (
     property_amenities,
     property_images,
     favorites,
+    join_requests,
     saved_searches,
     inquiries,
     reviews,
@@ -126,6 +127,12 @@ api_router.include_router(
     favorites.router,
     prefix="/favorites",
     tags=["favorites"]
+)
+
+api_router.include_router(
+    join_requests.router,
+    prefix="/join-requests",
+    tags=["join-requests"]
 )
 
 api_router.include_router(

@@ -241,6 +241,49 @@ class TestAgencyJoinRequests:
         assert len(data) >= 1
         assert data[0]["seeker_email"] == "user@example.com"
 
+    def test_seeker_lists_their_own_join_requests(
+        self, client: TestClient, db, agency, other_agency, normal_user, normal_user_token_headers
+    ):
+        from app.models.agency_join_requests import AgencyJoinRequest
+
+        approved_request = AgencyJoinRequest(
+            agency_id=other_agency.agency_id,
+            user_id=normal_user.user_id,
+            status="approved",
+        )
+        rejected_request = AgencyJoinRequest(
+            agency_id=agency.agency_id,
+            user_id=normal_user.user_id,
+            status="rejected",
+            rejection_reason="Need more portfolio detail",
+        )
+        db.add_all([approved_request, rejected_request])
+        db.flush()
+
+        response = client.get(
+            "/api/v1/join-requests/mine/",
+            headers=normal_user_token_headers,
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        statuses = {item["status"] for item in data}
+        assert {"approved", "rejected"}.issubset(statuses)
+        assert all(item["agency_name"] for item in data)
+        assert all(item["submitted_at"] for item in data)
+        rejected_item = next(item for item in data if item["status"] == "rejected")
+        assert rejected_item["rejection_reason"] == "Need more portfolio detail"
+
+    def test_mine_join_requests_is_seeker_only(
+        self, client: TestClient, agent_token_headers
+    ):
+        response = client.get(
+            "/api/v1/join-requests/mine/",
+            headers=agent_token_headers,
+        )
+
+        assert response.status_code == 403
+
     def test_other_agency_owner_cannot_list_join_requests(
         self, client: TestClient, other_agency, agency_owner_token_headers
     ):
