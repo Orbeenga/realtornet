@@ -65,7 +65,7 @@ class Agency(Base, AuditMixin, SoftDeleteMixin):
             name="agencies_phone_number_not_empty_check"
         ),
         CheckConstraint(
-            "status IN ('pending', 'approved', 'rejected')",
+            "status IN ('pending', 'approved', 'rejected', 'suspended')",
             name="agencies_status_check"
         ),
     )

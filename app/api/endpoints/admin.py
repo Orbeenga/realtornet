@@ -100,7 +100,7 @@ def get_admin_agencies(
     current_user: UserResponse = Depends(get_current_admin_user)
 ) -> Any:
     """List agencies for admin review, optionally filtered by status."""
-    if status_filter is not None and status_filter not in {"pending", "approved", "rejected"}:
+    if status_filter is not None and status_filter not in {"pending", "approved", "rejected", "suspended"}:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid agency status",
@@ -206,6 +206,62 @@ def reject_agency_application(
         },
         updated_by=str(current_user.supabase_id),
     )
+
+
+@router.patch("/agencies/{agency_id}/revoke/", response_model=AgencyResponse)
+def revoke_agency_approval(
+    *,
+    db: Session = Depends(get_db),
+    agency_id: int,
+    current_user: UserResponse = Depends(get_current_admin_user),
+    _: None = Depends(validate_request_size)
+) -> Any:
+    """Revoke an approved agency back to pending review."""
+    agency = agency_crud.get(db, agency_id=agency_id)
+    if agency is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agency not found",
+        )
+
+    return agency_crud.update(
+        db,
+        db_obj=agency,
+        obj_in={
+            "status": "pending",
+            "is_verified": False,
+            "rejection_reason": None,
+        },
+        updated_by=str(current_user.supabase_id),
+    )
+
+
+@router.patch("/agencies/{agency_id}/suspend/", response_model=AgencyResponse)
+def suspend_agency(
+    *,
+    db: Session = Depends(get_db),
+    agency_id: int,
+    current_user: UserResponse = Depends(get_current_admin_user),
+    _: None = Depends(validate_request_size)
+) -> Any:
+    """Suspend an agency without soft-deleting its data."""
+    agency = agency_crud.get(db, agency_id=agency_id)
+    if agency is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agency not found",
+        )
+
+    return agency_crud.update(
+        db,
+        db_obj=agency,
+        obj_in={
+            "status": "suspended",
+            "is_verified": False,
+        },
+        updated_by=str(current_user.supabase_id),
+    )
+
 
 @router.get("/users", response_model=Dict[str, Any])
 def get_users(

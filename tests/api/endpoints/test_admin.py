@@ -383,6 +383,30 @@ class TestAdminAgencyApplications:
         assert response.json()["status"] == "rejected"
         assert response.json()["rejection_reason"] == "Incomplete documentation"
 
+    def test_admin_revokes_approved_agency(
+        self, client: TestClient, admin_token_headers, agency
+    ):
+        response = client.patch(
+            f"/api/v1/admin/agencies/{agency.agency_id}/revoke/",
+            headers=admin_token_headers,
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "pending"
+        assert response.json()["is_verified"] is False
+
+    def test_admin_suspends_agency(
+        self, client: TestClient, admin_token_headers, agency
+    ):
+        response = client.patch(
+            f"/api/v1/admin/agencies/{agency.agency_id}/suspend/",
+            headers=admin_token_headers,
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "suspended"
+        assert response.json()["is_verified"] is False
+
     def test_admin_role_promotion_syncs_supabase_auth_metadata(
         self, client: TestClient, admin_token_headers, normal_user, db
     ):

@@ -22,6 +22,7 @@ from app.models.properties import Property, ListingType, ListingStatus
 from app.models.property_types import PropertyType
 from app.models.locations import Location
 from app.models.agencies import Agency
+from app.models.agency_join_requests import AgencyAgentMembership, AgencyJoinRequest
 from app.crud.properties import property as property_crud
 from app.schemas.properties import PropertyCreate
 
