@@ -7,7 +7,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, List, cast  # Narrow dependency-backed values locally without changing the frozen endpoint contract.
 from fastapi import APIRouter, Depends, HTTPException, status
 from jose import JWTError, jwt
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.orm import Session, joinedload
 import logging
 
 # --- DIRECT CRUD IMPORTS ---
@@ -22,6 +23,7 @@ from app.api.dependencies import (
     get_current_user,
     get_current_active_user,
     get_current_agency_owner_user,
+    get_current_seeker_user,
     get_current_admin_user,
     validate_request_size,
     pagination_params,
@@ -39,12 +41,17 @@ from app.schemas.agencies import (
     AgencyInviteAcceptResponse,
     AgencyInviteCreate,
     AgencyInviteResponse,
+    AgencyJoinRequestCreate,
+    AgencyJoinRequestRejectRequest,
+    AgencyJoinRequestResponse,
     AgencyUpdate
 )
 from app.schemas.agent_profiles import AgentProfileResponse
 from app.schemas.properties import PropertyResponse
 from app.core.config import settings
+from app.models.agency_join_requests import AgencyAgentMembership, AgencyJoinRequest
 from app.models.users import UserRole
+from app.services.auth_user_sync_service import SupabaseUserSyncError, sync_supabase_auth_user_metadata
 
 router = APIRouter()
 
@@ -427,6 +434,227 @@ def read_agency_properties(
         **pagination,
     )
     return properties
+
+
+@router.post(
+    "/{agency_id}/join-request/",
+    response_model=AgencyJoinRequestResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_agency_join_request(
+    *,
+    db: Session = Depends(get_db),
+    agency_id: int,
+    request_in: AgencyJoinRequestCreate,
+    current_user: UserResponse = Depends(get_current_seeker_user),
+    _: None = Depends(validate_request_size),
+) -> Any:
+    """Create a pending seeker-to-agent request for an approved agency."""
+    agency = agency_crud.get(db, agency_id=agency_id)
+    if agency is None or str(agency.status) != "approved":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agency not found",
+        )
+
+    current_user_model = cast(User, current_user)
+    existing_request = db.execute(
+        select(AgencyJoinRequest).where(
+            AgencyJoinRequest.agency_id == agency_id,
+            AgencyJoinRequest.user_id == current_user_model.user_id,
+            AgencyJoinRequest.status == "pending",
+            AgencyJoinRequest.deleted_at.is_(None),
+        )
+    ).scalar_one_or_none()
+    if existing_request is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Pending join request already exists for this agency",
+        )
+
+    join_request = AgencyJoinRequest(
+        agency_id=agency_id,
+        user_id=current_user_model.user_id,
+        cover_note=request_in.cover_note,
+        portfolio_details=request_in.portfolio_details,
+        status="pending",
+        created_by=current_user_model.supabase_id,
+    )
+    db.add(join_request)
+    db.flush()
+    db.refresh(join_request)
+    return join_request
+
+
+@router.get("/{agency_id}/join-requests/", response_model=List[AgencyJoinRequestResponse])
+def read_agency_join_requests(
+    *,
+    db: Session = Depends(get_db),
+    agency_id: int,
+    current_user: UserResponse = Depends(get_current_agency_owner_user),
+    pagination: dict = Depends(pagination_params),
+) -> Any:
+    """Return pending join requests for the authenticated agency owner."""
+    current_user_model = cast(User, current_user)
+    if cast(int | None, current_user_model.agency_id) != agency_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Agency owners can only manage their own agency",
+        )
+
+    agency = agency_crud.get(db, agency_id=agency_id)
+    if agency is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agency not found",
+        )
+
+    query = (
+        select(AgencyJoinRequest)
+        .options(joinedload(AgencyJoinRequest.user))
+        .where(
+            AgencyJoinRequest.agency_id == agency_id,
+            AgencyJoinRequest.status == "pending",
+            AgencyJoinRequest.deleted_at.is_(None),
+        )
+        .order_by(AgencyJoinRequest.created_at.asc())
+        .offset(pagination["skip"])
+        .limit(pagination["limit"])
+    )
+    return list(db.execute(query).scalars().all())
+
+
+@router.patch("/{agency_id}/join-requests/{request_id}/approve/", response_model=AgencyJoinRequestResponse)
+def approve_agency_join_request(
+    *,
+    db: Session = Depends(get_db),
+    agency_id: int,
+    request_id: int,
+    current_user: UserResponse = Depends(get_current_agency_owner_user),
+    _: None = Depends(validate_request_size),
+) -> Any:
+    """Approve a seeker join request and promote the seeker to agent."""
+    current_user_model = cast(User, current_user)
+    if cast(int | None, current_user_model.agency_id) != agency_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Agency owners can only manage their own agency",
+        )
+
+    join_request = db.execute(
+        select(AgencyJoinRequest).where(
+            AgencyJoinRequest.join_request_id == request_id,
+            AgencyJoinRequest.agency_id == agency_id,
+            AgencyJoinRequest.deleted_at.is_(None),
+        ).options(joinedload(AgencyJoinRequest.user))
+    ).scalar_one_or_none()
+    if join_request is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Join request not found",
+        )
+    if str(join_request.status) != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Join request has already been reviewed",
+        )
+
+    seeker = user_crud.get(db, user_id=cast(int, join_request.user_id))
+    if seeker is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Seeker user not found",
+        )
+
+    actor_supabase_id = str(current_user_model.supabase_id)
+    try:
+        update_payload: dict[str, Any] = {"user_role": UserRole.AGENT}
+        if cast(int | None, seeker.agency_id) is None:
+            update_payload["agency_id"] = agency_id
+        seeker = user_crud.update(
+            db,
+            db_obj=seeker,
+            obj_in=update_payload,
+            updated_by=actor_supabase_id,
+        )
+
+        existing_membership = db.execute(
+            select(AgencyAgentMembership).where(
+                AgencyAgentMembership.agency_id == agency_id,
+                AgencyAgentMembership.user_id == seeker.user_id,
+                AgencyAgentMembership.deleted_at.is_(None),
+            )
+        ).scalar_one_or_none()
+        if existing_membership is None:
+            db.add(
+                AgencyAgentMembership(
+                    agency_id=agency_id,
+                    user_id=seeker.user_id,
+                    source_join_request_id=join_request.join_request_id,
+                    created_by=current_user_model.supabase_id,
+                )
+            )
+
+        cast(Any, join_request).status = "approved"
+        cast(Any, join_request).rejection_reason = None
+        join_request.updated_by = current_user_model.supabase_id
+        db.add(join_request)
+        db.flush()
+        sync_supabase_auth_user_metadata(seeker)
+        db.refresh(join_request)
+    except SupabaseUserSyncError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+    return join_request
+
+
+@router.patch("/{agency_id}/join-requests/{request_id}/reject/", response_model=AgencyJoinRequestResponse)
+def reject_agency_join_request(
+    *,
+    db: Session = Depends(get_db),
+    agency_id: int,
+    request_id: int,
+    reject_in: AgencyJoinRequestRejectRequest | None = None,
+    current_user: UserResponse = Depends(get_current_agency_owner_user),
+    _: None = Depends(validate_request_size),
+) -> Any:
+    """Reject a pending agency join request."""
+    current_user_model = cast(User, current_user)
+    if cast(int | None, current_user_model.agency_id) != agency_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Agency owners can only manage their own agency",
+        )
+
+    join_request = db.execute(
+        select(AgencyJoinRequest).where(
+            AgencyJoinRequest.join_request_id == request_id,
+            AgencyJoinRequest.agency_id == agency_id,
+            AgencyJoinRequest.deleted_at.is_(None),
+        ).options(joinedload(AgencyJoinRequest.user))
+    ).scalar_one_or_none()
+    if join_request is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Join request not found",
+        )
+    if str(join_request.status) != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Join request has already been reviewed",
+        )
+
+    cast(Any, join_request).status = "rejected"
+    cast(Any, join_request).rejection_reason = reject_in.reason if reject_in is not None else None
+    join_request.updated_by = current_user_model.supabase_id
+    db.add(join_request)
+    db.flush()
+    db.refresh(join_request)
+    return join_request
 
 
 @router.post("/{agency_id}/invite/", response_model=AgencyInviteResponse)

@@ -492,7 +492,7 @@ class PropertyCRUD:
         db.add(db_obj)
         db.flush()
         db.refresh(db_obj)
-        return self.get(db, int(db_obj.property_id)) or db_obj
+        return self.get(db, int(type_cast(Any, db_obj).property_id)) or db_obj
     
     
     # UPDATE OPERATIONS

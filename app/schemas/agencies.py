@@ -16,6 +16,13 @@ class AgencyStatus(str, Enum):
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
+    SUSPENDED = "suspended"
+
+
+class AgencyJoinRequestStatus(str, Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
 
 
 # Base Schema (shared fields for responses)
@@ -59,6 +66,7 @@ class AgencyApplicationCreate(BaseModel):
     name: str
     description: Optional[str] = None
     address: Optional[str] = None
+    website_url: Optional[str] = None
     owner_email: EmailStr
     owner_name: str
     owner_phone_number: Optional[str] = None
@@ -80,6 +88,31 @@ class AgencyApplicationResponse(BaseModel):
 
 class AgencyRejectRequest(BaseModel):
     reason: Optional[str] = None
+
+
+class AgencyJoinRequestCreate(BaseModel):
+    cover_note: Optional[str] = None
+    portfolio_details: Optional[str] = None
+
+
+class AgencyJoinRequestRejectRequest(BaseModel):
+    reason: Optional[str] = None
+
+
+class AgencyJoinRequestResponse(BaseModel):
+    join_request_id: int
+    agency_id: int
+    user_id: int
+    status: AgencyJoinRequestStatus
+    cover_note: Optional[str] = None
+    portfolio_details: Optional[str] = None
+    rejection_reason: Optional[str] = None
+    seeker_email: Optional[EmailStr] = None
+    seeker_name: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AgencyInviteCreate(BaseModel):

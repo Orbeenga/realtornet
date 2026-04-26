@@ -3,10 +3,11 @@
 Surgical API-layer tests for /agencies endpoints.
 """
 from fastapi.testclient import TestClient
+from datetime import UTC, datetime
 import uuid
 from app.api.endpoints import agencies as agencies_api
 from app.models.users import User, UserRole
-from app.core.security import decode_token
+from app.core.security import decode_token, generate_access_token
 
 
 class TestReadAgencies:
@@ -47,6 +48,7 @@ class TestAgencyApplication:
                 "name": f"Applicant Agency {uuid.uuid4().hex[:6]}",
                 "description": "Pending application",
                 "address": "Lagos",
+                "website_url": "https://agency.example.com",
                 "owner_email": email,
                 "owner_name": "Applicant Owner",
                 "owner_phone_number": "+234700000001",
@@ -57,6 +59,10 @@ class TestAgencyApplication:
         data = response.json()
         assert data["agency_id"] is not None
         assert data["status"] == "pending"
+
+        detail_response = client.get(f"/api/v1/agencies/{data['agency_id']}")
+        assert detail_response.status_code == 200
+        assert detail_response.json()["website_url"] == "https://agency.example.com"
 
     def test_agency_owner_can_invite_to_own_agency(
         self, client: TestClient, agency, agency_owner_token_headers
@@ -150,6 +156,265 @@ class TestAgencyApplication:
             headers={"Authorization": f"Bearer {token}"},
         )
         assert response.status_code == 200
+
+
+class TestAgencyJoinRequests:
+
+    def test_seeker_creates_join_request(
+        self, client: TestClient, agency, normal_user_token_headers
+    ):
+        response = client.post(
+            f"/api/v1/agencies/{agency.agency_id}/join-request/",
+            json={
+                "cover_note": "I know Lekki and Ikeja well.",
+                "portfolio_details": "Three years of rentals experience.",
+            },
+            headers=normal_user_token_headers,
+        )
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["agency_id"] == agency.agency_id
+        assert data["status"] == "pending"
+
+    def test_join_request_is_seeker_only(
+        self, client: TestClient, agency, agent_token_headers
+    ):
+        response = client.post(
+            f"/api/v1/agencies/{agency.agency_id}/join-request/",
+            json={"cover_note": "Already an agent"},
+            headers=agent_token_headers,
+        )
+
+        assert response.status_code == 403
+
+    def test_join_request_requires_approved_agency(
+        self, client: TestClient, db, agency, normal_user_token_headers
+    ):
+        agency.status = "pending"
+        db.add(agency)
+        db.flush()
+
+        response = client.post(
+            f"/api/v1/agencies/{agency.agency_id}/join-request/",
+            json={"cover_note": "Please consider me"},
+            headers=normal_user_token_headers,
+        )
+
+        assert response.status_code == 404
+
+    def test_duplicate_pending_join_request_returns_400(
+        self, client: TestClient, agency, normal_user_token_headers
+    ):
+        payload = {"cover_note": "Please consider me"}
+        first_response = client.post(
+            f"/api/v1/agencies/{agency.agency_id}/join-request/",
+            json=payload,
+            headers=normal_user_token_headers,
+        )
+        second_response = client.post(
+            f"/api/v1/agencies/{agency.agency_id}/join-request/",
+            json=payload,
+            headers=normal_user_token_headers,
+        )
+
+        assert first_response.status_code == 201
+        assert second_response.status_code == 400
+
+    def test_agency_owner_lists_pending_join_requests(
+        self, client: TestClient, agency, normal_user_token_headers, agency_owner_token_headers
+    ):
+        create_response = client.post(
+            f"/api/v1/agencies/{agency.agency_id}/join-request/",
+            json={"cover_note": "Please review me"},
+            headers=normal_user_token_headers,
+        )
+        assert create_response.status_code == 201
+
+        response = client.get(
+            f"/api/v1/agencies/{agency.agency_id}/join-requests/",
+            headers=agency_owner_token_headers,
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) >= 1
+        assert data[0]["seeker_email"] == "user@example.com"
+
+    def test_other_agency_owner_cannot_list_join_requests(
+        self, client: TestClient, other_agency, agency_owner_token_headers
+    ):
+        response = client.get(
+            f"/api/v1/agencies/{other_agency.agency_id}/join-requests/",
+            headers=agency_owner_token_headers,
+        )
+
+        assert response.status_code == 403
+
+    def test_agency_owner_list_returns_404_for_missing_owned_agency(
+        self, client: TestClient, db, agency, agency_owner_user
+    ):
+        agency.deleted_at = datetime.now(UTC)
+        agency_owner_user.agency_id = agency.agency_id
+        db.add(agency)
+        db.add(agency_owner_user)
+        db.flush()
+        token = generate_access_token(
+            supabase_id=agency_owner_user.supabase_id,
+            user_id=agency_owner_user.user_id,
+            user_role=agency_owner_user.user_role.value,
+            agency_id=agency.agency_id,
+        )
+
+        response = client.get(
+            f"/api/v1/agencies/{agency.agency_id}/join-requests/",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 404
+
+    def test_agency_owner_approves_join_request(
+        self, client: TestClient, db, agency, normal_user, normal_user_token_headers, agency_owner_token_headers
+    ):
+        from unittest.mock import patch
+        from app.models.agency_join_requests import AgencyAgentMembership
+        from app.models.users import UserRole
+
+        create_response = client.post(
+            f"/api/v1/agencies/{agency.agency_id}/join-request/",
+            json={"portfolio_details": "Portfolio text"},
+            headers=normal_user_token_headers,
+        )
+        assert create_response.status_code == 201
+        request_id = create_response.json()["join_request_id"]
+
+        with patch("app.api.endpoints.agencies.sync_supabase_auth_user_metadata"):
+            response = client.patch(
+                f"/api/v1/agencies/{agency.agency_id}/join-requests/{request_id}/approve/",
+                headers=agency_owner_token_headers,
+            )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "approved"
+        db.refresh(normal_user)
+        assert normal_user.user_role == UserRole.AGENT
+        assert normal_user.agency_id == agency.agency_id
+        membership = db.query(AgencyAgentMembership).filter(
+            AgencyAgentMembership.agency_id == agency.agency_id,
+            AgencyAgentMembership.user_id == normal_user.user_id,
+        ).one_or_none()
+        assert membership is not None
+
+    def test_approve_join_request_returns_404_for_missing_request(
+        self, client: TestClient, agency, agency_owner_token_headers
+    ):
+        response = client.patch(
+            f"/api/v1/agencies/{agency.agency_id}/join-requests/999999/approve/",
+            headers=agency_owner_token_headers,
+        )
+
+        assert response.status_code == 404
+
+    def test_approve_reviewed_join_request_returns_400(
+        self, client: TestClient, agency, normal_user_token_headers, agency_owner_token_headers
+    ):
+        create_response = client.post(
+            f"/api/v1/agencies/{agency.agency_id}/join-request/",
+            json={"cover_note": "Please consider me"},
+            headers=normal_user_token_headers,
+        )
+        request_id = create_response.json()["join_request_id"]
+        reject_response = client.patch(
+            f"/api/v1/agencies/{agency.agency_id}/join-requests/{request_id}/reject/",
+            headers=agency_owner_token_headers,
+        )
+
+        response = client.patch(
+            f"/api/v1/agencies/{agency.agency_id}/join-requests/{request_id}/approve/",
+            headers=agency_owner_token_headers,
+        )
+
+        assert reject_response.status_code == 200
+        assert response.status_code == 400
+
+    def test_approve_join_request_rolls_back_on_supabase_sync_failure(
+        self, client: TestClient, db, agency, normal_user, normal_user_token_headers, agency_owner_token_headers
+    ):
+        from unittest.mock import patch
+
+        create_response = client.post(
+            f"/api/v1/agencies/{agency.agency_id}/join-request/",
+            json={"cover_note": "Please consider me"},
+            headers=normal_user_token_headers,
+        )
+        request_id = create_response.json()["join_request_id"]
+
+        with patch(
+            "app.api.endpoints.agencies.sync_supabase_auth_user_metadata",
+            side_effect=agencies_api.SupabaseUserSyncError("sync failed"),
+        ):
+            response = client.patch(
+                f"/api/v1/agencies/{agency.agency_id}/join-requests/{request_id}/approve/",
+                headers=agency_owner_token_headers,
+            )
+
+        assert response.status_code == 502
+
+    def test_agency_owner_rejects_join_request(
+        self, client: TestClient, agency, normal_user_token_headers, agency_owner_token_headers
+    ):
+        create_response = client.post(
+            f"/api/v1/agencies/{agency.agency_id}/join-request/",
+            json={"cover_note": "Not yet ready"},
+            headers=normal_user_token_headers,
+        )
+        assert create_response.status_code == 201
+        request_id = create_response.json()["join_request_id"]
+
+        response = client.patch(
+            f"/api/v1/agencies/{agency.agency_id}/join-requests/{request_id}/reject/",
+            json={"reason": "Need more details"},
+            headers=agency_owner_token_headers,
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "rejected"
+        assert response.json()["rejection_reason"] == "Need more details"
+
+    def test_reject_join_request_returns_404_for_missing_request(
+        self, client: TestClient, agency, agency_owner_token_headers
+    ):
+        response = client.patch(
+            f"/api/v1/agencies/{agency.agency_id}/join-requests/999999/reject/",
+            headers=agency_owner_token_headers,
+        )
+
+        assert response.status_code == 404
+
+    def test_reject_reviewed_join_request_returns_400(
+        self, client: TestClient, agency, normal_user_token_headers, agency_owner_token_headers
+    ):
+        from unittest.mock import patch
+
+        create_response = client.post(
+            f"/api/v1/agencies/{agency.agency_id}/join-request/",
+            json={"cover_note": "Please consider me"},
+            headers=normal_user_token_headers,
+        )
+        request_id = create_response.json()["join_request_id"]
+        with patch("app.api.endpoints.agencies.sync_supabase_auth_user_metadata"):
+            approve_response = client.patch(
+                f"/api/v1/agencies/{agency.agency_id}/join-requests/{request_id}/approve/",
+                headers=agency_owner_token_headers,
+            )
+
+        response = client.patch(
+            f"/api/v1/agencies/{agency.agency_id}/join-requests/{request_id}/reject/",
+            headers=agency_owner_token_headers,
+        )
+
+        assert approve_response.status_code == 200
+        assert response.status_code == 400
 
 
 class TestCreateAgency:

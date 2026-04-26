@@ -210,6 +210,7 @@ class AgencyCRUD:
             phone_number=obj_in.phone_number or obj_in.owner_phone_number,
             address=obj_in.address,
             description=obj_in.description,
+            website_url=obj_in.website_url,
             is_verified=False,
             status="pending",
             owner_email=obj_in.owner_email.lower(),
