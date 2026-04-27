@@ -1,7 +1,7 @@
 # app/models/agency_join_requests.py
 """Agency join request and membership models."""
 
-from sqlalchemy import BigInteger, CheckConstraint, Column, ForeignKey, String, Text, UniqueConstraint, text
+from sqlalchemy import BigInteger, CheckConstraint, Column, DateTime, ForeignKey, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import relationship
 
 from app.models.base import AuditMixin, Base, SoftDeleteMixin
@@ -19,9 +19,12 @@ class AgencyJoinRequest(Base, AuditMixin, SoftDeleteMixin):
     portfolio_details = Column(Text, nullable=True)
     status = Column(String, nullable=False, server_default=text("'pending'"))
     rejection_reason = Column(Text, nullable=True)
+    decided_at = Column(DateTime(timezone=True), nullable=True)
+    decided_by = Column(BigInteger, ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True)
 
     agency = relationship("Agency", foreign_keys=[agency_id])
     user = relationship("User", foreign_keys=[user_id])
+    decider = relationship("User", foreign_keys=[decided_by])
 
     __table_args__ = (
         CheckConstraint(
@@ -57,6 +60,13 @@ class AgencyAgentMembership(Base, AuditMixin, SoftDeleteMixin):
     membership_id = Column(BigInteger, primary_key=True, autoincrement=True, index=True)
     agency_id = Column(BigInteger, ForeignKey("agencies.agency_id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(BigInteger, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False, index=True)
+    agent_profile_id = Column(
+        BigInteger,
+        ForeignKey("agent_profiles.profile_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    status = Column(String, nullable=False, server_default=text("'active'"))
     source_join_request_id = Column(
         BigInteger,
         ForeignKey("agency_join_requests.join_request_id", ondelete="SET NULL"),
@@ -66,8 +76,13 @@ class AgencyAgentMembership(Base, AuditMixin, SoftDeleteMixin):
 
     agency = relationship("Agency", foreign_keys=[agency_id])
     user = relationship("User", foreign_keys=[user_id])
+    agent_profile = relationship("AgentProfile", foreign_keys=[agent_profile_id])
     source_join_request = relationship("AgencyJoinRequest", foreign_keys=[source_join_request_id])
 
     __table_args__ = (
+        CheckConstraint(
+            "status IN ('active', 'inactive', 'suspended')",
+            name="agency_agent_memberships_status_check",
+        ),
         UniqueConstraint("agency_id", "user_id", name="agency_agent_memberships_agency_user_key"),
     )
