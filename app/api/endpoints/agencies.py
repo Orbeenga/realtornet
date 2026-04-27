@@ -5,7 +5,7 @@ Handles real estate agencies (multi-tenant hub) with full audit trail and soft d
 """
 from datetime import datetime, timedelta, timezone
 from typing import Any, List, cast  # Narrow dependency-backed values locally without changing the frozen endpoint contract.
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from jose import JWTError, jwt
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
@@ -23,7 +23,6 @@ from app.api.dependencies import (
     get_current_user,
     get_current_active_user,
     get_current_agency_owner_user,
-    get_current_seeker_user,
     get_current_admin_user,
     validate_request_size,
     pagination_params,
@@ -34,6 +33,7 @@ from app.schemas.users import UserResponse
 from app.models.users import User  # Narrow endpoint-local user values back to the ORM shape expected by CRUD permission helpers.
 from app.schemas.agencies import (
     AgencyResponse,
+    AgencyAgentRosterResponse,
     AgencyApplicationCreate,
     AgencyApplicationResponse,
     AgencyCreate,
@@ -46,7 +46,6 @@ from app.schemas.agencies import (
     AgencyJoinRequestResponse,
     AgencyUpdate
 )
-from app.schemas.agent_profiles import AgentProfileResponse
 from app.schemas.properties import PropertyResponse
 from app.core.config import settings
 from app.models.agency_join_requests import AgencyAgentMembership, AgencyJoinRequest
@@ -91,6 +90,68 @@ def _decode_agency_invite_token(token: str) -> dict[str, Any]:
             detail="Invalid invite token",
         )
     return payload
+
+
+def _membership_payload(*, membership: AgencyAgentMembership, user: User) -> dict[str, Any]:
+    profile = getattr(membership, "agent_profile", None) or getattr(user, "agent_profile", None)
+    return {
+        "user_id": user.user_id,
+        "agency_id": membership.agency_id,
+        "membership_id": membership.membership_id,
+        "membership_status": membership.status,
+        "display_name": getattr(user, "full_name", None) or user.email,
+        "email": user.email,
+        "phone_number": user.phone_number,
+        "profile_image_url": user.profile_image_url,
+        "profile_id": getattr(profile, "profile_id", None),
+        "specialization": getattr(profile, "specialization", None),
+        "years_experience": getattr(profile, "years_experience", None),
+        "license_number": getattr(profile, "license_number", None),
+        "bio": getattr(profile, "bio", None),
+        "company_name": getattr(profile, "company_name", None),
+        "created_at": membership.created_at,
+        "updated_at": membership.updated_at,
+    }
+
+
+def _ensure_active_agency_membership(
+    *,
+    db: Session,
+    agency_id: int,
+    user: User,
+    actor: User,
+    source_join_request_id: int | None = None,
+) -> AgencyAgentMembership:
+    profile = agent_profile_crud.get_by_user_id(db, user_id=cast(int, user.user_id))
+    existing_membership = db.execute(
+        select(AgencyAgentMembership).where(
+            AgencyAgentMembership.agency_id == agency_id,
+            AgencyAgentMembership.user_id == user.user_id,
+        )
+    ).scalar_one_or_none()
+    if existing_membership is None:
+        existing_membership = AgencyAgentMembership(
+            agency_id=agency_id,
+            user_id=user.user_id,
+            agent_profile_id=getattr(profile, "profile_id", None),
+            status="active",
+            source_join_request_id=source_join_request_id,
+            created_by=actor.supabase_id,
+        )
+        db.add(existing_membership)
+    else:
+        cast(Any, existing_membership).deleted_at = None
+        cast(Any, existing_membership).deleted_by = None
+        cast(Any, existing_membership).status = "active"
+        cast(Any, existing_membership).agent_profile_id = getattr(profile, "profile_id", None)
+        if source_join_request_id is not None:
+            cast(Any, existing_membership).source_join_request_id = source_join_request_id
+        existing_membership.updated_by = actor.supabase_id
+        db.add(existing_membership)
+
+    db.flush()
+    db.refresh(existing_membership)
+    return existing_membership
 
 
 @router.get("/", response_model=List[AgencyResponse])
@@ -172,11 +233,23 @@ def accept_agency_invite(
             "email": email,
         }
 
-    invited_user = user_crud.update(
-        db,
-        db_obj=invited_user,
-        obj_in={"user_role": UserRole.AGENT, "agency_id": agency_id},
-        updated_by=str(invited_user.supabase_id),
+    update_payload: dict[str, Any] = {}
+    if cast(UserRole, invited_user.user_role) == UserRole.SEEKER:
+        update_payload["user_role"] = UserRole.AGENT
+    if cast(int | None, invited_user.agency_id) is None:
+        update_payload["agency_id"] = agency_id
+    if update_payload:
+        invited_user = user_crud.update(
+            db,
+            db_obj=invited_user,
+            obj_in=update_payload,
+            updated_by=str(invited_user.supabase_id),
+        )
+    _ensure_active_agency_membership(
+        db=db,
+        agency_id=agency_id,
+        user=invited_user,
+        actor=invited_user,
     )
     return {
         "status": "accepted",
@@ -382,7 +455,7 @@ def delete_agency(
     return agency
 
 
-@router.get("/{agency_id}/agents", response_model=List[AgentProfileResponse])
+@router.get("/{agency_id}/agents", response_model=List[AgencyAgentRosterResponse])
 def read_agency_agents(
     *,
     db: Session = Depends(get_db),
@@ -403,8 +476,27 @@ def read_agency_agents(
             detail="Agency not found"
         )
     
-    agents = agent_profile_crud.get_by_agency(db, agency_id=agency_id, **pagination,)
-    return agents
+    query = (
+        select(AgencyAgentMembership, User)
+        .join(User, User.user_id == AgencyAgentMembership.user_id)
+        .options(
+            joinedload(AgencyAgentMembership.agent_profile),
+            joinedload(AgencyAgentMembership.user).joinedload(User.agent_profile),
+        )
+        .where(
+            AgencyAgentMembership.agency_id == agency_id,
+            AgencyAgentMembership.status == "active",
+            AgencyAgentMembership.deleted_at.is_(None),
+            User.deleted_at.is_(None),
+        )
+        .order_by(AgencyAgentMembership.created_at.desc())
+        .offset(pagination["skip"])
+        .limit(pagination["limit"])
+    )
+    return [
+        _membership_payload(membership=membership, user=user)
+        for membership, user in db.execute(query).all()
+    ]
 
 
 @router.get("/{agency_id}/properties", response_model=List[PropertyResponse])
@@ -446,10 +538,21 @@ def create_agency_join_request(
     db: Session = Depends(get_db),
     agency_id: int,
     request_in: AgencyJoinRequestCreate,
-    current_user: UserResponse = Depends(get_current_seeker_user),
+    current_user: UserResponse = Depends(get_current_active_user),
     _: None = Depends(validate_request_size),
 ) -> Any:
-    """Create a pending seeker-to-agent request for an approved agency."""
+    """Create a pending request to affiliate with an approved agency."""
+    current_user_model = cast(User, current_user)
+    if cast(UserRole, current_user_model.user_role) not in {
+        UserRole.SEEKER,
+        UserRole.AGENT,
+        UserRole.AGENCY_OWNER,
+    }:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Join requests are available to seekers and agents",
+        )
+
     agency = agency_crud.get(db, agency_id=agency_id)
     if agency is None or str(agency.status) != "approved":
         raise HTTPException(
@@ -457,7 +560,6 @@ def create_agency_join_request(
             detail="Agency not found",
         )
 
-    current_user_model = cast(User, current_user)
     existing_request = db.execute(
         select(AgencyJoinRequest).where(
             AgencyJoinRequest.agency_id == agency_id,
@@ -493,8 +595,9 @@ def read_agency_join_requests(
     agency_id: int,
     current_user: UserResponse = Depends(get_current_agency_owner_user),
     pagination: dict = Depends(pagination_params),
+    request_status: str = Query(default="pending", alias="status"),
 ) -> Any:
-    """Return pending join requests for the authenticated agency owner."""
+    """Return join requests for the authenticated agency owner."""
     current_user_model = cast(User, current_user)
     if cast(int | None, current_user_model.agency_id) != agency_id:
         raise HTTPException(
@@ -509,18 +612,26 @@ def read_agency_join_requests(
             detail="Agency not found",
         )
 
+    allowed_statuses = {"pending", "approved", "rejected", "all"}
+    if request_status not in allowed_statuses:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid join request status filter",
+        )
+
     query = (
         select(AgencyJoinRequest)
         .options(joinedload(AgencyJoinRequest.user))
         .where(
             AgencyJoinRequest.agency_id == agency_id,
-            AgencyJoinRequest.status == "pending",
             AgencyJoinRequest.deleted_at.is_(None),
         )
         .order_by(AgencyJoinRequest.created_at.asc())
-        .offset(pagination["skip"])
-        .limit(pagination["limit"])
     )
+    if request_status != "all":
+        query = query.where(AgencyJoinRequest.status == request_status)
+
+    query = query.offset(pagination["skip"]).limit(pagination["limit"])
     return list(db.execute(query).scalars().all())
 
 
@@ -568,35 +679,30 @@ def approve_agency_join_request(
 
     actor_supabase_id = str(current_user_model.supabase_id)
     try:
-        update_payload: dict[str, Any] = {"user_role": UserRole.AGENT}
+        update_payload: dict[str, Any] = {}
+        if cast(UserRole, seeker.user_role) == UserRole.SEEKER:
+            update_payload["user_role"] = UserRole.AGENT
         if cast(int | None, seeker.agency_id) is None:
             update_payload["agency_id"] = agency_id
-        seeker = user_crud.update(
-            db,
-            db_obj=seeker,
-            obj_in=update_payload,
-            updated_by=actor_supabase_id,
+        if update_payload:
+            seeker = user_crud.update(
+                db,
+                db_obj=seeker,
+                obj_in=update_payload,
+                updated_by=actor_supabase_id,
+            )
+        _ensure_active_agency_membership(
+            db=db,
+            agency_id=agency_id,
+            user=seeker,
+            actor=current_user_model,
+            source_join_request_id=cast(int, join_request.join_request_id),
         )
-
-        existing_membership = db.execute(
-            select(AgencyAgentMembership).where(
-                AgencyAgentMembership.agency_id == agency_id,
-                AgencyAgentMembership.user_id == seeker.user_id,
-                AgencyAgentMembership.deleted_at.is_(None),
-            )
-        ).scalar_one_or_none()
-        if existing_membership is None:
-            db.add(
-                AgencyAgentMembership(
-                    agency_id=agency_id,
-                    user_id=seeker.user_id,
-                    source_join_request_id=join_request.join_request_id,
-                    created_by=current_user_model.supabase_id,
-                )
-            )
 
         cast(Any, join_request).status = "approved"
         cast(Any, join_request).rejection_reason = None
+        cast(Any, join_request).decided_at = datetime.now(timezone.utc)
+        join_request.decided_by = current_user_model.user_id
         join_request.updated_by = current_user_model.supabase_id
         db.add(join_request)
         db.flush()
@@ -650,6 +756,8 @@ def reject_agency_join_request(
 
     cast(Any, join_request).status = "rejected"
     cast(Any, join_request).rejection_reason = reject_in.reason if reject_in is not None else None
+    cast(Any, join_request).decided_at = datetime.now(timezone.utc)
+    join_request.decided_by = current_user_model.user_id
     join_request.updated_by = current_user_model.supabase_id
     db.add(join_request)
     db.flush()

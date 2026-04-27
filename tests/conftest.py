@@ -96,6 +96,22 @@ def db():
             ALTER TABLE properties
             ADD COLUMN IF NOT EXISTS moderation_reason TEXT;
         """))
+        schema_conn.execute(text("""
+            ALTER TABLE agency_join_requests
+            ADD COLUMN IF NOT EXISTS decided_at TIMESTAMP WITH TIME ZONE;
+        """))
+        schema_conn.execute(text("""
+            ALTER TABLE agency_join_requests
+            ADD COLUMN IF NOT EXISTS decided_by BIGINT;
+        """))
+        schema_conn.execute(text("""
+            ALTER TABLE agency_agent_memberships
+            ADD COLUMN IF NOT EXISTS agent_profile_id BIGINT;
+        """))
+        schema_conn.execute(text("""
+            ALTER TABLE agency_agent_memberships
+            ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'active' NOT NULL;
+        """))
     connection = engine.connect()
     transaction = connection.begin()
     db = TestingSessionLocal(bind=connection)

@@ -107,6 +107,8 @@ class AgencyJoinRequestResponse(BaseModel):
     cover_note: Optional[str] = None
     portfolio_details: Optional[str] = None
     rejection_reason: Optional[str] = None
+    decided_at: Optional[datetime] = None
+    decided_by: Optional[int] = None
     seeker_email: Optional[EmailStr] = None
     seeker_name: Optional[str] = None
     created_at: datetime
@@ -121,7 +123,28 @@ class MyAgencyJoinRequestResponse(BaseModel):
     agency_name: str
     status: AgencyJoinRequestStatus
     rejection_reason: Optional[str] = None
+    decided_at: Optional[datetime] = None
+    decided_by: Optional[int] = None
     submitted_at: datetime
+
+
+class AgencyAgentRosterResponse(BaseModel):
+    user_id: int
+    agency_id: int
+    membership_id: int
+    membership_status: str
+    display_name: str
+    email: EmailStr
+    phone_number: Optional[str] = None
+    profile_image_url: Optional[str] = None
+    profile_id: Optional[int] = None
+    specialization: Optional[str] = None
+    years_experience: Optional[int] = None
+    license_number: Optional[str] = None
+    bio: Optional[str] = None
+    company_name: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
 
 
 class AgencyInviteCreate(BaseModel):

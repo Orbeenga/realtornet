@@ -92,6 +92,8 @@ class TestAgencyApplication:
     def test_accept_invite_promotes_existing_user(
         self, client: TestClient, db, agency, agency_owner_token_headers, normal_user
     ):
+        from app.models.agency_join_requests import AgencyAgentMembership
+
         invite_response = client.post(
             f"/api/v1/agencies/{agency.agency_id}/invite/",
             json={"email": normal_user.email},
@@ -106,6 +108,12 @@ class TestAgencyApplication:
 
         assert response.status_code == 200
         assert response.json()["status"] == "accepted"
+        membership = db.query(AgencyAgentMembership).filter(
+            AgencyAgentMembership.agency_id == agency.agency_id,
+            AgencyAgentMembership.user_id == normal_user.user_id,
+            AgencyAgentMembership.status == "active",
+        ).one_or_none()
+        assert membership is not None
 
     def test_accept_invite_for_missing_user_returns_register_redirect(
         self, client: TestClient, agency, agency_owner_token_headers
@@ -177,16 +185,17 @@ class TestAgencyJoinRequests:
         assert data["agency_id"] == agency.agency_id
         assert data["status"] == "pending"
 
-    def test_join_request_is_seeker_only(
-        self, client: TestClient, agency, agent_token_headers
+    def test_agent_can_create_join_request_for_another_agency(
+        self, client: TestClient, other_agency, agent_token_headers
     ):
         response = client.post(
-            f"/api/v1/agencies/{agency.agency_id}/join-request/",
-            json={"cover_note": "Already an agent"},
+            f"/api/v1/agencies/{other_agency.agency_id}/join-request/",
+            json={"cover_note": "I would like to affiliate with this agency too."},
             headers=agent_token_headers,
         )
 
-        assert response.status_code == 403
+        assert response.status_code == 201
+        assert response.json()["agency_id"] == other_agency.agency_id
 
     def test_join_request_requires_approved_agency(
         self, client: TestClient, db, agency, normal_user_token_headers
@@ -241,6 +250,49 @@ class TestAgencyJoinRequests:
         assert len(data) >= 1
         assert data[0]["seeker_email"] == "user@example.com"
 
+    def test_agency_owner_all_status_join_requests_keeps_approved_audit_row(
+        self, client: TestClient, agency, normal_user_token_headers, agency_owner_token_headers
+    ):
+        from unittest.mock import patch
+
+        create_response = client.post(
+            f"/api/v1/agencies/{agency.agency_id}/join-request/",
+            json={"cover_note": "Please review me"},
+            headers=normal_user_token_headers,
+        )
+        assert create_response.status_code == 201
+        request_id = create_response.json()["join_request_id"]
+
+        with patch("app.api.endpoints.agencies.sync_supabase_auth_user_metadata"):
+            approve_response = client.patch(
+                f"/api/v1/agencies/{agency.agency_id}/join-requests/{request_id}/approve/",
+                headers=agency_owner_token_headers,
+            )
+
+        response = client.get(
+            f"/api/v1/agencies/{agency.agency_id}/join-requests/",
+            params={"status": "all"},
+            headers=agency_owner_token_headers,
+        )
+
+        assert approve_response.status_code == 200
+        assert response.status_code == 200
+        approved_item = next(item for item in response.json() if item["join_request_id"] == request_id)
+        assert approved_item["status"] == "approved"
+        assert approved_item["decided_at"] is not None
+        assert approved_item["decided_by"] is not None
+
+    def test_agency_owner_join_request_status_filter_validates_value(
+        self, client: TestClient, agency, agency_owner_token_headers
+    ):
+        response = client.get(
+            f"/api/v1/agencies/{agency.agency_id}/join-requests/",
+            params={"status": "accepted"},
+            headers=agency_owner_token_headers,
+        )
+
+        assert response.status_code == 400
+
     def test_seeker_lists_their_own_join_requests(
         self, client: TestClient, db, agency, other_agency, normal_user, normal_user_token_headers
     ):
@@ -274,12 +326,46 @@ class TestAgencyJoinRequests:
         rejected_item = next(item for item in data if item["status"] == "rejected")
         assert rejected_item["rejection_reason"] == "Need more portfolio detail"
 
-    def test_mine_join_requests_is_seeker_only(
-        self, client: TestClient, agent_token_headers
+    def test_promoted_agent_still_lists_their_approved_join_request(
+        self, client: TestClient, db, agency, normal_user, normal_user_token_headers, agency_owner_token_headers
+    ):
+        from unittest.mock import patch
+
+        create_response = client.post(
+            f"/api/v1/agencies/{agency.agency_id}/join-request/",
+            json={"cover_note": "Please review me"},
+            headers=normal_user_token_headers,
+        )
+        request_id = create_response.json()["join_request_id"]
+        with patch("app.api.endpoints.agencies.sync_supabase_auth_user_metadata"):
+            approve_response = client.patch(
+                f"/api/v1/agencies/{agency.agency_id}/join-requests/{request_id}/approve/",
+                headers=agency_owner_token_headers,
+            )
+        db.refresh(normal_user)
+        agent_token = generate_access_token(
+            supabase_id=normal_user.supabase_id,
+            user_id=normal_user.user_id,
+            user_role=normal_user.user_role.value,
+            agency_id=normal_user.agency_id,
+        )
+
+        response = client.get(
+            "/api/v1/join-requests/mine/",
+            headers={"Authorization": f"Bearer {agent_token}"},
+        )
+
+        assert approve_response.status_code == 200
+        assert response.status_code == 200
+        approved_item = next(item for item in response.json() if item["join_request_id"] == request_id)
+        assert approved_item["status"] == "approved"
+
+    def test_admin_cannot_read_personal_join_request_history(
+        self, client: TestClient, admin_token_headers
     ):
         response = client.get(
             "/api/v1/join-requests/mine/",
-            headers=agent_token_headers,
+            headers=admin_token_headers,
         )
 
         assert response.status_code == 403
@@ -347,6 +433,67 @@ class TestAgencyJoinRequests:
             AgencyAgentMembership.user_id == normal_user.user_id,
         ).one_or_none()
         assert membership is not None
+        assert membership.status == "active"
+
+    def test_approve_join_request_reactivates_existing_membership(
+        self, client: TestClient, db, agency, normal_user, normal_user_token_headers, agency_owner_token_headers
+    ):
+        from unittest.mock import patch
+        from app.models.agency_join_requests import AgencyAgentMembership
+
+        existing_membership = AgencyAgentMembership(
+            agency_id=agency.agency_id,
+            user_id=normal_user.user_id,
+            status="inactive",
+            deleted_at=datetime.now(UTC),
+        )
+        db.add(existing_membership)
+        db.flush()
+
+        create_response = client.post(
+            f"/api/v1/agencies/{agency.agency_id}/join-request/",
+            json={"portfolio_details": "Returning member"},
+            headers=normal_user_token_headers,
+        )
+        request_id = create_response.json()["join_request_id"]
+
+        with patch("app.api.endpoints.agencies.sync_supabase_auth_user_metadata"):
+            response = client.patch(
+                f"/api/v1/agencies/{agency.agency_id}/join-requests/{request_id}/approve/",
+                headers=agency_owner_token_headers,
+            )
+
+        assert response.status_code == 200
+        db.refresh(existing_membership)
+        assert existing_membership.status == "active"
+        assert existing_membership.deleted_at is None
+        assert existing_membership.source_join_request_id == request_id
+
+    def test_approved_join_request_agent_appears_in_agency_roster(
+        self, client: TestClient, agency, normal_user, normal_user_token_headers, agency_owner_token_headers
+    ):
+        from unittest.mock import patch
+
+        create_response = client.post(
+            f"/api/v1/agencies/{agency.agency_id}/join-request/",
+            json={"portfolio_details": "Portfolio text"},
+            headers=normal_user_token_headers,
+        )
+        request_id = create_response.json()["join_request_id"]
+        with patch("app.api.endpoints.agencies.sync_supabase_auth_user_metadata"):
+            approve_response = client.patch(
+                f"/api/v1/agencies/{agency.agency_id}/join-requests/{request_id}/approve/",
+                headers=agency_owner_token_headers,
+            )
+
+        roster_response = client.get(f"/api/v1/agencies/{agency.agency_id}/agents")
+
+        assert approve_response.status_code == 200
+        assert roster_response.status_code == 200
+        roster_item = next(item for item in roster_response.json() if item["user_id"] == normal_user.user_id)
+        assert roster_item["email"] == normal_user.email
+        assert roster_item["display_name"] == normal_user.full_name
+        assert roster_item["membership_status"] == "active"
 
     def test_approve_join_request_returns_404_for_missing_request(
         self, client: TestClient, agency, agency_owner_token_headers
@@ -745,6 +892,16 @@ class TestReadAgencyAgents:
         db.add(profile)
         db.flush()
         db.refresh(profile)
+        from app.models.agency_join_requests import AgencyAgentMembership
+
+        membership = AgencyAgentMembership(
+            agency_id=agency.agency_id,
+            user_id=agent_user.user_id,
+            agent_profile_id=profile.profile_id,
+            status="active",
+        )
+        db.add(membership)
+        db.flush()
 
         response = client.get(f"/api/v1/agencies/{agency.agency_id}/agents")
 
@@ -752,10 +909,11 @@ class TestReadAgencyAgents:
         data = response.json()
         assert isinstance(data, list)
         assert len(data) >= 1
-        assert data[0]["profile_id"] == profile.profile_id
-        assert data[0]["user_id"] == agent_user.user_id
-        assert data[0]["agency_id"] == agency.agency_id
-        assert data[0]["license_number"] == "LIC-AGENCY-001"
+        item = next(item for item in data if item["user_id"] == agent_user.user_id)
+        assert item["profile_id"] == profile.profile_id
+        assert item["agency_id"] == agency.agency_id
+        assert item["license_number"] == "LIC-AGENCY-001"
+        assert item["email"] == agent_user.email
 
 
 class TestReadAgencyProperties:
