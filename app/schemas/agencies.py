@@ -39,6 +39,13 @@ class AgencyMembershipReviewRequestStatus(str, Enum):
     REJECTED = "rejected"
 
 
+class AgentMembershipRestrictionStatus(str, Enum):
+    ACTIVE = "active"
+    SUSPENDED = "suspended"
+    BLOCKED = "blocked"
+    REVOKED = "revoked"
+
+
 # Base Schema (shared fields for responses)
 class AgencyBase(BaseModel):
     """Shared agency fields"""
@@ -202,6 +209,32 @@ class AgencyMembershipReviewRequestResponse(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class MyAgencyMembershipResponse(BaseModel):
+    membership_id: int
+    agency_id: int
+    agency_name: str
+    status: AgencyAgentMembershipStatus
+    status_reason: Optional[str] = None
+    status_decided_at: Optional[datetime] = None
+    status_decided_by: Optional[int] = None
+    source_join_request_id: Optional[int] = None
+    pending_review_request_id: Optional[int] = None
+    pending_review_reason: Optional[str] = None
+    pending_review_submitted_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class MyAgentMembershipStatusResponse(BaseModel):
+    agent_id: UUID
+    status: AgentMembershipRestrictionStatus
+    reason: Optional[str] = None
+    updated_at: datetime
+    membership_id: Optional[int] = None
+    agency_id: Optional[int] = None
+    agency_name: Optional[str] = None
 
 
 class AgencyInviteCreate(BaseModel):

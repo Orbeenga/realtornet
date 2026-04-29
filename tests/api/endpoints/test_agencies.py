@@ -1103,6 +1103,140 @@ class TestAgencyAgentMembershipManagement:
         assert response.status_code == 400
 
 
+class TestMyAgencyMemberships:
+
+    def test_agent_lists_own_non_active_membership_statuses(
+        self, client: TestClient, db, agency, other_agency, agent_user, agent_token_headers
+    ):
+        from app.models.agency_join_requests import AgencyAgentMembership, AgencyMembershipReviewRequest
+
+        suspended_membership = AgencyAgentMembership(
+            agency_id=agency.agency_id,
+            user_id=agent_user.user_id,
+            status="suspended",
+            status_reason="License needs review",
+        )
+        blocked_membership = AgencyAgentMembership(
+            agency_id=other_agency.agency_id,
+            user_id=agent_user.user_id,
+            status="blocked",
+            status_reason="Policy violation",
+        )
+        db.add_all([suspended_membership, blocked_membership])
+        db.flush()
+        db.refresh(suspended_membership)
+
+        review_request = AgencyMembershipReviewRequest(
+            membership_id=suspended_membership.membership_id,
+            agency_id=agency.agency_id,
+            user_id=agent_user.user_id,
+            status="pending",
+            reason="My license has been renewed.",
+        )
+        db.add(review_request)
+        db.flush()
+
+        response = client.get(
+            "/api/v1/agency-memberships/mine/",
+            headers=agent_token_headers,
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        statuses_by_agency = {item["agency_id"]: item for item in data}
+        assert statuses_by_agency[agency.agency_id]["status"] == "suspended"
+        assert statuses_by_agency[agency.agency_id]["status_reason"] == "License needs review"
+        assert statuses_by_agency[agency.agency_id]["pending_review_request_id"] == review_request.review_request_id
+        assert statuses_by_agency[agency.agency_id]["pending_review_reason"] == "My license has been renewed."
+        assert statuses_by_agency[other_agency.agency_id]["status"] == "blocked"
+
+    def test_seeker_without_memberships_gets_empty_membership_status_list(
+        self, client: TestClient, normal_user_token_headers
+    ):
+        response = client.get(
+            "/api/v1/agency-memberships/mine/",
+            headers=normal_user_token_headers,
+        )
+
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_admin_cannot_read_personal_membership_status_list(
+        self, client: TestClient, admin_token_headers
+    ):
+        response = client.get(
+            "/api/v1/agency-memberships/mine/",
+            headers=admin_token_headers,
+        )
+
+        assert response.status_code == 403
+
+    def test_agent_membership_status_returns_most_restrictive_state(
+        self, client: TestClient, db, agency, other_agency, agent_user, agent_token_headers
+    ):
+        from app.models.agency_join_requests import AgencyAgentMembership
+
+        active_membership = AgencyAgentMembership(
+            agency_id=agency.agency_id,
+            user_id=agent_user.user_id,
+            status="active",
+        )
+        blocked_membership = AgencyAgentMembership(
+            agency_id=other_agency.agency_id,
+            user_id=agent_user.user_id,
+            status="blocked",
+            status_reason="Policy violation",
+        )
+        db.add_all([active_membership, blocked_membership])
+        db.flush()
+
+        response = client.get(
+            "/api/v1/membership/me/status",
+            headers=agent_token_headers,
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["agent_id"] == str(agent_user.supabase_id)
+        assert data["status"] == "blocked"
+        assert data["reason"] == "Policy violation"
+        assert data["agency_id"] == other_agency.agency_id
+        assert data["updated_at"] is not None
+
+    def test_agent_membership_status_maps_inactive_to_revoked(
+        self, client: TestClient, db, agency, agent_user, agent_token_headers
+    ):
+        from app.models.agency_join_requests import AgencyAgentMembership
+
+        membership = AgencyAgentMembership(
+            agency_id=agency.agency_id,
+            user_id=agent_user.user_id,
+            status="inactive",
+            status_reason="Contract ended",
+        )
+        db.add(membership)
+        db.flush()
+
+        response = client.get(
+            "/api/v1/membership/me/status",
+            headers=agent_token_headers,
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "revoked"
+        assert response.json()["reason"] == "Contract ended"
+
+    def test_seeker_cannot_read_agent_membership_status(
+        self, client: TestClient, normal_user_token_headers
+    ):
+        response = client.get(
+            "/api/v1/membership/me/status",
+            headers=normal_user_token_headers,
+        )
+
+        assert response.status_code == 403
+
+
 class TestReadAgencyProperties:
 
     def test_agency_not_found_returns_404(self, client: TestClient):
