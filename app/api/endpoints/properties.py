@@ -119,6 +119,15 @@ def read_properties(
     return properties
 
 
+@router.get("/featured", response_model=List[PropertyResponse])
+def read_featured_properties(
+    db: Session = Depends(get_db),
+    limit: int = Query(default=6, ge=1, le=24, description="Maximum featured properties"),
+) -> Any:
+    """Return recent public featured properties for the landing page."""
+    return property_crud.get_public_featured(db, limit=limit)
+
+
 @router.post("/", response_model=PropertyResponse, status_code=status.HTTP_201_CREATED)
 def create_property(
     *,

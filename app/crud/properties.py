@@ -157,7 +157,7 @@ class PropertyCRUD:
         *, 
         limit: int = 6
     ) -> List[Property]:
-        """Get featured properties (verified and featured flag)"""
+        """Get featured properties."""
         query = select(Property).where(
             and_(
                 Property.is_featured == True,
@@ -166,6 +166,24 @@ class PropertyCRUD:
             )
         ).order_by(Property.created_at.desc()).limit(limit)
         
+        return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
+
+    def get_public_featured(
+        self,
+        db: Session,
+        *,
+        limit: int = 6
+    ) -> List[Property]:
+        """Get public featured properties for unauthenticated surfaces."""
+        query = select(Property).where(
+            and_(
+                Property.is_featured == True,
+                self._verified_visibility_filter(),
+                Property.listing_status == ListingStatus.available,
+                Property.deleted_at.is_(None)
+            )
+        ).order_by(Property.created_at.desc()).limit(limit)
+
         return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
     
     def count(

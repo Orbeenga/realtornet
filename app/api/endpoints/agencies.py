@@ -48,6 +48,7 @@ from app.schemas.agencies import (
     AgencyJoinRequestRejectRequest,
     AgencyJoinRequestResponse,
     AgencyMembershipReviewRequestCreate,
+    AgencyMembershipReviewDecisionRequest,
     AgencyMembershipReviewRequestResponse,
     AgencyUpdate
 )
@@ -117,9 +118,24 @@ def _membership_payload(*, membership: AgencyAgentMembership, user: User) -> dic
         "license_number": getattr(profile, "license_number", None),
         "bio": getattr(profile, "bio", None),
         "company_name": getattr(profile, "company_name", None),
+        "pending_review_request_id": None,
+        "pending_review_reason": None,
+        "pending_review_submitted_at": None,
         "created_at": membership.created_at,
         "updated_at": membership.updated_at,
     }
+
+
+def _attach_pending_review_payload(
+    payload: dict[str, Any],
+    review_request: AgencyMembershipReviewRequest | None,
+) -> dict[str, Any]:
+    if review_request is None:
+        return payload
+    payload["pending_review_request_id"] = review_request.review_request_id
+    payload["pending_review_reason"] = review_request.reason
+    payload["pending_review_submitted_at"] = review_request.created_at
+    return payload
 
 
 def _ensure_active_agency_membership(
@@ -222,6 +238,101 @@ def _set_membership_status(
     db.flush()
     db.refresh(membership)
     return membership
+
+
+def _first_active_membership_agency_for_user(*, db: Session, user_id: int) -> int | None:
+    return db.execute(
+        select(AgencyAgentMembership.agency_id)
+        .where(
+            AgencyAgentMembership.user_id == user_id,
+            AgencyAgentMembership.status == "active",
+            AgencyAgentMembership.deleted_at.is_(None),
+        )
+        .order_by(AgencyAgentMembership.created_at.asc())
+    ).scalar_one_or_none()
+
+
+def _apply_membership_role_after_status_change(
+    *,
+    db: Session,
+    membership: AgencyAgentMembership,
+    actor: User,
+    new_status: str,
+) -> tuple[User, bool]:
+    member = user_crud.get(db, user_id=cast(int, membership.user_id))
+    if member is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agency member user not found",
+        )
+
+    member_role = cast(UserRole, member.user_role)
+    if member_role in {UserRole.ADMIN, UserRole.AGENCY_OWNER}:
+        return member, False
+
+    update_payload: dict[str, Any] = {}
+    if new_status == "active":
+        if member_role == UserRole.SEEKER:
+            update_payload["user_role"] = UserRole.AGENT
+        if cast(int | None, member.agency_id) is None:
+            update_payload["agency_id"] = membership.agency_id
+    elif new_status == "inactive":
+        remaining_active_agency_id = _first_active_membership_agency_for_user(
+            db=db,
+            user_id=cast(int, member.user_id),
+        )
+        if remaining_active_agency_id is None:
+            if member_role == UserRole.AGENT:
+                update_payload["user_role"] = UserRole.SEEKER
+            if cast(int | None, member.agency_id) is not None:
+                update_payload["agency_id"] = None
+        elif cast(int | None, member.agency_id) != remaining_active_agency_id:
+            update_payload["agency_id"] = remaining_active_agency_id
+
+    if update_payload:
+        member = user_crud.update(
+            db,
+            db_obj=member,
+            obj_in=update_payload,
+            updated_by=str(actor.supabase_id),
+        )
+        return member, True
+    return member, False
+
+
+def _set_membership_status_and_sync_user(
+    *,
+    db: Session,
+    membership: AgencyAgentMembership,
+    current_user: User,
+    status_value: str,
+    reason: str | None,
+) -> AgencyAgentMembership:
+    try:
+        membership = _set_membership_status(
+            db=db,
+            membership=membership,
+            current_user=current_user,
+            status_value=status_value,
+            reason=reason,
+        )
+        member, user_changed = _apply_membership_role_after_status_change(
+            db=db,
+            membership=membership,
+            actor=current_user,
+            new_status=status_value,
+        )
+        if user_changed:
+            sync_supabase_auth_user_metadata(member)
+        db.flush()
+        db.refresh(membership)
+        return membership
+    except SupabaseUserSyncError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
 
 
 @router.get("/", response_model=List[AgencyResponse])
@@ -580,9 +691,30 @@ def read_agency_agents(
         query = query.where(AgencyAgentMembership.status == "active")
     elif membership_status != "all":
         query = query.where(AgencyAgentMembership.status == membership_status)
+    membership_rows = db.execute(query).all()
+    membership_ids = [cast(int, membership.membership_id) for membership, _ in membership_rows]
+    pending_reviews: dict[int, AgencyMembershipReviewRequest] = {}
+    if membership_ids:
+        review_rows = db.execute(
+            select(AgencyMembershipReviewRequest)
+            .where(
+                AgencyMembershipReviewRequest.membership_id.in_(membership_ids),
+                AgencyMembershipReviewRequest.status == "pending",
+                AgencyMembershipReviewRequest.deleted_at.is_(None),
+            )
+            .order_by(AgencyMembershipReviewRequest.created_at.desc())
+        ).scalars()
+        for review_request in review_rows:
+            membership_id = cast(int, review_request.membership_id)
+            if membership_id not in pending_reviews:
+                pending_reviews[membership_id] = review_request
+
     return [
-        _membership_payload(membership=membership, user=user)
-        for membership, user in db.execute(query).all()
+        _attach_pending_review_payload(
+            _membership_payload(membership=membership, user=user),
+            pending_reviews.get(cast(int, membership.membership_id)),
+        )
+        for membership, user in membership_rows
     ]
 
 
@@ -603,7 +735,7 @@ def suspend_agency_agent_membership(
         membership_id=membership_id,
         current_user=cast(User, current_user),
     )
-    return _set_membership_status(
+    return _set_membership_status_and_sync_user(
         db=db,
         membership=membership,
         current_user=cast(User, current_user),
@@ -629,7 +761,7 @@ def revoke_agency_agent_membership(
         membership_id=membership_id,
         current_user=cast(User, current_user),
     )
-    return _set_membership_status(
+    return _set_membership_status_and_sync_user(
         db=db,
         membership=membership,
         current_user=cast(User, current_user),
@@ -655,11 +787,37 @@ def block_agency_agent_membership(
         membership_id=membership_id,
         current_user=cast(User, current_user),
     )
-    return _set_membership_status(
+    return _set_membership_status_and_sync_user(
         db=db,
         membership=membership,
         current_user=cast(User, current_user),
         status_value="blocked",
+        reason=action_in.reason if action_in is not None else None,
+    )
+
+
+@router.patch("/{agency_id}/agents/{membership_id}/restore/", response_model=AgencyAgentMembershipResponse)
+def restore_agency_agent_membership(
+    *,
+    db: Session = Depends(get_db),
+    agency_id: int,
+    membership_id: int,
+    action_in: AgencyAgentMembershipActionRequest | None = None,
+    current_user: UserResponse = Depends(get_current_agency_owner_user),
+    _: None = Depends(validate_request_size),
+) -> Any:
+    """Reactivate a revoked, suspended, or blocked agency membership."""
+    membership = _get_owned_agency_membership(
+        db=db,
+        agency_id=agency_id,
+        membership_id=membership_id,
+        current_user=cast(User, current_user),
+    )
+    return _set_membership_status_and_sync_user(
+        db=db,
+        membership=membership,
+        current_user=cast(User, current_user),
+        status_value="active",
         reason=action_in.reason if action_in is not None else None,
     )
 
@@ -724,6 +882,116 @@ def create_agency_membership_review_request(
         reason=review_in.reason,
         created_by=current_user_model.supabase_id,
     )
+    db.add(review_request)
+    db.flush()
+    db.refresh(review_request)
+    return review_request
+
+
+def _get_owned_membership_review_request(
+    *,
+    db: Session,
+    agency_id: int,
+    membership_id: int,
+    review_request_id: int,
+    current_user: User,
+) -> tuple[AgencyAgentMembership, AgencyMembershipReviewRequest]:
+    membership = _get_owned_agency_membership(
+        db=db,
+        agency_id=agency_id,
+        membership_id=membership_id,
+        current_user=current_user,
+    )
+    review_request = db.execute(
+        select(AgencyMembershipReviewRequest).where(
+            AgencyMembershipReviewRequest.review_request_id == review_request_id,
+            AgencyMembershipReviewRequest.membership_id == membership_id,
+            AgencyMembershipReviewRequest.agency_id == agency_id,
+            AgencyMembershipReviewRequest.deleted_at.is_(None),
+        )
+    ).scalar_one_or_none()
+    if review_request is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Membership review request not found",
+        )
+    if str(review_request.status) != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Membership review request has already been reviewed",
+        )
+    return membership, review_request
+
+
+@router.patch(
+    "/{agency_id}/agents/{membership_id}/review-requests/{review_request_id}/approve/",
+    response_model=AgencyMembershipReviewRequestResponse,
+)
+def approve_agency_membership_review_request(
+    *,
+    db: Session = Depends(get_db),
+    agency_id: int,
+    membership_id: int,
+    review_request_id: int,
+    decision_in: AgencyMembershipReviewDecisionRequest | None = None,
+    current_user: UserResponse = Depends(get_current_agency_owner_user),
+    _: None = Depends(validate_request_size),
+) -> Any:
+    """Approve an agent review request and reactivate the membership."""
+    current_user_model = cast(User, current_user)
+    membership, review_request = _get_owned_membership_review_request(
+        db=db,
+        agency_id=agency_id,
+        membership_id=membership_id,
+        review_request_id=review_request_id,
+        current_user=current_user_model,
+    )
+    _set_membership_status_and_sync_user(
+        db=db,
+        membership=membership,
+        current_user=current_user_model,
+        status_value="active",
+        reason=decision_in.reason if decision_in is not None else None,
+    )
+    cast(Any, review_request).status = "approved"
+    cast(Any, review_request).response_reason = decision_in.reason if decision_in is not None else None
+    cast(Any, review_request).decided_at = datetime.now(timezone.utc)
+    review_request.decided_by = current_user_model.user_id
+    review_request.updated_by = current_user_model.supabase_id
+    db.add(review_request)
+    db.flush()
+    db.refresh(review_request)
+    return review_request
+
+
+@router.patch(
+    "/{agency_id}/agents/{membership_id}/review-requests/{review_request_id}/reject/",
+    response_model=AgencyMembershipReviewRequestResponse,
+)
+def reject_agency_membership_review_request(
+    *,
+    db: Session = Depends(get_db),
+    agency_id: int,
+    membership_id: int,
+    review_request_id: int,
+    decision_in: AgencyMembershipReviewDecisionRequest | None = None,
+    current_user: UserResponse = Depends(get_current_agency_owner_user),
+    _: None = Depends(validate_request_size),
+) -> Any:
+    """Reject an agent review request while retaining the membership state."""
+    current_user_model = cast(User, current_user)
+    _membership, review_request = _get_owned_membership_review_request(
+        db=db,
+        agency_id=agency_id,
+        membership_id=membership_id,
+        review_request_id=review_request_id,
+        current_user=current_user_model,
+    )
+    cast(Any, review_request).status = "rejected"
+    cast(Any, review_request).response_reason = decision_in.reason if decision_in is not None else None
+    cast(Any, review_request).decided_at = datetime.now(timezone.utc)
+    review_request.decided_by = current_user_model.user_id
+    review_request.updated_by = current_user_model.supabase_id
     db.add(review_request)
     db.flush()
     db.refresh(review_request)

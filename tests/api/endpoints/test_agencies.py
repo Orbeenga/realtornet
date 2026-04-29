@@ -981,6 +981,7 @@ class TestAgencyAgentMembershipManagement:
     def test_agency_owner_suspends_revokes_and_blocks_membership(
         self, client: TestClient, db, agency, agent_user, agency_owner_user, agency_owner_token_headers
     ):
+        from unittest.mock import patch
         from app.models.agency_join_requests import AgencyAgentMembership
 
         membership = AgencyAgentMembership(
@@ -992,21 +993,22 @@ class TestAgencyAgentMembershipManagement:
         db.flush()
         db.refresh(membership)
 
-        suspend_response = client.patch(
-            f"/api/v1/agencies/{agency.agency_id}/agents/{membership.membership_id}/suspend/",
-            json={"reason": "License needs review"},
-            headers=agency_owner_token_headers,
-        )
-        revoke_response = client.patch(
-            f"/api/v1/agencies/{agency.agency_id}/agents/{membership.membership_id}/revoke/",
-            json={"reason": "Contract ended"},
-            headers=agency_owner_token_headers,
-        )
-        block_response = client.patch(
-            f"/api/v1/agencies/{agency.agency_id}/agents/{membership.membership_id}/block/",
-            json={"reason": "Policy violation"},
-            headers=agency_owner_token_headers,
-        )
+        with patch("app.api.endpoints.agencies.sync_supabase_auth_user_metadata"):
+            suspend_response = client.patch(
+                f"/api/v1/agencies/{agency.agency_id}/agents/{membership.membership_id}/suspend/",
+                json={"reason": "License needs review"},
+                headers=agency_owner_token_headers,
+            )
+            revoke_response = client.patch(
+                f"/api/v1/agencies/{agency.agency_id}/agents/{membership.membership_id}/revoke/",
+                json={"reason": "Contract ended"},
+                headers=agency_owner_token_headers,
+            )
+            block_response = client.patch(
+                f"/api/v1/agencies/{agency.agency_id}/agents/{membership.membership_id}/block/",
+                json={"reason": "Policy violation"},
+                headers=agency_owner_token_headers,
+            )
 
         assert suspend_response.status_code == 200
         assert suspend_response.json()["status"] == "suspended"
@@ -1017,6 +1019,203 @@ class TestAgencyAgentMembershipManagement:
         assert revoke_response.json()["status"] == "inactive"
         assert block_response.status_code == 200
         assert block_response.json()["status"] == "blocked"
+
+    def test_revoking_last_active_membership_demotes_agent_to_seeker(
+        self, client: TestClient, db, agency, agent_user, agency_owner_token_headers
+    ):
+        from unittest.mock import patch
+        from app.models.agency_join_requests import AgencyAgentMembership
+        from app.models.users import UserRole
+
+        membership = AgencyAgentMembership(
+            agency_id=agency.agency_id,
+            user_id=agent_user.user_id,
+            status="active",
+        )
+        db.add(membership)
+        db.flush()
+        db.refresh(membership)
+
+        with patch("app.api.endpoints.agencies.sync_supabase_auth_user_metadata") as sync_mock:
+            response = client.patch(
+                f"/api/v1/agencies/{agency.agency_id}/agents/{membership.membership_id}/revoke/",
+                json={"reason": "Contract ended"},
+                headers=agency_owner_token_headers,
+            )
+
+        assert response.status_code == 200
+        db.refresh(agent_user)
+        assert agent_user.user_role == UserRole.SEEKER
+        assert agent_user.agency_id is None
+        sync_mock.assert_called_once()
+
+    def test_revoking_one_of_multiple_active_memberships_keeps_agent_role(
+        self, client: TestClient, db, agency, other_agency, agent_user, agency_owner_token_headers
+    ):
+        from unittest.mock import patch
+        from app.models.agency_join_requests import AgencyAgentMembership
+        from app.models.users import UserRole
+
+        owned_membership = AgencyAgentMembership(
+            agency_id=agency.agency_id,
+            user_id=agent_user.user_id,
+            status="active",
+        )
+        other_membership = AgencyAgentMembership(
+            agency_id=other_agency.agency_id,
+            user_id=agent_user.user_id,
+            status="active",
+        )
+        db.add_all([owned_membership, other_membership])
+        db.flush()
+        db.refresh(owned_membership)
+
+        with patch("app.api.endpoints.agencies.sync_supabase_auth_user_metadata"):
+            response = client.patch(
+                f"/api/v1/agencies/{agency.agency_id}/agents/{owned_membership.membership_id}/revoke/",
+                json={"reason": "Left this branch"},
+                headers=agency_owner_token_headers,
+            )
+
+        assert response.status_code == 200
+        db.refresh(agent_user)
+        assert agent_user.user_role == UserRole.AGENT
+        assert agent_user.agency_id == other_agency.agency_id
+
+    def test_restore_membership_promotes_seeker_back_to_agent(
+        self, client: TestClient, db, agency, normal_user, agency_owner_token_headers
+    ):
+        from unittest.mock import patch
+        from app.models.agency_join_requests import AgencyAgentMembership
+        from app.models.users import UserRole
+
+        membership = AgencyAgentMembership(
+            agency_id=agency.agency_id,
+            user_id=normal_user.user_id,
+            status="inactive",
+            status_reason="Contract ended",
+        )
+        db.add(membership)
+        db.flush()
+        db.refresh(membership)
+
+        with patch("app.api.endpoints.agencies.sync_supabase_auth_user_metadata") as sync_mock:
+            response = client.patch(
+                f"/api/v1/agencies/{agency.agency_id}/agents/{membership.membership_id}/restore/",
+                json={"reason": "Review approved"},
+                headers=agency_owner_token_headers,
+            )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "active"
+        db.refresh(normal_user)
+        assert normal_user.user_role == UserRole.AGENT
+        assert normal_user.agency_id == agency.agency_id
+        sync_mock.assert_called_once()
+
+    def test_approve_review_request_restores_membership(
+        self, client: TestClient, db, agency, normal_user, normal_user_token_headers, agency_owner_token_headers
+    ):
+        from unittest.mock import patch
+        from app.models.agency_join_requests import AgencyAgentMembership
+
+        membership = AgencyAgentMembership(
+            agency_id=agency.agency_id,
+            user_id=normal_user.user_id,
+            status="inactive",
+            status_reason="Contract ended",
+        )
+        db.add(membership)
+        db.flush()
+        db.refresh(membership)
+
+        review_response = client.post(
+            f"/api/v1/agencies/{agency.agency_id}/agents/{membership.membership_id}/review-request/",
+            json={"reason": "I have updated my paperwork."},
+            headers=normal_user_token_headers,
+        )
+        review_request_id = review_response.json()["review_request_id"]
+
+        with patch("app.api.endpoints.agencies.sync_supabase_auth_user_metadata"):
+            approve_response = client.patch(
+                f"/api/v1/agencies/{agency.agency_id}/agents/{membership.membership_id}/review-requests/{review_request_id}/approve/",
+                json={"reason": "Paperwork accepted"},
+                headers=agency_owner_token_headers,
+            )
+
+        assert review_response.status_code == 201
+        assert approve_response.status_code == 200
+        assert approve_response.json()["status"] == "approved"
+        db.refresh(membership)
+        assert membership.status == "active"
+
+    def test_reject_review_request_keeps_membership_inactive(
+        self, client: TestClient, db, agency, normal_user, normal_user_token_headers, agency_owner_token_headers
+    ):
+        from app.models.agency_join_requests import AgencyAgentMembership
+
+        membership = AgencyAgentMembership(
+            agency_id=agency.agency_id,
+            user_id=normal_user.user_id,
+            status="inactive",
+        )
+        db.add(membership)
+        db.flush()
+        db.refresh(membership)
+        review_response = client.post(
+            f"/api/v1/agencies/{agency.agency_id}/agents/{membership.membership_id}/review-request/",
+            json={"reason": "Please reconsider."},
+            headers=normal_user_token_headers,
+        )
+        review_request_id = review_response.json()["review_request_id"]
+
+        reject_response = client.patch(
+            f"/api/v1/agencies/{agency.agency_id}/agents/{membership.membership_id}/review-requests/{review_request_id}/reject/",
+            json={"reason": "Still missing documents"},
+            headers=agency_owner_token_headers,
+        )
+
+        assert reject_response.status_code == 200
+        assert reject_response.json()["status"] == "rejected"
+        assert reject_response.json()["response_reason"] == "Still missing documents"
+        db.refresh(membership)
+        assert membership.status == "inactive"
+
+    def test_agency_roster_includes_pending_review_metadata(
+        self, client: TestClient, db, agency, normal_user, normal_user_token_headers, agency_owner_token_headers
+    ):
+        from app.models.agency_join_requests import AgencyAgentMembership
+
+        membership = AgencyAgentMembership(
+            agency_id=agency.agency_id,
+            user_id=normal_user.user_id,
+            status="inactive",
+        )
+        db.add(membership)
+        db.flush()
+        db.refresh(membership)
+
+        review_response = client.post(
+            f"/api/v1/agencies/{agency.agency_id}/agents/{membership.membership_id}/review-request/",
+            json={"reason": "I have completed the required update."},
+            headers=normal_user_token_headers,
+        )
+        assert review_response.status_code == 201
+
+        roster_response = client.get(
+            f"/api/v1/agencies/{agency.agency_id}/agents",
+            params={"status": "all"},
+            headers=agency_owner_token_headers,
+        )
+
+        assert roster_response.status_code == 200
+        roster_item = next(
+            item for item in roster_response.json()
+            if item["membership_id"] == membership.membership_id
+        )
+        assert roster_item["pending_review_request_id"] == review_response.json()["review_request_id"]
+        assert roster_item["pending_review_reason"] == "I have completed the required update."
+        assert roster_item["pending_review_submitted_at"] is not None
 
     def test_other_agency_owner_cannot_manage_membership(
         self, client: TestClient, db, agency, other_agency, agent_user

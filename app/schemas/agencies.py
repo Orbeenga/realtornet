@@ -128,6 +128,10 @@ class AgencyMembershipReviewRequestCreate(BaseModel):
     reason: Optional[str] = None
 
 
+class AgencyMembershipReviewDecisionRequest(BaseModel):
+    reason: Optional[str] = None
+
+
 class AgencyJoinRequestResponse(BaseModel):
     join_request_id: int
     agency_id: int
@@ -175,6 +179,9 @@ class AgencyAgentRosterResponse(BaseModel):
     license_number: Optional[str] = None
     bio: Optional[str] = None
     company_name: Optional[str] = None
+    pending_review_request_id: Optional[int] = None
+    pending_review_reason: Optional[str] = None
+    pending_review_submitted_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 
