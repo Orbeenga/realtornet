@@ -20,8 +20,10 @@
 - Flag any ORM/schema/router drift from DB truth
 
 ## Current phase state
-- Phase F is closed
-- Phase G is open
+- Phase F closed April 25 2026
+- Phase G closed April 29 2026
+- Backend G.7 exit sweep passed: pyright 0 errors; production smoke 12/12; new agency journey passed end to end
+- Frontend G.7 closed in commit `d74806f`: tsc 0 errors, production build clean, Lighthouse mobile LCP 1.5s, accessibility 1.00, production routes 200
 
 ## Locked environment decisions
 - Production Supabase project ref: `avkhpachzsbgmbnkfnhu`
@@ -30,6 +32,14 @@
 - Never mix production and dev Supabase projects during cleanup, verification, migrations, or auth debugging
 
 ## Locked product decisions
+- Agency-first public hierarchy is locked: Agencies -> Listings -> Agents
+- `agency_owner` role is active in the user role enum; all four roles are active: seeker, agent, agency_owner, admin
+- Multi-agency membership is represented by the `agency_agent_memberships` table; `users.agency_id` remains the legacy primary agency pointer
+- Property moderation status enum is active: pending_review / verified / rejected / revoked
+- Seeker join-request flow is live
+- Agent invitation flow is live
+- Agency application and admin approval flow is live
+- Featured properties endpoint is live
 - Agency branding is pre-launch scope on property detail only for now
 - Property-card agency branding stays deferred until the property list response includes agency branding fields; do not introduce N+1 card fetches
 - Agency-wide inquiry rollup is deferred to Phase G; do not aggregate per-property inquiry calls in the frontend
@@ -58,7 +68,8 @@
 7. Minimal, maintainable diffs
 
 ## Next session handover
-- Start Phase G with `DEF-G-INQ-002`
+- Phase G is closed; do not reopen Phase G unless investigating a regression from the closed state
+- Phase H scope has not been opened in this repo
 - Keep production vs dev Supabase separation strict during all investigations
 - Treat agency card branding as blocked on backend enrichment, not frontend fetch fan-out
 - Use the backlog above as the opening queue for planning and execution

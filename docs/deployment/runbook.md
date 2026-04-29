@@ -124,8 +124,10 @@ All variables below are required in production. No defaults are safe to use.
 | `SUPABASE_ANON_KEY` | Supabase anon key | from Supabase dashboard |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key | from Supabase dashboard |
 | `BACKEND_CORS_ORIGINS` | Allowed frontend origins | `["https://yourdomain.com"]` |
-| `REDIS_HOST` | Redis host | `localhost` or managed Redis host |
-| `REDIS_PORT` | Redis port | `6379` |
+| `REDIS_URL` | Preferred Redis connection string for Railway backend service | `${{Redis.REDIS_URL}}` |
+| `REDISHOST` / `REDISPORT` / `REDISUSER` / `REDISPASSWORD` | Railway Redis component variables, also supported by backend config | Reference from the Railway Redis service when `REDIS_URL` is not shared |
+| `REDIS_HOST` | Legacy Redis host fallback | `localhost` or managed Redis host |
+| `REDIS_PORT` | Legacy Redis port fallback | `6379` |
 | `PYTHONPATH` | Module resolution | `.` |
 
 Optional but recommended:

@@ -1,5 +1,22 @@
 # Deferred Items
 
+## Phase G close update (April 29, 2026)
+
+Phase G backend exit is closed after production smoke validation.
+
+Closed in Phase G:
+- `DEF-G-INQ-002`: Inquiry property hydration fixed by serializing related property data on received inquiries.
+- `DEF-G-AG-001`: Agency identity is live where the current response contract supports it; property-card-wide branding remains blocked until the property list contract is expanded without N+1 fetches.
+- `DEF-G-AG-002`: Agency application and admin approval flow is live.
+- `DEF-G-MOD-001`: Moderation status enum is live: pending_review / verified / rejected / revoked.
+
+Promoted to Phase H:
+- `DEF-G-TBT-001`: TBT < 100ms remains frontend architecture work after launch.
+- `DEF-G-POLYFILL-001`: Residual third-party `core-js` cleanup remains post-launch dependency work.
+- `DEF-002`: Audit log retention remains deferred until 60 days of real traffic.
+- `DEF-007`: psycopg3 dev restart workaround remains a development-environment follow-up.
+- Agency owner onboarding self-service, advanced map view, admin analytics, saved search notifications, Nominatim/OSM geocoding, email notification service, agency aggregation optimization, custom domain setup.
+
 ## DEF-006: Supabase storage bucket provisioning and policy verification
 
 Phase D fixed backend storage writes by switching all upload/delete operations to the admin client, but bucket existence, public exposure, and environment-side policy verification still live outside this repo.
@@ -8,7 +25,7 @@ Current expectation: `property-images`, `profile-images`, and `agency-logos` alr
 
 Pre-launch: add deployment-time validation or provisioning automation so storage buckets and required access settings are checked explicitly per environment.
 
-## DEF-007: psycopg3 prepared statement corruption in dev
+## DEF-007: psycopg3 prepared statement corruption in dev (Promoted to Phase H)
 
 Pattern: `DuplicatePreparedStatement`, `ProtocolViolation`, and `InFailedSqlTransaction` errors appearing after extended backend uptime or connection disruption.
 
@@ -38,46 +55,28 @@ Verification snapshot:
 Follow-up:
 - Keep using `scripts/check_rls.sql` for future environment verification after restores, clones, or manual dashboard changes
 
-## DEF-G-MOD-001: Full moderation status workflow
+## DEF-G-MOD-001 (Resolved): Full moderation status workflow
 
-Phase G should replace the current `is_verified` boolean with an explicit `moderation_status` enum covering `pending_review`, `verified`, `rejected`, and `revoked`.
+Phase G replaced the previous boolean-only workflow with an explicit `moderation_status` enum covering `pending_review`, `verified`, `rejected`, and `revoked`.
 
-Scope:
-- Add a rejection reason field
-- Add backend-driven notifications
-- Add an agent inbox experience contract
-- Add moderation history
-- Add admin moderation filters
-- Add a resubmit flow
+Resolved status:
+- `PATCH /api/v1/properties/{property_id}/verify` accepts moderation status and reason
+- Admin can set verified/rejected/revoked/pending_review
+- Agent-facing status is backed by the enum contract
+- Public feed excludes non-verified listings
 
-Constraint: design the backend schema and workflow contract first before any frontend work begins.
+## DEF-002: Audit log retention (Promoted to Phase H)
 
-## DEF-002: Audit log retention
-
-Deferred to Phase G. No real traffic data to size policy against.
+No real traffic data yet to size policy against.
 
 Revisit after 60 days of production usage. Decision at that point:
 - rolling window (e.g. 90 days)
 - archive-to-cold-storage strategy
 
-## DEF-G-INQ-002: Inquiry cards missing property title/link on agent inbox
+## DEF-G-INQ-002 (Resolved): Inquiry cards missing property title/link on agent inbox
 
-Agent `/account/inquiries` cards currently show seeker contact details but no property title or property link.
+Agent `/account/inquiries` cards are backed by received-inquiry responses that include nested property data.
 
-Observed behavior:
-- secondary fetch for `GET /api/v1/properties/{id}/` returns `204` with no body
-- origin is still unknown
-- backend route inspection rules out an intentional `204` from the FastAPI property handler
-- frontend normalization was reviewed separately and reported clean
-- suspected layer is Vercel -> Railway proxy behavior, but this is not yet proven
-
-Backend gap also exists:
-- `GET /api/v1/inquiries/received` does not join or serialize related property data
-- current frontend relies on N+1 hydration using `property_id`
-
-Phase decision:
-- accept for Phase F
-- defer full investigation and cleanup to Phase G
-
-Next verification step:
-- inspect the live browser Network tab with auth headers visible for the failing property fetches
+Resolved status:
+- `GET /api/v1/inquiries/received` serializes the related property payload.
+- Production G.7 smoke confirmed the agent received-inquiries endpoint returns successfully after a seeker inquiry.

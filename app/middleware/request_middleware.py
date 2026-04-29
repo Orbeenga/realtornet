@@ -6,6 +6,7 @@ Provides distributed rate limiting using Redis with production-grade features
 
 import time
 from typing import Optional
+from urllib.parse import urlsplit, urlunsplit
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
@@ -13,6 +14,19 @@ import redis.asyncio as redis
 
 from app.core.config import settings
 from app.core.logging import logger
+
+
+def _redact_redis_url(redis_url: str) -> str:
+    """Return a log-safe Redis URL with credentials removed."""
+    parsed = urlsplit(redis_url)
+    if not parsed.password and not parsed.username:
+        return redis_url
+
+    hostname = parsed.hostname or ""
+    port = f":{parsed.port}" if parsed.port is not None else ""
+    return urlunsplit(
+        (parsed.scheme, f"***@{hostname}{port}", parsed.path, parsed.query, parsed.fragment)
+    )
 
 
 class RedisRateLimitMiddleware(BaseHTTPMiddleware):
@@ -62,7 +76,9 @@ class RedisRateLimitMiddleware(BaseHTTPMiddleware):
                 socket_keepalive=True,
                 socket_connect_timeout=5
             )
-            logger.info(f"Rate limit middleware initialized with Redis: {redis_connection}")
+            logger.info(
+                f"Rate limit middleware initialized with Redis: {_redact_redis_url(redis_connection)}"
+            )
         except Exception as e:
             logger.error(f"Failed to initialize Redis for rate limiting: {e}")
             self.redis_client = None
