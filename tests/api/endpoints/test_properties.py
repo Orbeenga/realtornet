@@ -86,6 +86,53 @@ class TestReadProperties:
         response = client.get("/api/v1/properties/", params={"skip": 0, "limit": 5})
         assert response.status_code == 200
 
+    def test_featured_properties_public_recent_verified_only(
+        self, client: TestClient, db, normal_user, location, property_type
+    ):
+        from geoalchemy2.elements import WKTElement
+
+        featured = Property(
+            title="Featured Public Home",
+            description="Visible featured listing",
+            user_id=normal_user.user_id,
+            property_type_id=property_type.property_type_id,
+            location_id=location.location_id,
+            geom=WKTElement('POINT(3.3488 6.6018)', srid=4326),
+            price=25000000,
+            bedrooms=3,
+            bathrooms=2,
+            property_size=120.0,
+            listing_type=ListingType.sale,
+            listing_status=ListingStatus.available,
+            is_featured=True,
+            is_verified=True,
+        )
+        hidden = Property(
+            title="Unverified Featured Home",
+            description="Featured but not public",
+            user_id=normal_user.user_id,
+            property_type_id=property_type.property_type_id,
+            location_id=location.location_id,
+            geom=WKTElement('POINT(3.3488 6.6018)', srid=4326),
+            price=18000000,
+            bedrooms=2,
+            bathrooms=1,
+            property_size=80.0,
+            listing_type=ListingType.sale,
+            listing_status=ListingStatus.available,
+            is_featured=True,
+            is_verified=False,
+        )
+        db.add_all([featured, hidden])
+        db.flush()
+
+        response = client.get("/api/v1/properties/featured", params={"limit": 6})
+
+        assert response.status_code == 200
+        titles = {item["title"] for item in response.json()}
+        assert "Featured Public Home" in titles
+        assert "Unverified Featured Home" not in titles
+
     def test_search_filters_title_and_description(
         self, client: TestClient, db, normal_user, location, property_type
     ):
