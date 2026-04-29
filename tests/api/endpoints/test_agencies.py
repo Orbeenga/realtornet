@@ -230,6 +230,28 @@ class TestAgencyJoinRequests:
         assert first_response.status_code == 201
         assert second_response.status_code == 400
 
+    def test_join_request_for_existing_active_membership_returns_409(
+        self, client: TestClient, db, agency, normal_user, normal_user_token_headers
+    ):
+        from app.models.agency_join_requests import AgencyAgentMembership
+
+        membership = AgencyAgentMembership(
+            agency_id=agency.agency_id,
+            user_id=normal_user.user_id,
+            status="active",
+        )
+        db.add(membership)
+        db.flush()
+
+        response = client.post(
+            f"/api/v1/agencies/{agency.agency_id}/join-request/",
+            json={"cover_note": "Please consider me again"},
+            headers=normal_user_token_headers,
+        )
+
+        assert response.status_code == 409
+        assert response.json()["detail"] == "User is already affiliated with this agency"
+
     def test_agency_owner_lists_pending_join_requests(
         self, client: TestClient, agency, normal_user_token_headers, agency_owner_token_headers
     ):
@@ -914,6 +936,171 @@ class TestReadAgencyAgents:
         assert item["agency_id"] == agency.agency_id
         assert item["license_number"] == "LIC-AGENCY-001"
         assert item["email"] == agent_user.email
+
+    def test_agency_owner_can_view_all_membership_statuses(
+        self, client: TestClient, db, agency, agent_user, agency_owner_token_headers
+    ):
+        from app.models.agency_join_requests import AgencyAgentMembership
+
+        membership = AgencyAgentMembership(
+            agency_id=agency.agency_id,
+            user_id=agent_user.user_id,
+            status="suspended",
+            status_reason="Compliance review",
+        )
+        db.add(membership)
+        db.flush()
+
+        public_response = client.get(f"/api/v1/agencies/{agency.agency_id}/agents")
+        owner_response = client.get(
+            f"/api/v1/agencies/{agency.agency_id}/agents",
+            params={"status": "all"},
+            headers=agency_owner_token_headers,
+        )
+
+        assert public_response.status_code == 200
+        assert all(item["user_id"] != agent_user.user_id for item in public_response.json())
+        assert owner_response.status_code == 200
+        item = next(item for item in owner_response.json() if item["user_id"] == agent_user.user_id)
+        assert item["membership_status"] == "suspended"
+        assert item["status_reason"] == "Compliance review"
+
+    def test_public_cannot_view_non_active_membership_statuses(
+        self, client: TestClient, agency
+    ):
+        response = client.get(
+            f"/api/v1/agencies/{agency.agency_id}/agents",
+            params={"status": "all"},
+        )
+
+        assert response.status_code == 403
+
+
+class TestAgencyAgentMembershipManagement:
+
+    def test_agency_owner_suspends_revokes_and_blocks_membership(
+        self, client: TestClient, db, agency, agent_user, agency_owner_user, agency_owner_token_headers
+    ):
+        from app.models.agency_join_requests import AgencyAgentMembership
+
+        membership = AgencyAgentMembership(
+            agency_id=agency.agency_id,
+            user_id=agent_user.user_id,
+            status="active",
+        )
+        db.add(membership)
+        db.flush()
+        db.refresh(membership)
+
+        suspend_response = client.patch(
+            f"/api/v1/agencies/{agency.agency_id}/agents/{membership.membership_id}/suspend/",
+            json={"reason": "License needs review"},
+            headers=agency_owner_token_headers,
+        )
+        revoke_response = client.patch(
+            f"/api/v1/agencies/{agency.agency_id}/agents/{membership.membership_id}/revoke/",
+            json={"reason": "Contract ended"},
+            headers=agency_owner_token_headers,
+        )
+        block_response = client.patch(
+            f"/api/v1/agencies/{agency.agency_id}/agents/{membership.membership_id}/block/",
+            json={"reason": "Policy violation"},
+            headers=agency_owner_token_headers,
+        )
+
+        assert suspend_response.status_code == 200
+        assert suspend_response.json()["status"] == "suspended"
+        assert suspend_response.json()["status_reason"] == "License needs review"
+        assert suspend_response.json()["status_decided_by"] == agency_owner_user.user_id
+        assert suspend_response.json()["status_decided_at"] is not None
+        assert revoke_response.status_code == 200
+        assert revoke_response.json()["status"] == "inactive"
+        assert block_response.status_code == 200
+        assert block_response.json()["status"] == "blocked"
+
+    def test_other_agency_owner_cannot_manage_membership(
+        self, client: TestClient, db, agency, other_agency, agent_user
+    ):
+        from app.models.agency_join_requests import AgencyAgentMembership
+
+        other_owner = User(
+            email=f"other_owner_{uuid.uuid4().hex[:6]}@example.com",
+            password_hash="hashed_placeholder",
+            first_name="Other",
+            last_name="Owner",
+            user_role=UserRole.AGENCY_OWNER,
+            supabase_id=uuid.uuid4(),
+            agency_id=other_agency.agency_id,
+        )
+        db.add(other_owner)
+        membership = AgencyAgentMembership(
+            agency_id=agency.agency_id,
+            user_id=agent_user.user_id,
+            status="active",
+        )
+        db.add(membership)
+        db.flush()
+        token = generate_access_token(
+            supabase_id=other_owner.supabase_id,
+            user_id=other_owner.user_id,
+            user_role=other_owner.user_role.value,
+            agency_id=other_owner.agency_id,
+        )
+
+        response = client.patch(
+            f"/api/v1/agencies/{agency.agency_id}/agents/{membership.membership_id}/suspend/",
+            json={"reason": "No permission"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 403
+
+    def test_agent_can_request_review_for_suspended_membership(
+        self, client: TestClient, db, agency, agent_user, agent_token_headers
+    ):
+        from app.models.agency_join_requests import AgencyAgentMembership
+
+        membership = AgencyAgentMembership(
+            agency_id=agency.agency_id,
+            user_id=agent_user.user_id,
+            status="suspended",
+            status_reason="License needs review",
+        )
+        db.add(membership)
+        db.flush()
+        db.refresh(membership)
+
+        response = client.post(
+            f"/api/v1/agencies/{agency.agency_id}/agents/{membership.membership_id}/review-request/",
+            json={"reason": "My license has been renewed."},
+            headers=agent_token_headers,
+        )
+
+        assert response.status_code == 201
+        assert response.json()["membership_id"] == membership.membership_id
+        assert response.json()["status"] == "pending"
+        assert response.json()["reason"] == "My license has been renewed."
+
+    def test_agent_cannot_request_review_for_active_membership(
+        self, client: TestClient, db, agency, agent_user, agent_token_headers
+    ):
+        from app.models.agency_join_requests import AgencyAgentMembership
+
+        membership = AgencyAgentMembership(
+            agency_id=agency.agency_id,
+            user_id=agent_user.user_id,
+            status="active",
+        )
+        db.add(membership)
+        db.flush()
+
+        response = client.post(
+            f"/api/v1/agencies/{agency.agency_id}/agents/{membership.membership_id}/review-request/",
+            json={"reason": "Please review"},
+            headers=agent_token_headers,
+        )
+
+        assert response.status_code == 400
 
 
 class TestReadAgencyProperties:

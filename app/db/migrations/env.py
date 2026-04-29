@@ -23,7 +23,7 @@ from app.models.profiles import Profile
 from app.models.properties import Property
 from app.models.locations import Location
 from app.models.agencies import Agency
-from app.models.agency_join_requests import AgencyAgentMembership, AgencyJoinRequest
+from app.models.agency_join_requests import AgencyAgentMembership, AgencyJoinRequest, AgencyMembershipReviewRequest
 from app.models.agent_profiles import AgentProfile
 from app.models.property_types import PropertyType
 from app.models.property_images import PropertyImage

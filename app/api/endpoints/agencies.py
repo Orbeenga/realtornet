@@ -21,6 +21,7 @@ from app.crud.users import user as user_crud
 from app.api.dependencies import (
     get_db,
     get_current_user,
+    get_current_user_optional,
     get_current_active_user,
     get_current_agency_owner_user,
     get_current_admin_user,
@@ -41,14 +42,18 @@ from app.schemas.agencies import (
     AgencyInviteAcceptResponse,
     AgencyInviteCreate,
     AgencyInviteResponse,
+    AgencyAgentMembershipActionRequest,
+    AgencyAgentMembershipResponse,
     AgencyJoinRequestCreate,
     AgencyJoinRequestRejectRequest,
     AgencyJoinRequestResponse,
+    AgencyMembershipReviewRequestCreate,
+    AgencyMembershipReviewRequestResponse,
     AgencyUpdate
 )
 from app.schemas.properties import PropertyResponse
 from app.core.config import settings
-from app.models.agency_join_requests import AgencyAgentMembership, AgencyJoinRequest
+from app.models.agency_join_requests import AgencyAgentMembership, AgencyJoinRequest, AgencyMembershipReviewRequest
 from app.models.users import UserRole
 from app.services.auth_user_sync_service import SupabaseUserSyncError, sync_supabase_auth_user_metadata
 
@@ -99,6 +104,9 @@ def _membership_payload(*, membership: AgencyAgentMembership, user: User) -> dic
         "agency_id": membership.agency_id,
         "membership_id": membership.membership_id,
         "membership_status": membership.status,
+        "status_reason": membership.status_reason,
+        "status_decided_at": membership.status_decided_at,
+        "status_decided_by": membership.status_decided_by,
         "display_name": getattr(user, "full_name", None) or user.email,
         "email": user.email,
         "phone_number": user.phone_number,
@@ -152,6 +160,68 @@ def _ensure_active_agency_membership(
     db.flush()
     db.refresh(existing_membership)
     return existing_membership
+
+
+def _is_agency_owner_for(*, user: User | None, agency_id: int) -> bool:
+    return (
+        user is not None
+        and cast(UserRole, user.user_role) in {UserRole.AGENCY_OWNER, UserRole.ADMIN}
+        and (cast(UserRole, user.user_role) == UserRole.ADMIN or cast(int | None, user.agency_id) == agency_id)
+    )
+
+
+def _get_owned_agency_membership(
+    *,
+    db: Session,
+    agency_id: int,
+    membership_id: int,
+    current_user: User,
+) -> AgencyAgentMembership:
+    if cast(int | None, current_user.agency_id) != agency_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Agency owners can only manage their own agency",
+        )
+
+    agency = agency_crud.get(db, agency_id=agency_id)
+    if agency is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agency not found",
+        )
+
+    membership = db.execute(
+        select(AgencyAgentMembership).where(
+            AgencyAgentMembership.membership_id == membership_id,
+            AgencyAgentMembership.agency_id == agency_id,
+            AgencyAgentMembership.deleted_at.is_(None),
+        )
+    ).scalar_one_or_none()
+    if membership is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agency membership not found",
+        )
+    return membership
+
+
+def _set_membership_status(
+    *,
+    db: Session,
+    membership: AgencyAgentMembership,
+    current_user: User,
+    status_value: str,
+    reason: str | None,
+) -> AgencyAgentMembership:
+    cast(Any, membership).status = status_value
+    cast(Any, membership).status_reason = reason
+    cast(Any, membership).status_decided_at = datetime.now(timezone.utc)
+    membership.status_decided_by = current_user.user_id
+    membership.updated_by = current_user.supabase_id
+    db.add(membership)
+    db.flush()
+    db.refresh(membership)
+    return membership
 
 
 @router.get("/", response_model=List[AgencyResponse])
@@ -460,13 +530,15 @@ def read_agency_agents(
     *,
     db: Session = Depends(get_db),
     agency_id: int,
+    current_user: User | None = Depends(get_current_user_optional),
     pagination: dict = Depends(pagination_params),
+    membership_status: str = Query(default="active", alias="status"),
 ) -> Any:
     """
     Retrieve all agents belonging to an agency.
     
     Public endpoint - useful for "Meet Our Team" pages.
-    Returns only active (non-deleted) agents.
+    Returns active agents by default. Agency owners can request all membership states.
     """
     # Verify agency exists
     agency = agency_crud.get(db, agency_id=agency_id)
@@ -476,6 +548,18 @@ def read_agency_agents(
             detail="Agency not found"
         )
     
+    allowed_statuses = {"active", "inactive", "suspended", "blocked", "all"}
+    if membership_status not in allowed_statuses:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid agency membership status filter",
+        )
+    if membership_status != "active" and not _is_agency_owner_for(user=current_user, agency_id=agency_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Agency owners can only view non-active membership states for their own agency",
+        )
+
     query = (
         select(AgencyAgentMembership, User)
         .join(User, User.user_id == AgencyAgentMembership.user_id)
@@ -485,7 +569,6 @@ def read_agency_agents(
         )
         .where(
             AgencyAgentMembership.agency_id == agency_id,
-            AgencyAgentMembership.status == "active",
             AgencyAgentMembership.deleted_at.is_(None),
             User.deleted_at.is_(None),
         )
@@ -493,10 +576,158 @@ def read_agency_agents(
         .offset(pagination["skip"])
         .limit(pagination["limit"])
     )
+    if membership_status == "active":
+        query = query.where(AgencyAgentMembership.status == "active")
+    elif membership_status != "all":
+        query = query.where(AgencyAgentMembership.status == membership_status)
     return [
         _membership_payload(membership=membership, user=user)
         for membership, user in db.execute(query).all()
     ]
+
+
+@router.patch("/{agency_id}/agents/{membership_id}/suspend/", response_model=AgencyAgentMembershipResponse)
+def suspend_agency_agent_membership(
+    *,
+    db: Session = Depends(get_db),
+    agency_id: int,
+    membership_id: int,
+    action_in: AgencyAgentMembershipActionRequest | None = None,
+    current_user: UserResponse = Depends(get_current_agency_owner_user),
+    _: None = Depends(validate_request_size),
+) -> Any:
+    """Suspend an active agency membership with an audit reason."""
+    membership = _get_owned_agency_membership(
+        db=db,
+        agency_id=agency_id,
+        membership_id=membership_id,
+        current_user=cast(User, current_user),
+    )
+    return _set_membership_status(
+        db=db,
+        membership=membership,
+        current_user=cast(User, current_user),
+        status_value="suspended",
+        reason=action_in.reason if action_in is not None else None,
+    )
+
+
+@router.patch("/{agency_id}/agents/{membership_id}/revoke/", response_model=AgencyAgentMembershipResponse)
+def revoke_agency_agent_membership(
+    *,
+    db: Session = Depends(get_db),
+    agency_id: int,
+    membership_id: int,
+    action_in: AgencyAgentMembershipActionRequest | None = None,
+    current_user: UserResponse = Depends(get_current_agency_owner_user),
+    _: None = Depends(validate_request_size),
+) -> Any:
+    """Revoke an agency membership while retaining the affiliation audit trail."""
+    membership = _get_owned_agency_membership(
+        db=db,
+        agency_id=agency_id,
+        membership_id=membership_id,
+        current_user=cast(User, current_user),
+    )
+    return _set_membership_status(
+        db=db,
+        membership=membership,
+        current_user=cast(User, current_user),
+        status_value="inactive",
+        reason=action_in.reason if action_in is not None else None,
+    )
+
+
+@router.patch("/{agency_id}/agents/{membership_id}/block/", response_model=AgencyAgentMembershipResponse)
+def block_agency_agent_membership(
+    *,
+    db: Session = Depends(get_db),
+    agency_id: int,
+    membership_id: int,
+    action_in: AgencyAgentMembershipActionRequest | None = None,
+    current_user: UserResponse = Depends(get_current_agency_owner_user),
+    _: None = Depends(validate_request_size),
+) -> Any:
+    """Block an agency membership while retaining the affiliation audit trail."""
+    membership = _get_owned_agency_membership(
+        db=db,
+        agency_id=agency_id,
+        membership_id=membership_id,
+        current_user=cast(User, current_user),
+    )
+    return _set_membership_status(
+        db=db,
+        membership=membership,
+        current_user=cast(User, current_user),
+        status_value="blocked",
+        reason=action_in.reason if action_in is not None else None,
+    )
+
+
+@router.post(
+    "/{agency_id}/agents/{membership_id}/review-request/",
+    response_model=AgencyMembershipReviewRequestResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_agency_membership_review_request(
+    *,
+    db: Session = Depends(get_db),
+    agency_id: int,
+    membership_id: int,
+    review_in: AgencyMembershipReviewRequestCreate,
+    current_user: UserResponse = Depends(get_current_active_user),
+    _: None = Depends(validate_request_size),
+) -> Any:
+    """Allow an agent to request review of a revoked, suspended, or blocked membership."""
+    current_user_model = cast(User, current_user)
+    membership = db.execute(
+        select(AgencyAgentMembership).where(
+            AgencyAgentMembership.membership_id == membership_id,
+            AgencyAgentMembership.agency_id == agency_id,
+            AgencyAgentMembership.deleted_at.is_(None),
+        )
+    ).scalar_one_or_none()
+    if membership is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agency membership not found",
+        )
+    if cast(int, membership.user_id) != cast(int, current_user_model.user_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Users can only request review for their own agency memberships",
+        )
+    if str(membership.status) == "active":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Active agency memberships do not require review",
+        )
+
+    existing_review = db.execute(
+        select(AgencyMembershipReviewRequest).where(
+            AgencyMembershipReviewRequest.membership_id == membership_id,
+            AgencyMembershipReviewRequest.status == "pending",
+            AgencyMembershipReviewRequest.deleted_at.is_(None),
+        )
+    ).scalar_one_or_none()
+    if existing_review is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Pending membership review request already exists",
+        )
+
+    review_request = AgencyMembershipReviewRequest(
+        membership_id=membership_id,
+        agency_id=agency_id,
+        user_id=current_user_model.user_id,
+        status="pending",
+        reason=review_in.reason,
+        created_by=current_user_model.supabase_id,
+    )
+    db.add(review_request)
+    db.flush()
+    db.refresh(review_request)
+    return review_request
 
 
 @router.get("/{agency_id}/properties", response_model=List[PropertyResponse])
@@ -558,6 +789,25 @@ def create_agency_join_request(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agency not found",
+        )
+
+    existing_membership = db.execute(
+        select(AgencyAgentMembership).where(
+            AgencyAgentMembership.agency_id == agency_id,
+            AgencyAgentMembership.user_id == current_user_model.user_id,
+            AgencyAgentMembership.deleted_at.is_(None),
+        )
+    ).scalar_one_or_none()
+    if existing_membership is not None:
+        existing_status = str(existing_membership.status)
+        if existing_status == "active":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="User is already affiliated with this agency",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Agency membership is not active; submit a review request instead",
         )
 
     existing_request = db.execute(
