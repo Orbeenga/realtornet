@@ -5,6 +5,7 @@ Phase 2 Aligned: Psycopg 3, production-ready settings, 1:1 .env match
 """
 
 import urllib.parse
+from urllib.parse import urlsplit, urlunsplit
 from typing import List, Union, Optional
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -91,6 +92,10 @@ class Settings(BaseSettings):
     REDIS_URL: str = ""
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
+    REDISHOST: str = ""
+    REDISPORT: Optional[int] = None
+    REDISUSER: str = ""
+    REDISPASSWORD: str = ""
     REDIS_CELERY_BROKER: str = "redis://localhost:6379/1"
     REDIS_CELERY_BACKEND: str = "redis://localhost:6379/2"
     
@@ -194,21 +199,62 @@ class Settings(BaseSettings):
             return ["*"]
         return [origin.strip() for origin in self.BACKEND_CORS_ORIGINS if origin.strip()]
 
+    def _redis_base_url(self) -> str:
+        """
+        Return the platform Redis URL.
+
+        Railway can expose Redis either as REDIS_URL or as component parts
+        named REDISHOST/REDISPORT/REDISUSER/REDISPASSWORD. Support both so the
+        backend does not silently fall back to localhost in production.
+        """
+        if self.REDIS_URL.strip():
+            return self.REDIS_URL.strip()
+
+        redis_host = self.REDISHOST.strip() or self.REDIS_HOST.strip()
+        redis_port = self.REDISPORT or self.REDIS_PORT
+        has_railway_parts = any(
+            value.strip() for value in (self.REDISHOST, self.REDISUSER, self.REDISPASSWORD)
+        ) or self.REDISPORT is not None
+        has_non_default_host = redis_host != "localhost" or redis_port != 6379
+
+        if not redis_host or not (has_railway_parts or has_non_default_host):
+            return ""
+
+        username = urllib.parse.quote(self.REDISUSER.strip(), safe="")
+        password = urllib.parse.quote(self.REDISPASSWORD.strip(), safe="")
+        auth = ""
+        if username and password:
+            auth = f"{username}:{password}@"
+        elif password:
+            auth = f":{password}@"
+        elif username:
+            auth = f"{username}@"
+
+        return f"redis://{auth}{redis_host}:{redis_port}"
+
+    @staticmethod
+    def _redis_url_for_db(base_url: str, db_number: int) -> str:
+        """Attach a Redis DB number without producing invalid nested paths."""
+        parsed = urlsplit(base_url.strip())
+        return urlunsplit(
+            (parsed.scheme, parsed.netloc, f"/{db_number}", parsed.query, parsed.fragment)
+        )
+
     @model_validator(mode="after")
     def normalize_redis_urls(self) -> "Settings":
         """
-        Prefer a single REDIS_URL when platforms like Railway inject it.
-        Falls back to local development defaults when REDIS_URL is absent.
+        Prefer platform Redis settings when injected.
+        Falls back to local development defaults when Redis settings are absent.
         """
-        base_redis_url = self.REDIS_URL.strip().rstrip("/")
+        base_redis_url = self._redis_base_url()
         if not base_redis_url:
             return self
 
         if self.REDIS_CELERY_BROKER == "redis://localhost:6379/1":
-            self.REDIS_CELERY_BROKER = f"{base_redis_url}/1"
+            self.REDIS_CELERY_BROKER = self._redis_url_for_db(base_redis_url, 1)
 
         if self.REDIS_CELERY_BACKEND == "redis://localhost:6379/2":
-            self.REDIS_CELERY_BACKEND = f"{base_redis_url}/2"
+            self.REDIS_CELERY_BACKEND = self._redis_url_for_db(base_redis_url, 2)
 
         return self
     
