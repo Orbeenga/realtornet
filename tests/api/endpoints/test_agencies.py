@@ -3,7 +3,7 @@
 Surgical API-layer tests for /agencies endpoints.
 """
 from fastapi.testclient import TestClient
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 import uuid
 from app.api.endpoints import agencies as agencies_api
 from app.models.users import User, UserRole
@@ -77,6 +77,8 @@ class TestAgencyApplication:
         data = response.json()
         assert data["agency_id"] == agency.agency_id
         assert data["invite_token"]
+        assert data["invitation_id"]
+        assert data["status"] == "pending"
 
     def test_agency_owner_cannot_invite_to_other_agency(
         self, client: TestClient, other_agency, agency_owner_token_headers
@@ -92,6 +94,7 @@ class TestAgencyApplication:
     def test_accept_invite_promotes_existing_user(
         self, client: TestClient, db, agency, agency_owner_token_headers, normal_user
     ):
+        from unittest.mock import patch
         from app.models.agency_join_requests import AgencyAgentMembership
 
         invite_response = client.post(
@@ -101,10 +104,11 @@ class TestAgencyApplication:
         )
         assert invite_response.status_code == 200
 
-        response = client.post(
-            "/api/v1/agencies/accept-invite/",
-            json={"invite_token": invite_response.json()["invite_token"]},
-        )
+        with patch("app.api.endpoints.agencies.sync_supabase_auth_user_metadata"):
+            response = client.post(
+                "/api/v1/agencies/accept-invite/",
+                json={"invite_token": invite_response.json()["invite_token"]},
+            )
 
         assert response.status_code == 200
         assert response.json()["status"] == "accepted"
@@ -114,6 +118,158 @@ class TestAgencyApplication:
             AgencyAgentMembership.status == "active",
         ).one_or_none()
         assert membership is not None
+
+    def test_invited_user_can_view_pending_invitation_inbox(
+        self, client: TestClient, agency, agency_owner_token_headers, normal_user, normal_user_token_headers
+    ):
+        invite_response = client.post(
+            f"/api/v1/agencies/{agency.agency_id}/invite/",
+            json={"email": normal_user.email},
+            headers=agency_owner_token_headers,
+        )
+        invitation_id = invite_response.json()["invitation_id"]
+
+        response = client.get(
+            "/api/v1/agency-invitations/mine/",
+            headers=normal_user_token_headers,
+        )
+
+        assert response.status_code == 200
+        invitation = next(item for item in response.json() if item["invitation_id"] == invitation_id)
+        assert invitation["agency_id"] == agency.agency_id
+        assert invitation["agency_name"] == agency.name
+        assert invitation["status"] == "pending"
+
+    def test_invitation_inbox_rejects_invalid_status_filter(
+        self, client: TestClient, normal_user_token_headers
+    ):
+        response = client.get(
+            "/api/v1/agency-invitations/mine/",
+            params={"status": "unknown"},
+            headers=normal_user_token_headers,
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Invalid invitation status filter"
+
+    def test_invitation_inbox_marks_expired_pending_invitations(
+        self, client: TestClient, db, agency, normal_user, normal_user_token_headers
+    ):
+        from app.models.agency_join_requests import AgencyInvitation
+
+        invitation = AgencyInvitation(
+            agency_id=agency.agency_id,
+            email=normal_user.email,
+            invited_user_id=normal_user.user_id,
+            status="pending",
+            expires_at=datetime.now(timezone.utc) - timedelta(days=1),
+        )
+        db.add(invitation)
+        db.flush()
+        db.refresh(invitation)
+
+        response = client.get(
+            "/api/v1/agency-invitations/mine/",
+            params={"status": "all"},
+            headers=normal_user_token_headers,
+        )
+
+        assert response.status_code == 200
+        item = next(row for row in response.json() if row["invitation_id"] == invitation.invitation_id)
+        assert item["status"] == "expired"
+
+    def test_invited_user_accepts_invitation_by_id(
+        self, client: TestClient, db, agency, agency_owner_token_headers, normal_user, normal_user_token_headers
+    ):
+        from unittest.mock import patch
+        from app.models.agency_join_requests import AgencyAgentMembership, AgencyInvitation
+        from app.models.users import UserRole
+
+        invite_response = client.post(
+            f"/api/v1/agencies/{agency.agency_id}/invite/",
+            json={"email": normal_user.email},
+            headers=agency_owner_token_headers,
+        )
+        invitation_id = invite_response.json()["invitation_id"]
+
+        with patch("app.api.endpoints.agencies.sync_supabase_auth_user_metadata") as sync_mock:
+            response = client.patch(
+                f"/api/v1/agency-invitations/{invitation_id}/accept/",
+                headers=normal_user_token_headers,
+            )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "accepted"
+        db.refresh(normal_user)
+        assert normal_user.user_role == UserRole.AGENT
+        membership = db.query(AgencyAgentMembership).filter(
+            AgencyAgentMembership.agency_id == agency.agency_id,
+            AgencyAgentMembership.user_id == normal_user.user_id,
+            AgencyAgentMembership.status == "active",
+        ).one_or_none()
+        invitation = db.query(AgencyInvitation).filter(
+            AgencyInvitation.invitation_id == invitation_id,
+        ).one()
+        assert membership is not None
+        assert invitation.status == "accepted"
+        assert invitation.accepted_at is not None
+        sync_mock.assert_called_once()
+
+    def test_invited_user_rejects_invitation_by_id(
+        self, client: TestClient, db, agency, agency_owner_token_headers, normal_user, normal_user_token_headers
+    ):
+        from app.models.agency_join_requests import AgencyInvitation
+
+        invite_response = client.post(
+            f"/api/v1/agencies/{agency.agency_id}/invite/",
+            json={"email": normal_user.email},
+            headers=agency_owner_token_headers,
+        )
+        invitation_id = invite_response.json()["invitation_id"]
+
+        response = client.patch(
+            f"/api/v1/agency-invitations/{invitation_id}/reject/",
+            headers=normal_user_token_headers,
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "rejected"
+        invitation = db.query(AgencyInvitation).filter(
+            AgencyInvitation.invitation_id == invitation_id,
+        ).one()
+        assert invitation.rejected_at is not None
+
+    def test_agency_owner_can_list_sent_invitations(
+        self, client: TestClient, agency, agency_owner_token_headers, normal_user
+    ):
+        invite_response = client.post(
+            f"/api/v1/agencies/{agency.agency_id}/invite/",
+            json={"email": normal_user.email},
+            headers=agency_owner_token_headers,
+        )
+        invitation_id = invite_response.json()["invitation_id"]
+
+        response = client.get(
+            f"/api/v1/agencies/{agency.agency_id}/invitations/",
+            headers=agency_owner_token_headers,
+        )
+
+        assert response.status_code == 200
+        invitation = next(item for item in response.json() if item["invitation_id"] == invitation_id)
+        assert invitation["email"] == normal_user.email
+        assert invitation["status"] == "pending"
+
+    def test_agency_owner_invitation_list_rejects_invalid_status_filter(
+        self, client: TestClient, agency, agency_owner_token_headers
+    ):
+        response = client.get(
+            f"/api/v1/agencies/{agency.agency_id}/invitations/",
+            params={"status": "unknown"},
+            headers=agency_owner_token_headers,
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Invalid invitation status filter"
 
     def test_accept_invite_for_missing_user_returns_register_redirect(
         self, client: TestClient, agency, agency_owner_token_headers

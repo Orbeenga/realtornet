@@ -123,3 +123,30 @@ class AgencyMembershipReviewRequest(Base, AuditMixin, SoftDeleteMixin):
             name="agency_membership_review_requests_status_check",
         ),
     )
+
+
+class AgencyInvitation(Base, AuditMixin, SoftDeleteMixin):
+    """Invitation from an agency owner to a user email address."""
+
+    __tablename__ = "agency_invitations"
+
+    invitation_id = Column(BigInteger, primary_key=True, autoincrement=True, index=True)
+    agency_id = Column(BigInteger, ForeignKey("agencies.agency_id", ondelete="CASCADE"), nullable=False, index=True)
+    email = Column(String, nullable=False, index=True)
+    invited_user_id = Column(BigInteger, ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True, index=True)
+    status = Column(String, nullable=False, server_default=text("'pending'"))
+    token_hash = Column(String, nullable=True, index=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    accepted_at = Column(DateTime(timezone=True), nullable=True)
+    rejected_at = Column(DateTime(timezone=True), nullable=True)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+
+    agency = relationship("Agency", foreign_keys=[agency_id])
+    invited_user = relationship("User", foreign_keys=[invited_user_id])
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'accepted', 'rejected', 'expired', 'revoked')",
+            name="agency_invitations_status_check",
+        ),
+    )

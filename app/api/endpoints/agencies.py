@@ -5,6 +5,7 @@ Handles real estate agencies (multi-tenant hub) with full audit trail and soft d
 """
 from datetime import datetime, timedelta, timezone
 from typing import Any, List, cast  # Narrow dependency-backed values locally without changing the frozen endpoint contract.
+import hashlib
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from jose import JWTError, jwt
 from sqlalchemy import select
@@ -42,6 +43,7 @@ from app.schemas.agencies import (
     AgencyInviteAcceptResponse,
     AgencyInviteCreate,
     AgencyInviteResponse,
+    AgencyInvitationResponse,
     AgencyAgentMembershipActionRequest,
     AgencyAgentMembershipResponse,
     AgencyJoinRequestCreate,
@@ -54,7 +56,7 @@ from app.schemas.agencies import (
 )
 from app.schemas.properties import PropertyResponse
 from app.core.config import settings
-from app.models.agency_join_requests import AgencyAgentMembership, AgencyJoinRequest, AgencyMembershipReviewRequest
+from app.models.agency_join_requests import AgencyAgentMembership, AgencyInvitation, AgencyJoinRequest, AgencyMembershipReviewRequest
 from app.models.users import UserRole
 from app.services.auth_user_sync_service import SupabaseUserSyncError, sync_supabase_auth_user_metadata
 
@@ -66,16 +68,23 @@ logger = logging.getLogger(__name__)
 AGENCY_INVITE_TOKEN_TYPE = "agency_invite"
 
 
-def _create_agency_invite_token(*, agency_id: int, email: str) -> str:
+def _hash_agency_invite_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _create_agency_invite_token(*, agency_id: int, email: str, invitation_id: int | None = None) -> str:
     expire = datetime.now(timezone.utc) + timedelta(days=7)
+    payload: dict[str, Any] = {
+        "token_type": AGENCY_INVITE_TOKEN_TYPE,
+        "agency_id": agency_id,
+        "email": email.lower(),
+        "exp": int(expire.timestamp()),
+        "iat": int(datetime.now(timezone.utc).timestamp()),
+    }
+    if invitation_id is not None:
+        payload["invitation_id"] = invitation_id
     return jwt.encode(
-        {
-            "token_type": AGENCY_INVITE_TOKEN_TYPE,
-            "agency_id": agency_id,
-            "email": email.lower(),
-            "exp": int(expire.timestamp()),
-            "iat": int(datetime.now(timezone.utc).timestamp()),
-        },
+        payload,
         settings.SECRET_KEY,
         algorithm=settings.ALGORITHM,
     )
@@ -96,6 +105,24 @@ def _decode_agency_invite_token(token: str) -> dict[str, Any]:
             detail="Invalid invite token",
         )
     return payload
+
+
+def _agency_invitation_payload(invitation: AgencyInvitation) -> dict[str, Any]:
+    agency = invitation.__dict__.get("agency")
+    return {
+        "invitation_id": invitation.invitation_id,
+        "agency_id": invitation.agency_id,
+        "agency_name": getattr(agency, "name", None) or "",
+        "email": invitation.email,
+        "invited_user_id": invitation.invited_user_id,
+        "status": invitation.status,
+        "created_at": invitation.created_at,
+        "updated_at": invitation.updated_at,
+        "expires_at": invitation.expires_at,
+        "accepted_at": invitation.accepted_at,
+        "rejected_at": invitation.rejected_at,
+        "revoked_at": invitation.revoked_at,
+    }
 
 
 def _membership_payload(*, membership: AgencyAgentMembership, user: User) -> dict[str, Any]:
@@ -335,6 +362,96 @@ def _set_membership_status_and_sync_user(
         ) from exc
 
 
+def _expire_invitation_if_needed(*, db: Session, invitation: AgencyInvitation) -> AgencyInvitation:
+    if str(invitation.status) == "pending" and cast(datetime, invitation.expires_at) <= datetime.now(timezone.utc):
+        cast(Any, invitation).status = "expired"
+        db.add(invitation)
+        db.flush()
+        db.refresh(invitation)
+    return invitation
+
+
+def _get_pending_invitation_or_raise(*, db: Session, invitation_id: int, current_user: User) -> AgencyInvitation:
+    invitation = db.execute(
+        select(AgencyInvitation)
+        .options(joinedload(AgencyInvitation.agency))
+        .where(
+            AgencyInvitation.invitation_id == invitation_id,
+            AgencyInvitation.deleted_at.is_(None),
+        )
+    ).scalar_one_or_none()
+    if invitation is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agency invitation not found",
+        )
+
+    current_email = str(current_user.email).lower()
+    if str(invitation.email).lower() != current_email and cast(int | None, invitation.invited_user_id) != cast(int, current_user.user_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Agency invitation does not belong to the current user",
+        )
+
+    invitation = _expire_invitation_if_needed(db=db, invitation=invitation)
+    if str(invitation.status) != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Agency invitation is {invitation.status}",
+        )
+    return invitation
+
+
+def _accept_agency_invitation_for_user(
+    *,
+    db: Session,
+    invitation: AgencyInvitation,
+    invited_user: User,
+    actor: User,
+) -> AgencyInviteAcceptResponse:
+    agency_id = cast(int, invitation.agency_id)
+    update_payload: dict[str, Any] = {}
+    if cast(UserRole, invited_user.user_role) == UserRole.SEEKER:
+        update_payload["user_role"] = UserRole.AGENT
+    if cast(int | None, invited_user.agency_id) is None:
+        update_payload["agency_id"] = agency_id
+    try:
+        if update_payload:
+            invited_user = user_crud.update(
+                db,
+                db_obj=invited_user,
+                obj_in=update_payload,
+                updated_by=str(actor.supabase_id),
+            )
+            sync_supabase_auth_user_metadata(invited_user)
+        _ensure_active_agency_membership(
+            db=db,
+            agency_id=agency_id,
+            user=invited_user,
+            actor=actor,
+        )
+        cast(Any, invitation).status = "accepted"
+        cast(Any, invitation).accepted_at = datetime.now(timezone.utc)
+        cast(Any, invitation).invited_user_id = invited_user.user_id
+        invitation.updated_by = actor.supabase_id
+        db.add(invitation)
+        db.flush()
+        db.refresh(invitation)
+    except SupabaseUserSyncError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+    return AgencyInviteAcceptResponse(
+        status="accepted",
+        agency_id=agency_id,
+        user_id=cast(int, invited_user.user_id),
+        invitation_id=cast(int, invitation.invitation_id),
+        email=cast(str, invitation.email),
+    )
+
+
 @router.get("/", response_model=List[AgencyResponse])
 def read_agencies(
     db: Session = Depends(get_db),
@@ -397,6 +514,7 @@ def accept_agency_invite(
             detail="Invalid invite token",
         )
     agency_id = int(raw_agency_id)
+    invitation_id = payload.get("invitation_id")
 
     agency = agency_crud.get(db, agency_id=agency_id)
     if agency is None or str(agency.status) != "approved":
@@ -405,39 +523,63 @@ def accept_agency_invite(
             detail="Agency not found",
         )
 
+    invitation: AgencyInvitation | None = None
+    if invitation_id is not None:
+        invitation = db.execute(
+            select(AgencyInvitation).where(
+                AgencyInvitation.invitation_id == int(invitation_id),
+                AgencyInvitation.agency_id == agency_id,
+                AgencyInvitation.email == email,
+                AgencyInvitation.deleted_at.is_(None),
+            )
+        ).scalar_one_or_none()
+    if invitation is None:
+        invitation = db.execute(
+            select(AgencyInvitation).where(
+                AgencyInvitation.agency_id == agency_id,
+                AgencyInvitation.email == email,
+                AgencyInvitation.token_hash == _hash_agency_invite_token(invite_in.invite_token),
+                AgencyInvitation.deleted_at.is_(None),
+            )
+        ).scalar_one_or_none()
+    if invitation is not None:
+        invitation = _expire_invitation_if_needed(db=db, invitation=invitation)
+        if str(invitation.status) != "pending":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Agency invitation is {invitation.status}",
+            )
+
     invited_user = user_crud.get_by_email(db, email=email)
     if invited_user is None:
         return {
             "status": "registration_required",
             "agency_id": agency_id,
+            "invitation_id": invitation.invitation_id if invitation is not None else None,
             "redirect_url": f"/register?invite_token={invite_in.invite_token}",
             "email": email,
         }
 
-    update_payload: dict[str, Any] = {}
-    if cast(UserRole, invited_user.user_role) == UserRole.SEEKER:
-        update_payload["user_role"] = UserRole.AGENT
-    if cast(int | None, invited_user.agency_id) is None:
-        update_payload["agency_id"] = agency_id
-    if update_payload:
-        invited_user = user_crud.update(
-            db,
-            db_obj=invited_user,
-            obj_in=update_payload,
-            updated_by=str(invited_user.supabase_id),
+    if invitation is None:
+        invitation = AgencyInvitation(
+            agency_id=agency_id,
+            email=email,
+            invited_user_id=invited_user.user_id,
+            status="pending",
+            token_hash=_hash_agency_invite_token(invite_in.invite_token),
+            expires_at=datetime.fromtimestamp(int(payload["exp"]), tz=timezone.utc),
+            created_by=invited_user.supabase_id,
         )
-    _ensure_active_agency_membership(
+        db.add(invitation)
+        db.flush()
+        db.refresh(invitation)
+
+    return _accept_agency_invitation_for_user(
         db=db,
-        agency_id=agency_id,
-        user=invited_user,
+        invitation=invitation,
+        invited_user=invited_user,
         actor=invited_user,
     )
-    return {
-        "status": "accepted",
-        "agency_id": agency_id,
-        "user_id": invited_user.user_id,
-        "email": email,
-    }
 
 
 @router.get("/{agency_id}", response_model=AgencyResponse)
@@ -1283,6 +1425,45 @@ def reject_agency_join_request(
     return join_request
 
 
+@router.get("/{agency_id}/invitations/", response_model=List[AgencyInvitationResponse])
+def read_agency_invitations(
+    *,
+    db: Session = Depends(get_db),
+    agency_id: int,
+    invitation_status: str = Query(default="all", alias="status"),
+    pagination: dict = Depends(pagination_params),
+    current_user: UserResponse = Depends(get_current_agency_owner_user),
+) -> Any:
+    """List invitations sent by the current agency owner."""
+    current_user_model = cast(User, current_user)
+    if cast(int | None, current_user_model.agency_id) != agency_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Agency owners can only view their own agency invitations",
+        )
+
+    allowed_statuses = {"pending", "accepted", "rejected", "expired", "revoked", "all"}
+    if invitation_status not in allowed_statuses:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid invitation status filter",
+        )
+
+    query = (
+        select(AgencyInvitation)
+        .options(joinedload(AgencyInvitation.agency))
+        .where(
+            AgencyInvitation.agency_id == agency_id,
+            AgencyInvitation.deleted_at.is_(None),
+        )
+        .order_by(AgencyInvitation.created_at.desc())
+    )
+    if invitation_status != "all":
+        query = query.where(AgencyInvitation.status == invitation_status)
+    query = query.offset(pagination["skip"]).limit(pagination["limit"])
+    return [_agency_invitation_payload(invitation) for invitation in db.execute(query).scalars().all()]
+
+
 @router.post("/{agency_id}/invite/", response_model=AgencyInviteResponse)
 def invite_agency_agent(
     *,
@@ -1293,10 +1474,7 @@ def invite_agency_agent(
     _: None = Depends(validate_request_size),
 ) -> Any:
     """
-    Create a signed agency invite token.
-
-    Email delivery is intentionally deferred; Phase G returns the token directly
-    so the accept-invite flow can be exercised end to end.
+    Create or refresh a pending agency invitation.
     """
     current_user_model = cast(User, current_user)
     current_agency_id = cast(int | None, current_user_model.agency_id)
@@ -1313,14 +1491,53 @@ def invite_agency_agent(
             detail="Agency not found",
         )
 
+    invite_email = str(invite_in.email).lower()
+    invited_user = user_crud.get_by_email(db, email=invite_email)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    invitation = db.execute(
+        select(AgencyInvitation).where(
+            AgencyInvitation.agency_id == agency_id,
+            AgencyInvitation.email == invite_email,
+            AgencyInvitation.status == "pending",
+            AgencyInvitation.deleted_at.is_(None),
+        )
+    ).scalar_one_or_none()
+    if invitation is None:
+        invitation = AgencyInvitation(
+            agency_id=agency_id,
+            email=invite_email,
+            invited_user_id=getattr(invited_user, "user_id", None),
+            status="pending",
+            expires_at=expires_at,
+            created_by=current_user_model.supabase_id,
+        )
+        db.add(invitation)
+        db.flush()
+        db.refresh(invitation)
+    else:
+        cast(Any, invitation).invited_user_id = getattr(invited_user, "user_id", None)
+        cast(Any, invitation).expires_at = expires_at
+        invitation.updated_by = current_user_model.supabase_id
+        db.add(invitation)
+        db.flush()
+        db.refresh(invitation)
+
     invite_token = _create_agency_invite_token(
         agency_id=agency_id,
-        email=str(invite_in.email),
+        email=invite_email,
+        invitation_id=cast(int, invitation.invitation_id),
     )
+    cast(Any, invitation).token_hash = _hash_agency_invite_token(invite_token)
+    db.add(invitation)
+    db.flush()
+    db.refresh(invitation)
     return {
         "invite_token": invite_token,
         "agency_id": agency_id,
-        "email": invite_in.email,
+        "email": invitation.email,
+        "invitation_id": invitation.invitation_id,
+        "status": invitation.status,
+        "expires_at": invitation.expires_at,
     }
 
 

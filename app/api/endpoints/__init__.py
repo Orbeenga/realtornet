@@ -4,6 +4,7 @@ from . import auth
 from . import admin
 from . import users
 from . import agencies
+from . import agency_invitations
 from . import agent_profiles
 from . import profiles
 from . import locations
@@ -18,7 +19,7 @@ from . import inquiries
 from . import reviews
 
 __all__ = [
-    "auth", "admin", "users", "agencies", "agent_profiles", "profiles",
+    "auth", "admin", "users", "agencies", "agency_invitations", "agent_profiles", "profiles",
     "locations", "properties", "property_types", "amenities",
     "property_amenities", "property_images", "favorites",
     "saved_searches", "inquiries", "reviews"
