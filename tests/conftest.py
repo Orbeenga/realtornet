@@ -22,7 +22,7 @@ from app.models.properties import Property, ListingType, ListingStatus, Moderati
 from app.models.property_types import PropertyType
 from app.models.locations import Location
 from app.models.agencies import Agency
-from app.models.agency_join_requests import AgencyAgentMembership, AgencyJoinRequest
+from app.models.agency_join_requests import AgencyAgentMembership, AgencyJoinRequest, AgencyMembershipReviewRequest
 from app.crud.properties import property as property_crud
 from app.schemas.properties import PropertyCreate
 
@@ -111,6 +111,31 @@ def db():
         schema_conn.execute(text("""
             ALTER TABLE agency_agent_memberships
             ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'active' NOT NULL;
+        """))
+        schema_conn.execute(text("""
+            ALTER TABLE agency_agent_memberships
+            ADD COLUMN IF NOT EXISTS status_reason TEXT;
+        """))
+        schema_conn.execute(text("""
+            ALTER TABLE agency_agent_memberships
+            ADD COLUMN IF NOT EXISTS status_decided_at TIMESTAMP WITH TIME ZONE;
+        """))
+        schema_conn.execute(text("""
+            ALTER TABLE agency_agent_memberships
+            ADD COLUMN IF NOT EXISTS status_decided_by BIGINT;
+        """))
+        schema_conn.execute(text("""
+            ALTER TABLE agency_agent_memberships
+            DROP CONSTRAINT IF EXISTS agency_agent_memberships_status_check;
+        """))
+        schema_conn.execute(text("""
+            ALTER TABLE agency_agent_memberships
+            DROP CONSTRAINT IF EXISTS ck_agency_agent_memberships_agency_agent_memberships_status_check;
+        """))
+        schema_conn.execute(text("""
+            ALTER TABLE agency_agent_memberships
+            ADD CONSTRAINT agency_agent_memberships_status_check
+            CHECK (status IN ('active', 'inactive', 'suspended', 'blocked'));
         """))
     connection = engine.connect()
     transaction = connection.begin()

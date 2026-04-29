@@ -25,6 +25,20 @@ class AgencyJoinRequestStatus(str, Enum):
     REJECTED = "rejected"
 
 
+class AgencyAgentMembershipStatus(str, Enum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    SUSPENDED = "suspended"
+    BLOCKED = "blocked"
+
+
+class AgencyMembershipReviewRequestStatus(str, Enum):
+    PENDING = "pending"
+    REVIEWED = "reviewed"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
 # Base Schema (shared fields for responses)
 class AgencyBase(BaseModel):
     """Shared agency fields"""
@@ -99,6 +113,14 @@ class AgencyJoinRequestRejectRequest(BaseModel):
     reason: Optional[str] = None
 
 
+class AgencyAgentMembershipActionRequest(BaseModel):
+    reason: Optional[str] = None
+
+
+class AgencyMembershipReviewRequestCreate(BaseModel):
+    reason: Optional[str] = None
+
+
 class AgencyJoinRequestResponse(BaseModel):
     join_request_id: int
     agency_id: int
@@ -132,7 +154,10 @@ class AgencyAgentRosterResponse(BaseModel):
     user_id: int
     agency_id: int
     membership_id: int
-    membership_status: str
+    membership_status: AgencyAgentMembershipStatus
+    status_reason: Optional[str] = None
+    status_decided_at: Optional[datetime] = None
+    status_decided_by: Optional[int] = None
     display_name: str
     email: EmailStr
     phone_number: Optional[str] = None
@@ -145,6 +170,38 @@ class AgencyAgentRosterResponse(BaseModel):
     company_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+
+
+class AgencyAgentMembershipResponse(BaseModel):
+    membership_id: int
+    agency_id: int
+    user_id: int
+    agent_profile_id: Optional[int] = None
+    status: AgencyAgentMembershipStatus
+    status_reason: Optional[str] = None
+    status_decided_at: Optional[datetime] = None
+    status_decided_by: Optional[int] = None
+    source_join_request_id: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AgencyMembershipReviewRequestResponse(BaseModel):
+    review_request_id: int
+    membership_id: int
+    agency_id: int
+    user_id: int
+    status: AgencyMembershipReviewRequestStatus
+    reason: Optional[str] = None
+    response_reason: Optional[str] = None
+    decided_at: Optional[datetime] = None
+    decided_by: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AgencyInviteCreate(BaseModel):
