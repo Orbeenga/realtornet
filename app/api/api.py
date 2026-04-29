@@ -18,6 +18,7 @@ from app.api.endpoints import (
     # Core Entities
     users,
     agencies,
+    agency_invitations,
     agency_memberships,
     agent_profiles,
     profiles,
@@ -68,6 +69,12 @@ api_router.include_router(
     agencies.router,
     prefix="/agencies",
     tags=["agencies"]
+)
+
+api_router.include_router(
+    agency_invitations.router,
+    prefix="/agency-invitations",
+    tags=["agency-invitations"]
 )
 
 api_router.include_router(

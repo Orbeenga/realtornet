@@ -46,6 +46,14 @@ class AgentMembershipRestrictionStatus(str, Enum):
     REVOKED = "revoked"
 
 
+class AgencyInvitationStatus(str, Enum):
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+    REVOKED = "revoked"
+
+
 # Base Schema (shared fields for responses)
 class AgencyBase(BaseModel):
     """Shared agency fields"""
@@ -257,6 +265,9 @@ class AgencyInviteResponse(BaseModel):
     invite_token: str
     agency_id: int
     email: EmailStr
+    invitation_id: Optional[int] = None
+    status: Optional[AgencyInvitationStatus] = None
+    expires_at: Optional[datetime] = None
 
 
 class AgencyInviteAcceptRequest(BaseModel):
@@ -267,8 +278,24 @@ class AgencyInviteAcceptResponse(BaseModel):
     status: str
     agency_id: Optional[int] = None
     user_id: Optional[int] = None
+    invitation_id: Optional[int] = None
     redirect_url: Optional[str] = None
     email: Optional[EmailStr] = None
+
+
+class AgencyInvitationResponse(BaseModel):
+    invitation_id: int
+    agency_id: int
+    agency_name: str
+    email: EmailStr
+    invited_user_id: Optional[int] = None
+    status: AgencyInvitationStatus
+    created_at: datetime
+    updated_at: datetime
+    expires_at: datetime
+    accepted_at: Optional[datetime] = None
+    rejected_at: Optional[datetime] = None
+    revoked_at: Optional[datetime] = None
 
 
 # Update Schema (for PATCH/PUT requests - all fields optional)
