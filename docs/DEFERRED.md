@@ -3,6 +3,7 @@
 ## Phase G close update (April 29, 2026)
 
 Phase G backend exit is closed after production smoke validation.
+Post-close cleanup is complete: the G.7 smoke agency (`agency_id=8`), property (`property_id=5`), inquiry (`inquiry_id=5`), related invitation/membership records, and disposable smoke users `86`, `87`, and `88` were soft-deleted. The four real production accounts remained active.
 
 Closed in Phase G:
 - `DEF-G-INQ-002`: Inquiry property hydration fixed by serializing related property data on received inquiries.

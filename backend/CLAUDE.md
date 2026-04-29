@@ -64,7 +64,8 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 - Production G.7 smoke passed 12/12 on April 29, 2026
 - New agency journey passed end to end on production: agency applied, admin approved, owner invited agent, agent accepted, agent listed property, property appeared in agency inventory, seeker sent inquiry
 - Local pyright passed with 0 errors
-- Local pytest was blocked by unavailable local test DB (`localhost:5432/testdb` timed out in `tests/conftest.py`); previous gate snapshot remains 1803 passed with 92.94% coverage
+- Local pytest passed after local PostGIS was started: coverage 92.99%
+- G.7 smoke production cleanup completed: `agency_id=8`, `property_id=5`, `inquiry_id=5`, related invitation/membership rows, and disposable smoke users `86`, `87`, `88` are soft-deleted; the four real accounts remain active
 
 ## Locked Invariants
 
@@ -101,6 +102,7 @@ Do not answer from stale docs when the router, schema, or CRUD layer says otherw
 ## Next Session Handover
 
 - Phase G is closed; start future work from Phase H only after Phase H scope is explicitly opened
+- First Phase H action should verify the G.7 production smoke cleanup remains complete before new production work
 - Keep production and dev Supabase separation strict during all work
 - Treat agency card branding as blocked on backend enrichment until the response contract changes
 - Keep Railway `/healthz` returning 200 in degraded mode; Redis rate limiting should connect through `REDIS_URL` or Railway `REDISHOST`/`REDISPORT`/`REDISUSER`/`REDISPASSWORD`
