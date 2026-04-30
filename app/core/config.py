@@ -125,6 +125,9 @@ class Settings(BaseSettings):
     MAILGUN_API_KEY: str = ""
     MAILGUN_DOMAIN: str = ""
     MAIL_FROM: str = "RealtorNet <no-reply@your-domain.com>"
+    EMAIL_DRY_RUN: bool = False
+    EMAIL_DELIVERY_MODE: str = "sync"  # sync is reliable on single-process Railway deploys; celery remains available.
+    FRONTEND_BASE_URL: str = "https://realtornet-web.vercel.app"
     
     model_config = SettingsConfigDict(
         env_file=".env",

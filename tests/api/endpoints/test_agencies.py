@@ -5,6 +5,7 @@ Surgical API-layer tests for /agencies endpoints.
 from fastapi.testclient import TestClient
 from datetime import UTC, datetime, timedelta, timezone
 import uuid
+from unittest.mock import patch
 from app.api.endpoints import agencies as agencies_api
 from app.models.users import User, UserRole
 from app.core.security import decode_token, generate_access_token
@@ -67,11 +68,12 @@ class TestAgencyApplication:
     def test_agency_owner_can_invite_to_own_agency(
         self, client: TestClient, agency, agency_owner_token_headers
     ):
-        response = client.post(
-            f"/api/v1/agencies/{agency.agency_id}/invite/",
-            json={"email": "newagent@example.com"},
-            headers=agency_owner_token_headers,
-        )
+        with patch("app.api.endpoints.agencies.dispatch_email_task") as mock_email:
+            response = client.post(
+                f"/api/v1/agencies/{agency.agency_id}/invite/",
+                json={"email": "newagent@example.com"},
+                headers=agency_owner_token_headers,
+            )
 
         assert response.status_code == 200
         data = response.json()
@@ -79,6 +81,7 @@ class TestAgencyApplication:
         assert data["invite_token"]
         assert data["invitation_id"]
         assert data["status"] == "pending"
+        mock_email.assert_called_once()
 
     def test_agency_owner_cannot_invite_to_other_agency(
         self, client: TestClient, other_agency, agency_owner_token_headers
@@ -595,7 +598,8 @@ class TestAgencyJoinRequests:
         assert create_response.status_code == 201
         request_id = create_response.json()["join_request_id"]
 
-        with patch("app.api.endpoints.agencies.sync_supabase_auth_user_metadata"):
+        with patch("app.api.endpoints.agencies.sync_supabase_auth_user_metadata"), \
+             patch("app.api.endpoints.agencies.dispatch_email_task") as mock_email:
             response = client.patch(
                 f"/api/v1/agencies/{agency.agency_id}/join-requests/{request_id}/approve/",
                 headers=agency_owner_token_headers,
@@ -603,6 +607,7 @@ class TestAgencyJoinRequests:
 
         assert response.status_code == 200
         assert response.json()["status"] == "approved"
+        mock_email.assert_called_once()
         db.refresh(normal_user)
         assert normal_user.user_role == UserRole.AGENT
         assert normal_user.agency_id == agency.agency_id
@@ -739,15 +744,17 @@ class TestAgencyJoinRequests:
         assert create_response.status_code == 201
         request_id = create_response.json()["join_request_id"]
 
-        response = client.patch(
-            f"/api/v1/agencies/{agency.agency_id}/join-requests/{request_id}/reject/",
-            json={"reason": "Need more details"},
-            headers=agency_owner_token_headers,
-        )
+        with patch("app.api.endpoints.agencies.dispatch_email_task") as mock_email:
+            response = client.patch(
+                f"/api/v1/agencies/{agency.agency_id}/join-requests/{request_id}/reject/",
+                json={"reason": "Need more details"},
+                headers=agency_owner_token_headers,
+            )
 
         assert response.status_code == 200
         assert response.json()["status"] == "rejected"
         assert response.json()["rejection_reason"] == "Need more details"
+        mock_email.assert_called_once()
 
     def test_reject_join_request_returns_404_for_missing_request(
         self, client: TestClient, agency, agency_owner_token_headers

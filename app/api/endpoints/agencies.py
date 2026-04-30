@@ -59,6 +59,11 @@ from app.core.config import settings
 from app.models.agency_join_requests import AgencyAgentMembership, AgencyInvitation, AgencyJoinRequest, AgencyMembershipReviewRequest
 from app.models.users import UserRole
 from app.services.auth_user_sync_service import SupabaseUserSyncError, sync_supabase_auth_user_metadata
+from app.tasks.email_tasks import (
+    dispatch_email_task,
+    send_agent_invitation_email,
+    send_join_request_status_email,
+)
 
 router = APIRouter()
 
@@ -66,6 +71,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 AGENCY_INVITE_TOKEN_TYPE = "agency_invite"
+AGENCY_INVITE_EXPIRES_IN = timedelta(hours=72)
 
 
 def _hash_agency_invite_token(token: str) -> str:
@@ -73,7 +79,7 @@ def _hash_agency_invite_token(token: str) -> str:
 
 
 def _create_agency_invite_token(*, agency_id: int, email: str, invitation_id: int | None = None) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(days=7)
+    expire = datetime.now(timezone.utc) + AGENCY_INVITE_EXPIRES_IN
     payload: dict[str, Any] = {
         "token_type": AGENCY_INVITE_TOKEN_TYPE,
         "agency_id": agency_id,
@@ -1375,6 +1381,14 @@ def approve_agency_join_request(
             detail=str(exc),
         ) from exc
 
+    agency_name = str(getattr(join_request.agency, "name", None) or "")
+    dispatch_email_task(
+        send_join_request_status_email,
+        str(seeker.email),
+        agency_name,
+        "accepted",
+        None,
+    )
     return join_request
 
 
@@ -1422,6 +1436,17 @@ def reject_agency_join_request(
     db.add(join_request)
     db.flush()
     db.refresh(join_request)
+    agency_name = str(getattr(join_request.agency, "name", None) or "")
+    requester = getattr(join_request, "user", None)
+    requester_email = str(getattr(requester, "email", ""))
+    if requester_email:
+        dispatch_email_task(
+            send_join_request_status_email,
+            requester_email,
+            agency_name,
+            "declined",
+            cast(str | None, join_request.rejection_reason),
+        )
     return join_request
 
 
@@ -1493,7 +1518,7 @@ def invite_agency_agent(
 
     invite_email = str(invite_in.email).lower()
     invited_user = user_crud.get_by_email(db, email=invite_email)
-    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    expires_at = datetime.now(timezone.utc) + AGENCY_INVITE_EXPIRES_IN
     invitation = db.execute(
         select(AgencyInvitation).where(
             AgencyInvitation.agency_id == agency_id,
@@ -1531,6 +1556,12 @@ def invite_agency_agent(
     db.add(invitation)
     db.flush()
     db.refresh(invitation)
+    dispatch_email_task(
+        send_agent_invitation_email,
+        invite_email,
+        str(agency.name),
+        invite_token,
+    )
     return {
         "invite_token": invite_token,
         "agency_id": agency_id,

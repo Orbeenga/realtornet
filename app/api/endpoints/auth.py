@@ -29,7 +29,7 @@ from app.schemas.agent_profiles import AgentProfileCreate
 from app.schemas.profiles import ProfileCreate
 
 # --- TASK IMPORTS ---
-from app.tasks.email_tasks import send_welcome_email
+from app.tasks.email_tasks import dispatch_email_task, send_welcome_email
 from app.services.auth_registration_service import (
     SupabaseRegistrationError,
     create_supabase_auth_user_for_registration,
@@ -309,8 +309,8 @@ def register_user(
             detail="User registration failed",
         ) from exc
     
-    # Send welcome email as a background task
-    email_task = typing_cast(Any, send_welcome_email)  # Narrow the Celery task wrapper locally so pyright accepts the generated delay method.
+    # Send welcome email without making registration success depend on delivery.
+    email_task = typing_cast(Any, send_welcome_email)
     welcome_subject = "Welcome to RealtorNet"
     welcome_text = (
         f"Hi {user.first_name},\n\n"
@@ -326,19 +326,13 @@ def register_user(
         </body>
     </html>
     """
-    try:
-        email_task.delay(
-            user.email,
-            welcome_subject,
-            welcome_text,
-            welcome_html
-        )
-    except Exception:
-        logger.warning(
-            "Welcome email dispatch failed during registration; continuing without blocking signup",
-            extra={"email": user.email, "user_id": user.user_id},
-            exc_info=True,
-        )
+    dispatch_email_task(
+        email_task,
+        user.email,
+        welcome_subject,
+        welcome_text,
+        welcome_html,
+    )
     
     return user
 
