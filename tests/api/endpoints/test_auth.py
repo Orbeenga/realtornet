@@ -4,7 +4,7 @@ Surgical additions to cover the 7 uncovered lines in auth.py:
 Lines 114, 128, 135, 158, 191-196
 
 Add these classes/methods to the existing test_auth.py file.
-send_welcome_email.delay must be mocked in ALL register tests
+send_welcome_email must be mocked in ALL register tests
 to prevent Celery connection errors in the test environment.
 """
 from unittest.mock import patch
@@ -209,8 +209,7 @@ class TestRefreshTokenBranches:
 class TestRegisterBranches:
     def test_register_success(self, client: TestClient, db):
         """
-        Lines 191-196: successful registration triggers send_welcome_email.delay.
-        Celery must be mocked to prevent connection error in test environment.
+        Successful registration dispatches the welcome email task.
         """
         import uuid
         with patch("app.api.endpoints.auth.create_supabase_auth_user_for_registration") as mock_signup, \
@@ -228,7 +227,7 @@ class TestRegisterBranches:
                 }
             )
         assert response.status_code == 200
-        mock_email.delay.assert_called_once()
+        mock_email.apply.assert_called_once()
 
     def test_register_soft_deleted_email_returns_400(self, client: TestClient, db):
         """

@@ -32,6 +32,11 @@ from app.services.auth_user_sync_service import (
     SupabaseUserSyncError,
     sync_supabase_auth_user_metadata,
 )
+from app.tasks.email_tasks import (
+    dispatch_email_task,
+    send_agency_approval_email,
+    send_agency_rejection_email,
+)
 
 # --- DIRECT SCHEMA IMPORTS ---
 # from app.schemas.users import UserResponse, UserCreate, UserUpdate
@@ -175,6 +180,11 @@ def approve_agency_application(
             detail=str(exc),
         ) from exc
 
+    dispatch_email_task(
+        send_agency_approval_email,
+        owner_email,
+        str(agency.name),
+    )
     return agency
 
 
@@ -196,7 +206,7 @@ def reject_agency_application(
         )
 
     reason = reject_in.reason if reject_in is not None else None
-    return agency_crud.update(
+    agency = agency_crud.update(
         db,
         db_obj=agency,
         obj_in={
@@ -206,6 +216,15 @@ def reject_agency_application(
         },
         updated_by=str(current_user.supabase_id),
     )
+    owner_email = typing_cast(str | None, agency.owner_email)
+    if owner_email:
+        dispatch_email_task(
+            send_agency_rejection_email,
+            owner_email,
+            str(agency.name),
+            reason,
+        )
+    return agency
 
 
 @router.patch("/agencies/{agency_id}/revoke/", response_model=AgencyResponse)

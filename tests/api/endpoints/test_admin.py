@@ -345,7 +345,8 @@ class TestAdminAgencyApplications:
         db.flush()
         db.refresh(pending_agency)
 
-        with patch("app.api.endpoints.admin.sync_supabase_auth_user_metadata") as mock_sync:
+        with patch("app.api.endpoints.admin.sync_supabase_auth_user_metadata") as mock_sync, \
+             patch("app.api.endpoints.admin.dispatch_email_task") as mock_email:
             response = client.patch(
                 f"/api/v1/admin/agencies/{pending_agency.agency_id}/approve/",
                 headers=admin_token_headers,
@@ -357,6 +358,7 @@ class TestAdminAgencyApplications:
         assert getattr(normal_user.user_role, "value", normal_user.user_role) == "agency_owner"
         assert normal_user.agency_id == pending_agency.agency_id
         mock_sync.assert_called_once()
+        mock_email.assert_called_once()
 
     def test_admin_rejects_agency_with_reason(
         self, client: TestClient, admin_token_headers, db
@@ -373,15 +375,17 @@ class TestAdminAgencyApplications:
         db.flush()
         db.refresh(pending_agency)
 
-        response = client.patch(
-            f"/api/v1/admin/agencies/{pending_agency.agency_id}/reject/",
-            headers=admin_token_headers,
-            json={"reason": "Incomplete documentation"},
-        )
+        with patch("app.api.endpoints.admin.dispatch_email_task") as mock_email:
+            response = client.patch(
+                f"/api/v1/admin/agencies/{pending_agency.agency_id}/reject/",
+                headers=admin_token_headers,
+                json={"reason": "Incomplete documentation"},
+            )
 
         assert response.status_code == 200
         assert response.json()["status"] == "rejected"
         assert response.json()["rejection_reason"] == "Incomplete documentation"
+        mock_email.assert_called_once()
 
     def test_admin_revokes_approved_agency(
         self, client: TestClient, admin_token_headers, agency
