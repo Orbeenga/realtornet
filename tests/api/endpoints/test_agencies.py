@@ -1647,6 +1647,200 @@ class TestReadAgencyProperties:
         assert data[0]["user_id"] == agent_user.user_id
 
 
+class TestReadAgencyInquiries:
+
+    @staticmethod
+    def _activate_membership(db, agency, agent_user):
+        from app.models.agency_join_requests import AgencyAgentMembership
+
+        membership = AgencyAgentMembership(
+            agency_id=agency.agency_id,
+            user_id=agent_user.user_id,
+            status="active",
+        )
+        db.add(membership)
+        db.flush()
+        return membership
+
+    @staticmethod
+    def _create_inquiry(db, *, user_id, property_id, message="Interested in this listing"):
+        from app.models.inquiries import Inquiry
+
+        inquiry = Inquiry(
+            user_id=user_id,
+            property_id=property_id,
+            message=message,
+        )
+        db.add(inquiry)
+        db.flush()
+        db.refresh(inquiry)
+        return inquiry
+
+    def test_agency_owner_reads_member_listing_inquiries(
+        self,
+        client: TestClient,
+        db,
+        agency,
+        agent_user,
+        normal_user,
+        agency_owner_token_headers,
+        unverified_property_owned_by_agent,
+    ):
+        self._activate_membership(db, agency, agent_user)
+        inquiry = self._create_inquiry(
+            db,
+            user_id=normal_user.user_id,
+            property_id=unverified_property_owned_by_agent.property_id,
+        )
+
+        response = client.get(
+            f"/api/v1/agencies/{agency.agency_id}/inquiries/",
+            headers=agency_owner_token_headers,
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert [item["inquiry_id"] for item in data] == [inquiry.inquiry_id]
+        assert data[0]["user"] == {
+            "full_name": f"{normal_user.first_name} {normal_user.last_name}",
+            "email": normal_user.email,
+        }
+        assert data[0]["property"]["property_id"] == unverified_property_owned_by_agent.property_id
+
+    def test_agency_inquiries_exclude_non_member_listings(
+        self,
+        client: TestClient,
+        db,
+        agency,
+        agent_user,
+        normal_user,
+        agency_owner_token_headers,
+        unverified_property_owned_by_agent,
+        sample_property,
+    ):
+        self._activate_membership(db, agency, agent_user)
+        included = self._create_inquiry(
+            db,
+            user_id=normal_user.user_id,
+            property_id=unverified_property_owned_by_agent.property_id,
+        )
+        excluded = self._create_inquiry(
+            db,
+            user_id=agent_user.user_id,
+            property_id=sample_property.property_id,
+            message="This property owner is not an active agency member",
+        )
+
+        response = client.get(
+            f"/api/v1/agencies/{agency.agency_id}/inquiries/",
+            headers=agency_owner_token_headers,
+        )
+
+        assert response.status_code == 200
+        inquiry_ids = {item["inquiry_id"] for item in response.json()}
+        assert included.inquiry_id in inquiry_ids
+        assert excluded.inquiry_id not in inquiry_ids
+
+    def test_admin_can_read_any_agency_inquiries(
+        self,
+        client: TestClient,
+        db,
+        agency,
+        agent_user,
+        normal_user,
+        admin_token_headers,
+        unverified_property_owned_by_agent,
+    ):
+        self._activate_membership(db, agency, agent_user)
+        inquiry = self._create_inquiry(
+            db,
+            user_id=normal_user.user_id,
+            property_id=unverified_property_owned_by_agent.property_id,
+        )
+
+        response = client.get(
+            f"/api/v1/agencies/{agency.agency_id}/inquiries/",
+            headers=admin_token_headers,
+        )
+
+        assert response.status_code == 200
+        assert response.json()[0]["inquiry_id"] == inquiry.inquiry_id
+
+    def test_non_owner_role_cannot_read_agency_inquiries(
+        self, client: TestClient, agency, normal_user_token_headers
+    ):
+        response = client.get(
+            f"/api/v1/agencies/{agency.agency_id}/inquiries/",
+            headers=normal_user_token_headers,
+        )
+
+        assert response.status_code == 403
+
+    def test_other_agency_owner_cannot_read_agency_inquiries(
+        self, client: TestClient, db, agency, other_agency
+    ):
+        other_owner = User(
+            email="other-owner@example.com",
+            password_hash="hashed-password",
+            first_name="Other",
+            last_name="Owner",
+            user_role=UserRole.AGENCY_OWNER,
+            is_verified=True,
+            agency_id=other_agency.agency_id,
+            supabase_id=uuid.uuid4(),
+        )
+        db.add(other_owner)
+        db.flush()
+        token = generate_access_token(
+            supabase_id=other_owner.supabase_id,
+            user_id=other_owner.user_id,
+            user_role=other_owner.user_role.value,
+            agency_id=other_owner.agency_id,
+        )
+
+        response = client.get(
+            f"/api/v1/agencies/{agency.agency_id}/inquiries/",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 403
+
+    def test_agency_inquiry_page_size_caps_at_100(
+        self, client: TestClient, agency, agency_owner_token_headers, monkeypatch
+    ):
+        captured: dict[str, int] = {}
+
+        def fake_get_agency_inquiries(db, *, agency_id: int, skip: int, limit: int):
+            captured["skip"] = skip
+            captured["limit"] = limit
+            return []
+
+        monkeypatch.setattr(
+            agencies_api,
+            "get_agency_inquiries",
+            fake_get_agency_inquiries,
+        )
+
+        response = client.get(
+            f"/api/v1/agencies/{agency.agency_id}/inquiries/",
+            params={"page": 2, "page_size": 250},
+            headers=agency_owner_token_headers,
+        )
+
+        assert response.status_code == 200
+        assert captured == {"skip": 100, "limit": 100}
+
+    def test_agency_inquiries_not_found_returns_404(
+        self, client: TestClient, admin_token_headers
+    ):
+        response = client.get(
+            "/api/v1/agencies/999999/inquiries/",
+            headers=admin_token_headers,
+        )
+
+        assert response.status_code == 404
+
+
 class TestReadAgencyStats:
 
     def test_unauthenticated_returns_401(self, client: TestClient, agency):
