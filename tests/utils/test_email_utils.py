@@ -31,7 +31,39 @@ def test_send_email_requires_sendgrid_settings(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(settings, "SENDGRID_API_KEY", "")
     monkeypatch.setattr(settings, "MAIL_FROM", "")
 
-    with pytest.raises(ValueError, match="SendGrid settings"):
+    with pytest.raises(ValueError, match="SENDGRID_API_KEY"):
+        asyncio.run(send_email("agent@example.com", "Subject", text="Body"))
+
+
+def test_send_email_falls_back_to_email_from_sender(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_live_sendgrid(monkeypatch)
+    monkeypatch.setattr(settings, "MAIL_FROM", "")
+    monkeypatch.setattr(settings, "EMAIL_FROM", "RealtorNet <sender@example.com>")
+    calls = []
+
+    class FakeAsyncClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def post(self, url, *, headers, json, timeout):
+            calls.append(json)
+            return httpx.Response(202)
+
+    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
+
+    assert asyncio.run(send_email("agent@example.com", "Subject", text="Body")) is True
+    assert calls[0]["from"] == {"email": "sender@example.com", "name": "RealtorNet"}
+
+
+def test_send_email_rejects_placeholder_sender(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_live_sendgrid(monkeypatch)
+    monkeypatch.setattr(settings, "MAIL_FROM", "RealtorNet <no-reply@your-domain.com>")
+    monkeypatch.setattr(settings, "EMAIL_FROM", "")
+
+    with pytest.raises(ValueError, match="MAIL_FROM or EMAIL_FROM"):
         asyncio.run(send_email("agent@example.com", "Subject", text="Body"))
 
 
