@@ -55,9 +55,12 @@ from app.schemas.agencies import (
     AgencyUpdate
 )
 from app.schemas.properties import PropertyResponse
+from app.schemas.inquiries import InquiryExtendedResponse
 from app.core.config import settings
 from app.models.agency_join_requests import AgencyAgentMembership, AgencyInvitation, AgencyJoinRequest, AgencyMembershipReviewRequest
 from app.models.users import UserRole
+from app.api.endpoints.inquiries import _build_inquiry_extended_response
+from app.services.agency_inquiry_service import get_agency_inquiries
 from app.services.auth_user_sync_service import SupabaseUserSyncError, sync_supabase_auth_user_metadata
 from app.tasks.email_tasks import (
     dispatch_email_task,
@@ -1173,6 +1176,43 @@ def read_agency_properties(
         **pagination,
     )
     return properties
+
+
+@router.get("/{agency_id}/inquiries/", response_model=List[InquiryExtendedResponse])
+def read_agency_inquiries(
+    *,
+    db: Session = Depends(get_db),
+    agency_id: int,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1),
+    current_user: UserResponse = Depends(get_current_active_user),
+) -> Any:
+    """Retrieve inquiries for listings owned by active agents in an agency."""
+    agency = agency_crud.get(db, agency_id=agency_id)
+    if agency is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agency not found",
+        )
+
+    current_user_model = cast(User, current_user)
+    if not user_crud.is_admin(current_user_model):
+        current_agency_id = cast(int | None, current_user_model.agency_id)
+        current_role = cast(UserRole, current_user_model.user_role)
+        if current_role != UserRole.AGENCY_OWNER or current_agency_id != agency_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not enough permissions to view this agency's inquiries",
+            )
+
+    capped_page_size = min(page_size, 100)
+    inquiries = get_agency_inquiries(
+        db,
+        agency_id=agency_id,
+        skip=(page - 1) * capped_page_size,
+        limit=capped_page_size,
+    )
+    return [_build_inquiry_extended_response(inquiry) for inquiry in inquiries]
 
 
 @router.post(
