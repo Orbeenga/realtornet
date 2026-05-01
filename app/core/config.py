@@ -115,15 +115,14 @@ class Settings(BaseSettings):
     DB_POOL_RECYCLE: int = 3600
     
     # Email configuration (matches .env structure)
-    SMTP_HOST: str = "smtp.mailgun.org"
+    SMTP_HOST: str = "smtp.sendgrid.net"
     SMTP_PORT: int = 587
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
     EMAIL_FROM: str = "RealtorNet <noreply@yourdomain.com>"
     
-    # Mailgun configuration
-    MAILGUN_API_KEY: str = ""
-    MAILGUN_DOMAIN: str = ""
+    # SendGrid configuration
+    SENDGRID_API_KEY: str = ""
     MAIL_FROM: str = "RealtorNet <no-reply@your-domain.com>"
     EMAIL_DRY_RUN: bool = False
     EMAIL_DELIVERY_MODE: str = "sync"  # sync is reliable on single-process Railway deploys; celery remains available.

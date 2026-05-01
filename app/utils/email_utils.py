@@ -6,7 +6,8 @@ import httpx
 from app.core.config import settings
 
 
-MAILGUN_SUCCESS_CODES = {200, 202}
+SENDGRID_MAIL_SEND_URL = "https://api.sendgrid.com/v3/mail/send"
+SENDGRID_SUCCESS_CODES = {200, 202}
 
 
 def is_email_dry_run_enabled() -> bool:
@@ -21,7 +22,7 @@ async def send_email(
     html: Optional[str] = None,
 ) -> bool:
     """
-    Send an email using Mailgun API.
+    Send an email using SendGrid's Mail Send API.
 
     Test and explicit dry-run environments return success without performing an
     HTTP request so automated suites can exercise email flows safely.
@@ -29,34 +30,38 @@ async def send_email(
     if is_email_dry_run_enabled():
         return True
 
-    mailgun_api_key = settings.MAILGUN_API_KEY
-    mailgun_domain = settings.MAILGUN_DOMAIN
+    sendgrid_api_key = settings.SENDGRID_API_KEY
     from_email = settings.MAIL_FROM
 
-    if not mailgun_api_key or not mailgun_domain or not from_email:
-        raise ValueError("Mailgun settings are not properly configured in .env")
+    if not sendgrid_api_key or not from_email:
+        raise ValueError("SendGrid settings are not properly configured in .env")
 
-    url = f"https://api.mailgun.net/v3/{mailgun_domain}/messages"
-
-    data = {
-        "from": from_email,
-        "to": to_email,
-        "subject": subject,
-    }
-
+    content = []
     if text:
-        data["text"] = text
+        content.append({"type": "text/plain", "value": text})
     if html:
-        data["html"] = html
+        content.append({"type": "text/html", "value": html})
+    if not content:
+        content.append({"type": "text/plain", "value": ""})
+
+    payload = {
+        "personalizations": [{"to": [{"email": to_email}]}],
+        "from": {"email": from_email},
+        "subject": subject,
+        "content": content,
+    }
 
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                url,
-                auth=("api", mailgun_api_key),
-                data=data,
+                SENDGRID_MAIL_SEND_URL,
+                headers={
+                    "Authorization": f"Bearer {sendgrid_api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
                 timeout=10,
             )
-        return response.status_code in MAILGUN_SUCCESS_CODES
+        return response.status_code in SENDGRID_SUCCESS_CODES
     except Exception as exc:
         raise RuntimeError("Email sending failed") from exc

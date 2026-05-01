@@ -122,7 +122,7 @@ def test_dispatch_email_task_uses_celery_delay_when_configured(monkeypatch: pyte
 def test_dispatch_email_task_fail_open_for_sync_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     task = Mock()
     result = Mock()
-    result.get.side_effect = RuntimeError("mailgun unavailable")
+    result.get.side_effect = RuntimeError("email provider unavailable")
     task.apply.return_value = result
 
     email_tasks.dispatch_email_task(task, "one")

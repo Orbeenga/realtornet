@@ -19,7 +19,7 @@ Accounts required:
 - Supabase project (production DB + storage + auth)
 - GitHub repository access
 - (Optional) Sentry DSN for error monitoring
-- (Optional) Mailgun account for transactional email
+- (Optional) SendGrid account for transactional email
 
 ---
 
@@ -137,8 +137,11 @@ Optional but recommended:
 | `SMTP_PORT` | SMTP port |
 | `SMTP_USER` | SMTP username |
 | `SMTP_PASSWORD` | SMTP password |
-| `MAILGUN_API_KEY` | Mailgun API key |
-| `MAILGUN_DOMAIN` | Mailgun sending domain |
+| `SENDGRID_API_KEY` | SendGrid API key |
+| `MAIL_FROM` | Verified sender address |
+| `EMAIL_DELIVERY_MODE` | `sync` for single-process Railway deploys; `celery` only when a worker is deployed |
+| `EMAIL_DRY_RUN` | `false` in production, `true` for non-delivery dry runs |
+| `FRONTEND_BASE_URL` | Frontend URL used in email CTA links |
 
 ---
 
