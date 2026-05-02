@@ -60,7 +60,7 @@ def _normalize_public_registration(user_in: UserCreate) -> UserCreate:
     things in a request body, but they must never be able to mint `agent` or
     `admin` permissions during a public signup flow.
     """
-    return user_in.model_copy(update={"user_role": UserRole.SEEKER})
+    return user_in.model_copy(update={"user_role": UserRole.SEEKER, "agency_id": None})
 
 
 def _get_preapproved_agency_for_owner_email(db: Session, email: str) -> Agency | None:

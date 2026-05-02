@@ -325,6 +325,8 @@ class TestRegisterBranches:
         assert response.json()["user_role"] == "seeker"
 
     def test_register_claims_preapproved_agency_owner_role(self, client: TestClient, db):
+        from app.crud.agent_profiles import agent_profile as agent_profile_crud
+        from app.crud.profiles import profile as profile_crud
         from app.models.agencies import Agency
         import uuid
 
@@ -357,14 +359,18 @@ class TestRegisterBranches:
             )
 
         assert response.status_code == 200
+        user_id = response.json()["user_id"]
+        agent_profile = agent_profile_crud.get_by_user_id(db, user_id=user_id)
+        user_profile = profile_crud.get_by_user_id(db, user_id=user_id)
         assert response.json()["user_role"] == "agency_owner"
         assert response.json()["agency_id"] == agency.agency_id
         created_payload = mock_signup.call_args.args[0]
         assert created_payload.user_role.value == "agency_owner"
         assert created_payload.agency_id == agency.agency_id
-        assert agent_profile is None
+        assert agent_profile is not None
+        assert agent_profile.agency_id == agency.agency_id
         assert user_profile is not None
-        assert user_profile.full_name == "Agent User"
+        assert user_profile.full_name == "Approved Owner"
 
     def test_register_admin_payload_is_downgraded_to_seeker(self, client: TestClient, db):
         """

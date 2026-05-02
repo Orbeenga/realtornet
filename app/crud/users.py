@@ -204,6 +204,7 @@ class UserCRUD:
         """
         db_obj = User(
             supabase_id=supabase_id,
+            agency_id=obj_in.agency_id,
             email=obj_in.email.lower(),  # Enforce lowercase
             password_hash=get_password_hash(obj_in.password),
             first_name=obj_in.first_name,
