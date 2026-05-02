@@ -105,6 +105,14 @@ def db():
             ADD COLUMN IF NOT EXISTS decided_by BIGINT;
         """))
         schema_conn.execute(text("""
+            ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS deactivation_reason TEXT;
+        """))
+        schema_conn.execute(text("""
+            ALTER TABLE agencies
+            ADD COLUMN IF NOT EXISTS status_reason TEXT;
+        """))
+        schema_conn.execute(text("""
             ALTER TABLE agency_agent_memberships
             ADD COLUMN IF NOT EXISTS agent_profile_id BIGINT;
         """))
