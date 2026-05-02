@@ -109,6 +109,10 @@ def db():
             ADD COLUMN IF NOT EXISTS deactivation_reason TEXT;
         """))
         schema_conn.execute(text("""
+            ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS role_change_reason TEXT;
+        """))
+        schema_conn.execute(text("""
             ALTER TABLE agencies
             ADD COLUMN IF NOT EXISTS status_reason TEXT;
         """))
