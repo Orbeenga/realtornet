@@ -152,6 +152,7 @@ Optional but recommended:
 Run through this before every production deployment:
 
 - [ ] All tests passing locally: `make test`
+- [ ] Every PR that adds an Alembic migration names each migration file in the PR description
 - [ ] Production DB migrated before traffic: `python -m alembic upgrade head`
 - [ ] No unapplied migrations: `python -m alembic current` shows latest repo head
 - [ ] `.env` production values verified — no placeholder values
@@ -169,7 +170,11 @@ git pull origin main
 # 2. Install/update dependencies
 pip install -r requirements.txt
 
-# 3. Apply migrations (production DB)
+# 3. Apply migrations (production DB) before deploying/restarting new code.
+# The required order is always:
+#   alembic upgrade head on production DB -> deploy/restart application code.
+# Deploying code first can break unrelated routes when ORM models reference
+# columns that have not been created yet.
 # Confirm current state first
 python -m alembic current
 

@@ -96,6 +96,17 @@ def test_agent_invitation_email_contains_token_link_and_72_hour_copy(monkeypatch
     assert "72 hours" in payload["html"]
 
 
+def test_agent_invitation_email_provider_rejection_does_not_raise(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_send_email(monkeypatch, return_value=False)
+
+    task = cast(Any, email_tasks.send_agent_invitation_email)
+    result = task.apply(
+        args=("agent@example.com", "Prime Homes", "signed.token")
+    ).get()
+
+    assert result == "Agent invitation email was not sent to agent@example.com"
+
+
 def test_join_request_status_email_handles_decline_reason(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_send = _patch_send_email(monkeypatch)
 

@@ -35,7 +35,12 @@ def _run_send_email(
     )
 
     if not success:
-        raise RuntimeError("Email service returned failure status")
+        logger.warning(
+            "%s email was not accepted by the email provider",
+            task_name,
+            extra={"recipient": to_email, "subject": subject},
+        )
+        return f"{task_name} email was not sent to {to_email}"
 
     logger.info(
         "%s email sent successfully to %s",

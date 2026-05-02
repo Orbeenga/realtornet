@@ -18,6 +18,8 @@ down_revision: Union[str, None] = ${repr(down_revision)}
 branch_labels: Union[str, Sequence[str], None] = ${repr(branch_labels)}
 depends_on: Union[str, Sequence[str], None] = ${repr(depends_on)}
 
+# Deployment reminder: PR descriptions must name this migration file, and
+# production deploy order is `alembic upgrade head` before application code.
 
 def upgrade() -> None:
     """Upgrade schema."""

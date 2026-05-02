@@ -106,7 +106,7 @@ def test_send_email_posts_to_sendgrid(monkeypatch: pytest.MonkeyPatch) -> None:
     ]
 
 
-def test_send_email_returns_false_for_sendgrid_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_send_email_logs_warning_for_sendgrid_failure(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
     _set_live_sendgrid(monkeypatch)
 
     class FakeAsyncClient:
@@ -117,11 +117,16 @@ def test_send_email_returns_false_for_sendgrid_failure(monkeypatch: pytest.Monke
             return None
 
         async def post(self, url, *, headers, json, timeout):
-            return httpx.Response(500)
+            return httpx.Response(403, text="sender identity is not verified")
 
     monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
 
+    caplog.set_level("WARNING", logger="app.utils.email_utils")
+
     assert asyncio.run(send_email("agent@example.com", "Subject", text="Body")) is False
+    assert "SendGrid email send rejected" in caplog.text
+    assert caplog.records[0].response_body == "sender identity is not verified"
+    assert caplog.records[0].levelname == "WARNING"
 
 
 def test_send_email_wraps_http_errors(monkeypatch: pytest.MonkeyPatch) -> None:

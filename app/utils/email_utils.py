@@ -1,5 +1,6 @@
 # app/utils/email_utils.py
 from email.utils import parseaddr
+import logging
 from typing import Optional
 
 import httpx
@@ -9,12 +10,15 @@ from app.core.config import settings
 
 SENDGRID_MAIL_SEND_URL = "https://api.sendgrid.com/v3/mail/send"
 SENDGRID_SUCCESS_CODES = {200, 202}
+SENDGRID_LOG_BODY_LIMIT = 1000
 PLACEHOLDER_SENDER_VALUES = {
     "RealtorNet <no-reply@your-domain.com>",
     "RealtorNet <noreply@yourdomain.com>",
     "no-reply@your-domain.com",
     "noreply@yourdomain.com",
 }
+
+logger = logging.getLogger(__name__)
 
 
 def is_email_dry_run_enabled() -> bool:
@@ -98,6 +102,17 @@ async def send_email(
                 json=payload,
                 timeout=10,
             )
-        return response.status_code in SENDGRID_SUCCESS_CODES
+        if response.status_code in SENDGRID_SUCCESS_CODES:
+            return True
+        logger.warning(
+            "SendGrid email send rejected",
+            extra={
+                "status_code": response.status_code,
+                "response_body": response.text[:SENDGRID_LOG_BODY_LIMIT],
+                "recipient": to_email,
+                "subject": subject,
+            },
+        )
+        return False
     except Exception as exc:
         raise RuntimeError("Email sending failed") from exc
