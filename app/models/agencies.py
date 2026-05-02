@@ -49,6 +49,7 @@ class Agency(Base, AuditMixin, SoftDeleteMixin):
     owner_name = Column(String, nullable=True)
     owner_phone_number = Column(String, nullable=True)
     rejection_reason = Column(Text, nullable=True)
+    status_reason = Column(Text, nullable=True)
     
     # Timestamps + audit + soft delete inherited from mixins:
     # - created_at, updated_at, updated_by (AuditMixin)

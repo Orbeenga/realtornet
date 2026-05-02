@@ -113,6 +113,18 @@ class UserUpdate(BaseModel):
         return v
 
 
+class UserDeactivateRequest(BaseModel):
+    reason: str = Field(..., min_length=1)
+
+    @field_validator("reason")
+    @classmethod
+    def reason_must_not_be_blank(cls, value: str) -> str:
+        reason = value.strip()
+        if not reason:
+            raise ValueError("reason is required")
+        return reason
+
+
 # Response Schema (includes DB-controlled fields, excludes password_hash)
 class UserResponse(UserBase):
     """Schema for user responses (includes DB-generated fields, no sensitive data)"""
@@ -124,6 +136,7 @@ class UserResponse(UserBase):
     updated_at: datetime
     last_login: Optional[datetime] = None
     deleted_at: Optional[datetime] = None
+    deactivation_reason: Optional[str] = None
     created_by: Optional[UUID] = None
     updated_by: Optional[UUID] = None
     deleted_by: Optional[UUID] = None

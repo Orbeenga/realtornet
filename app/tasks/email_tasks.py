@@ -47,7 +47,7 @@ def _run_send_email(
 
 
 def _retry_or_raise(task: Any, exc: Exception, *, to_email: str, task_name: str) -> NoReturn:
-    logger.error(
+    logger.warning(
         "Failed to send %s email to %s",
         task_name,
         to_email,
@@ -290,7 +290,7 @@ def send_agent_invitation_email(
     invite_token: str,
 ) -> str:
     """Invite an agent to join an agency."""
-    invite_url = _frontend_url("/agency-invitations/accept", {"invite_token": invite_token})
+    invite_url = _frontend_url("/agencies/accept-invite", {"token": invite_token})
     subject = f"You have been invited to join {agency_name}"
     text_body = (
         f"{agency_name} invited you to join their agency on RealtorNet.\n\n"

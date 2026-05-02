@@ -344,7 +344,8 @@ class UserCRUD:
         db: Session,
         *,
         user_id: int,
-        updated_by: Optional[str] = None
+        updated_by: Optional[str] = None,
+        reason: Optional[str] = None,
     ) -> Optional[User]:
         """Soft-deactivate a user by setting deleted_at and audit fields."""
         db_obj = self.get(db, user_id=user_id)
@@ -352,6 +353,7 @@ class UserCRUD:
             return None
 
         cast(Any, db_obj).deleted_at = datetime.now(timezone.utc)  # Narrow ORM instance attribute assignment to its runtime datetime field.
+        cast(Any, db_obj).deactivation_reason = reason
         db_obj.deleted_by = updated_by  # FIX: Always assign deleted_by for soft-delete event.
         if updated_by:
             db_obj.updated_by = updated_by

@@ -490,14 +490,41 @@ def apply_for_agency(
     Applications start pending. Admin approval later promotes the owner account
     attached to owner_email.
     """
-    if agency_crud.get_by_name(db, name=agency_in.name):
+    owner_email = str(agency_in.owner_email).lower()
+    existing_by_name = agency_crud.get_by_name(db, name=agency_in.name)
+    if existing_by_name is not None:
+        if (
+            str(existing_by_name.status) == "rejected"
+            and str(existing_by_name.owner_email).lower() == owner_email
+        ):
+            agency = agency_crud.resubmit_rejected_application(
+                db,
+                db_obj=existing_by_name,
+                obj_in=agency_in,
+            )
+            return {"agency_id": agency.agency_id, "status": agency.status}
+
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Agency with this name already exists",
         )
 
     agency_email = agency_in.email or agency_in.owner_email
-    if agency_email and agency_crud.get_by_email(db, email=str(agency_email)):
+    existing_by_email = (
+        agency_crud.get_by_email(db, email=str(agency_email)) if agency_email else None
+    )
+    if existing_by_email is not None:
+        if (
+            str(existing_by_email.status) == "rejected"
+            and str(existing_by_email.owner_email).lower() == owner_email
+        ):
+            agency = agency_crud.resubmit_rejected_application(
+                db,
+                db_obj=existing_by_email,
+                obj_in=agency_in,
+            )
+            return {"agency_id": agency.agency_id, "status": agency.status}
+
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Agency with this email already exists",
@@ -875,7 +902,7 @@ def suspend_agency_agent_membership(
     db: Session = Depends(get_db),
     agency_id: int,
     membership_id: int,
-    action_in: AgencyAgentMembershipActionRequest | None = None,
+    action_in: AgencyAgentMembershipActionRequest,
     current_user: UserResponse = Depends(get_current_agency_owner_user),
     _: None = Depends(validate_request_size),
 ) -> Any:
@@ -891,7 +918,7 @@ def suspend_agency_agent_membership(
         membership=membership,
         current_user=cast(User, current_user),
         status_value="suspended",
-        reason=action_in.reason if action_in is not None else None,
+        reason=action_in.reason,
     )
 
 
@@ -901,7 +928,7 @@ def revoke_agency_agent_membership(
     db: Session = Depends(get_db),
     agency_id: int,
     membership_id: int,
-    action_in: AgencyAgentMembershipActionRequest | None = None,
+    action_in: AgencyAgentMembershipActionRequest,
     current_user: UserResponse = Depends(get_current_agency_owner_user),
     _: None = Depends(validate_request_size),
 ) -> Any:
@@ -917,7 +944,7 @@ def revoke_agency_agent_membership(
         membership=membership,
         current_user=cast(User, current_user),
         status_value="inactive",
-        reason=action_in.reason if action_in is not None else None,
+        reason=action_in.reason,
     )
 
 
@@ -927,7 +954,7 @@ def block_agency_agent_membership(
     db: Session = Depends(get_db),
     agency_id: int,
     membership_id: int,
-    action_in: AgencyAgentMembershipActionRequest | None = None,
+    action_in: AgencyAgentMembershipActionRequest,
     current_user: UserResponse = Depends(get_current_agency_owner_user),
     _: None = Depends(validate_request_size),
 ) -> Any:
@@ -943,7 +970,7 @@ def block_agency_agent_membership(
         membership=membership,
         current_user=cast(User, current_user),
         status_value="blocked",
-        reason=action_in.reason if action_in is not None else None,
+        reason=action_in.reason,
     )
 
 
@@ -953,7 +980,7 @@ def restore_agency_agent_membership(
     db: Session = Depends(get_db),
     agency_id: int,
     membership_id: int,
-    action_in: AgencyAgentMembershipActionRequest | None = None,
+    action_in: AgencyAgentMembershipActionRequest,
     current_user: UserResponse = Depends(get_current_agency_owner_user),
     _: None = Depends(validate_request_size),
 ) -> Any:
@@ -969,7 +996,7 @@ def restore_agency_agent_membership(
         membership=membership,
         current_user=cast(User, current_user),
         status_value="active",
-        reason=action_in.reason if action_in is not None else None,
+        reason=action_in.reason,
     )
 
 
@@ -1084,7 +1111,7 @@ def approve_agency_membership_review_request(
     agency_id: int,
     membership_id: int,
     review_request_id: int,
-    decision_in: AgencyMembershipReviewDecisionRequest | None = None,
+    decision_in: AgencyMembershipReviewDecisionRequest,
     current_user: UserResponse = Depends(get_current_agency_owner_user),
     _: None = Depends(validate_request_size),
 ) -> Any:
@@ -1102,10 +1129,10 @@ def approve_agency_membership_review_request(
         membership=membership,
         current_user=current_user_model,
         status_value="active",
-        reason=decision_in.reason if decision_in is not None else None,
+        reason=decision_in.reason,
     )
     cast(Any, review_request).status = "approved"
-    cast(Any, review_request).response_reason = decision_in.reason if decision_in is not None else None
+    cast(Any, review_request).response_reason = decision_in.reason
     cast(Any, review_request).decided_at = datetime.now(timezone.utc)
     review_request.decided_by = current_user_model.user_id
     review_request.updated_by = current_user_model.supabase_id
@@ -1125,7 +1152,7 @@ def reject_agency_membership_review_request(
     agency_id: int,
     membership_id: int,
     review_request_id: int,
-    decision_in: AgencyMembershipReviewDecisionRequest | None = None,
+    decision_in: AgencyMembershipReviewDecisionRequest,
     current_user: UserResponse = Depends(get_current_agency_owner_user),
     _: None = Depends(validate_request_size),
 ) -> Any:
@@ -1139,7 +1166,7 @@ def reject_agency_membership_review_request(
         current_user=current_user_model,
     )
     cast(Any, review_request).status = "rejected"
-    cast(Any, review_request).response_reason = decision_in.reason if decision_in is not None else None
+    cast(Any, review_request).response_reason = decision_in.reason
     cast(Any, review_request).decided_at = datetime.now(timezone.utc)
     review_request.decided_by = current_user_model.user_id
     review_request.updated_by = current_user_model.supabase_id
@@ -1438,7 +1465,7 @@ def reject_agency_join_request(
     db: Session = Depends(get_db),
     agency_id: int,
     request_id: int,
-    reject_in: AgencyJoinRequestRejectRequest | None = None,
+    reject_in: AgencyJoinRequestRejectRequest,
     current_user: UserResponse = Depends(get_current_agency_owner_user),
     _: None = Depends(validate_request_size),
 ) -> Any:
@@ -1469,7 +1496,7 @@ def reject_agency_join_request(
         )
 
     cast(Any, join_request).status = "rejected"
-    cast(Any, join_request).rejection_reason = reject_in.reason if reject_in is not None else None
+    cast(Any, join_request).rejection_reason = reject_in.reason
     cast(Any, join_request).decided_at = datetime.now(timezone.utc)
     join_request.decided_by = current_user_model.user_id
     join_request.updated_by = current_user_model.supabase_id
