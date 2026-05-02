@@ -9,7 +9,7 @@ Phase 2 Aligned: Soft delete, proper FK naming, Supabase integration
 # from __future__ import annotations # <--- Added for forward ref support
 # from typing import TYPE_CHECKING
 
-from sqlalchemy import Column, String, Boolean, BigInteger, ForeignKey, CheckConstraint, DateTime
+from sqlalchemy import Column, String, Boolean, BigInteger, ForeignKey, CheckConstraint, DateTime, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.types import Enum as SQLAEnum
 from sqlalchemy.orm import relationship
@@ -99,6 +99,7 @@ class User(Base, AuditMixin, SoftDeleteMixin):
 
     # Profile image
     profile_image_url = Column(String, nullable=True)
+    deactivation_reason = Column(Text, nullable=True)
 
     # Last login tracking
     last_login = Column(DateTime(timezone=True), nullable=True)

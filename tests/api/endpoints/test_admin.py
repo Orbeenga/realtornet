@@ -350,10 +350,12 @@ class TestAdminAgencyApplications:
             response = client.patch(
                 f"/api/v1/admin/agencies/{pending_agency.agency_id}/approve/",
                 headers=admin_token_headers,
+                json={"reason": "Application documents verified"},
             )
 
         assert response.status_code == 200
         assert response.json()["status"] == "approved"
+        assert response.json()["status_reason"] == "Application documents verified"
         db.refresh(normal_user)
         assert getattr(normal_user.user_role, "value", normal_user.user_role) == "agency_owner"
         assert normal_user.agency_id == pending_agency.agency_id
@@ -393,11 +395,13 @@ class TestAdminAgencyApplications:
         response = client.patch(
             f"/api/v1/admin/agencies/{agency.agency_id}/revoke/",
             headers=admin_token_headers,
+            json={"reason": "Compliance review required"},
         )
 
         assert response.status_code == 200
         assert response.json()["status"] == "pending"
         assert response.json()["is_verified"] is False
+        assert response.json()["status_reason"] == "Compliance review required"
 
     def test_admin_suspends_agency(
         self, client: TestClient, admin_token_headers, agency
@@ -405,11 +409,24 @@ class TestAdminAgencyApplications:
         response = client.patch(
             f"/api/v1/admin/agencies/{agency.agency_id}/suspend/",
             headers=admin_token_headers,
+            json={"reason": "Policy violation"},
         )
 
         assert response.status_code == 200
         assert response.json()["status"] == "suspended"
         assert response.json()["is_verified"] is False
+        assert response.json()["status_reason"] == "Policy violation"
+
+    def test_admin_agency_decisions_require_reason(
+        self, client: TestClient, admin_token_headers, agency
+    ):
+        response = client.patch(
+            f"/api/v1/admin/agencies/{agency.agency_id}/suspend/",
+            headers=admin_token_headers,
+            json={"reason": "   "},
+        )
+
+        assert response.status_code == 422
 
     def test_admin_role_promotion_syncs_supabase_auth_metadata(
         self, client: TestClient, admin_token_headers, normal_user, db
@@ -601,14 +618,28 @@ class TestAdminDeactivateUser:
         """
         response = client.post(
             f"/api/v1/admin/users/{normal_user.user_id}/deactivate",
-            headers=admin_token_headers
+            headers=admin_token_headers,
+            json={"reason": "Fraud review"},
         )
         assert response.status_code == 200
         data = response.json()
         assert data["deleted_at"] is not None
         assert data["deleted_by"] is not None
+        assert data["deactivation_reason"] == "Fraud review"
         db.refresh(normal_user)
         assert normal_user.deleted_at is not None
+        assert normal_user.deactivation_reason == "Fraud review"
+
+    def test_admin_deactivate_requires_reason(
+        self, client: TestClient, admin_token_headers, normal_user
+    ):
+        response = client.post(
+            f"/api/v1/admin/users/{normal_user.user_id}/deactivate",
+            headers=admin_token_headers,
+            json={"reason": "   "},
+        )
+
+        assert response.status_code == 422
 
     def test_admin_deactivate_nonexistent_user_returns_404(
         self, client: TestClient, admin_token_headers
@@ -620,7 +651,8 @@ class TestAdminDeactivateUser:
         """
         response = client.post(
             "/api/v1/admin/users/999999/deactivate",
-            headers=admin_token_headers
+            headers=admin_token_headers,
+            json={"reason": "No such account"},
         )
         assert response.status_code == 404
 
@@ -634,7 +666,8 @@ class TestAdminDeactivateUser:
         """
         response = client.post(
             f"/api/v1/admin/users/{normal_user.user_id}/deactivate",
-            headers=normal_user_token_headers
+            headers=normal_user_token_headers,
+            json={"reason": "Unauthorized attempt"},
         )
         assert response.status_code == 403
 
@@ -659,7 +692,8 @@ class TestAdminDeactivateUser:
         """
         response = client.post(
             f"/api/v1/admin/users/{admin_user.user_id}/deactivate",
-            headers=admin_token_headers
+            headers=admin_token_headers,
+            json={"reason": "Self action test"},
         )
         assert response.status_code == 400
         assert "cannot deactivate themselves" in response.json()["detail"]

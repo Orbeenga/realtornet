@@ -5,7 +5,7 @@ Follows BaseSchema/CreateSchema/UpdateSchema pattern.
 DB-controlled fields (id, timestamps) excluded from Create/Update.
 """
 
-from pydantic import BaseModel, EmailStr, ConfigDict, field_validator
+from pydantic import BaseModel, EmailStr, ConfigDict, Field, field_validator
 from typing import Optional
 from datetime import datetime
 from uuid import UUID
@@ -70,6 +70,7 @@ class AgencyBase(BaseModel):
     owner_name: Optional[str] = None
     owner_phone_number: Optional[str] = None
     rejection_reason: Optional[str] = None
+    status_reason: Optional[str] = None
 
     @field_validator('email')
     @classmethod
@@ -115,8 +116,20 @@ class AgencyApplicationResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class AgencyRejectRequest(BaseModel):
-    reason: Optional[str] = None
+class AgencyDecisionRequest(BaseModel):
+    reason: str = Field(..., min_length=1)
+
+    @field_validator("reason")
+    @classmethod
+    def reason_must_not_be_blank(cls, value: str) -> str:
+        reason = value.strip()
+        if not reason:
+            raise ValueError("reason is required")
+        return reason
+
+
+class AgencyRejectRequest(AgencyDecisionRequest):
+    pass
 
 
 class AgencyJoinRequestCreate(BaseModel):
@@ -124,20 +137,20 @@ class AgencyJoinRequestCreate(BaseModel):
     portfolio_details: Optional[str] = None
 
 
-class AgencyJoinRequestRejectRequest(BaseModel):
-    reason: Optional[str] = None
+class AgencyJoinRequestRejectRequest(AgencyDecisionRequest):
+    pass
 
 
-class AgencyAgentMembershipActionRequest(BaseModel):
-    reason: Optional[str] = None
+class AgencyAgentMembershipActionRequest(AgencyDecisionRequest):
+    pass
 
 
 class AgencyMembershipReviewRequestCreate(BaseModel):
     reason: Optional[str] = None
 
 
-class AgencyMembershipReviewDecisionRequest(BaseModel):
-    reason: Optional[str] = None
+class AgencyMembershipReviewDecisionRequest(AgencyDecisionRequest):
+    pass
 
 
 class AgencyJoinRequestResponse(BaseModel):
@@ -314,6 +327,7 @@ class AgencyUpdate(BaseModel):
     owner_name: Optional[str] = None
     owner_phone_number: Optional[str] = None
     rejection_reason: Optional[str] = None
+    status_reason: Optional[str] = None
 
     @field_validator('email')
     @classmethod
@@ -338,6 +352,7 @@ class AgencyResponse(AgencyBase):
     owner_name: Optional[str] = None
     owner_phone_number: Optional[str] = None
     rejection_reason: Optional[str] = None
+    status_reason: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime] = None

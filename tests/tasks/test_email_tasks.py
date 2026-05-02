@@ -92,7 +92,7 @@ def test_agent_invitation_email_contains_token_link_and_72_hour_copy(monkeypatch
 
     payload = _sent_payload(mock_send)
     assert payload["subject"] == "You have been invited to join Prime Homes"
-    assert "invite_token=signed.token" in payload["text"]
+    assert "/agencies/accept-invite?token=signed.token" in payload["text"]
     assert "72 hours" in payload["html"]
 
 

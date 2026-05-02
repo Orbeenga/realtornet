@@ -65,6 +65,43 @@ class TestAgencyApplication:
         assert detail_response.status_code == 200
         assert detail_response.json()["website_url"] == "https://agency.example.com"
 
+    def test_rejected_agency_application_can_be_resubmitted_by_same_owner(
+        self, client: TestClient, db
+    ):
+        from app.models.agencies import Agency
+
+        owner_email = f"resubmit_owner_{uuid.uuid4().hex[:6]}@example.com"
+        rejected_agency = Agency(
+            name=f"Resubmit Agency {uuid.uuid4().hex[:6]}",
+            email=owner_email,
+            status="rejected",
+            is_verified=False,
+            owner_email=owner_email,
+            owner_name="Old Owner",
+            rejection_reason="Missing documents",
+        )
+        db.add(rejected_agency)
+        db.flush()
+        db.refresh(rejected_agency)
+
+        response = client.post(
+            "/api/v1/agencies/apply/",
+            json={
+                "name": rejected_agency.name,
+                "description": "Updated application",
+                "address": "Abuja",
+                "owner_email": owner_email,
+                "owner_name": "Updated Owner",
+            },
+        )
+
+        assert response.status_code == 201
+        assert response.json()["agency_id"] == rejected_agency.agency_id
+        assert response.json()["status"] == "pending"
+        db.refresh(rejected_agency)
+        assert rejected_agency.status == "pending"
+        assert rejected_agency.rejection_reason is None
+
     def test_agency_owner_can_invite_to_own_agency(
         self, client: TestClient, agency, agency_owner_token_headers
     ):
@@ -699,6 +736,7 @@ class TestAgencyJoinRequests:
         request_id = create_response.json()["join_request_id"]
         reject_response = client.patch(
             f"/api/v1/agencies/{agency.agency_id}/join-requests/{request_id}/reject/",
+            json={"reason": "Portfolio incomplete"},
             headers=agency_owner_token_headers,
         )
 
@@ -761,6 +799,7 @@ class TestAgencyJoinRequests:
     ):
         response = client.patch(
             f"/api/v1/agencies/{agency.agency_id}/join-requests/999999/reject/",
+            json={"reason": "Missing request"},
             headers=agency_owner_token_headers,
         )
 
@@ -785,6 +824,7 @@ class TestAgencyJoinRequests:
 
         response = client.patch(
             f"/api/v1/agencies/{agency.agency_id}/join-requests/{request_id}/reject/",
+            json={"reason": "Already reviewed"},
             headers=agency_owner_token_headers,
         )
 

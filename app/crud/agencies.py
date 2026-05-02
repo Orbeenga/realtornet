@@ -221,6 +221,33 @@ class AgencyCRUD:
         db.flush()
         db.refresh(db_obj)
         return db_obj
+
+    def resubmit_rejected_application(
+        self,
+        db: Session,
+        *,
+        db_obj: Agency,
+        obj_in: AgencyApplicationCreate,
+    ) -> Agency:
+        """Reopen a rejected application from the same owner without losing audit history."""
+        db_obj.name = obj_in.name
+        db_obj.email = obj_in.email.lower() if obj_in.email is not None else obj_in.owner_email.lower()
+        db_obj.phone_number = obj_in.phone_number or obj_in.owner_phone_number
+        db_obj.address = obj_in.address
+        db_obj.description = obj_in.description
+        db_obj.website_url = obj_in.website_url
+        db_obj.is_verified = False
+        db_obj.status = "pending"
+        db_obj.owner_email = obj_in.owner_email.lower()
+        db_obj.owner_name = obj_in.owner_name
+        db_obj.owner_phone_number = obj_in.owner_phone_number
+        db_obj.rejection_reason = None
+        if hasattr(db_obj, "status_reason"):
+            db_obj.status_reason = None
+        db.add(db_obj)
+        db.flush()
+        db.refresh(db_obj)
+        return db_obj
     
     
     # UPDATE OPERATIONS

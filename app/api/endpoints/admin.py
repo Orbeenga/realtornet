@@ -40,7 +40,13 @@ from app.tasks.email_tasks import (
 
 # --- DIRECT SCHEMA IMPORTS ---
 # from app.schemas.users import UserResponse, UserCreate, UserUpdate
-from app.schemas.users import UserResponse, UserCreate, UserUpdate, UserRole
+from app.schemas.users import (
+    UserDeactivateRequest,
+    UserResponse,
+    UserCreate,
+    UserUpdate,
+    UserRole,
+)
 from app.schemas.agencies import AgencyCreate, AgencyRejectRequest, AgencyResponse
 from app.schemas.agent_profiles import AgentProfileCreate
 from app.schemas.properties import PropertyResponse, PropertyUpdate, ListingStatus, PropertyVerificationUpdate
@@ -118,6 +124,7 @@ def approve_agency_application(
     *,
     db: Session = Depends(get_db),
     agency_id: int,
+    decision_in: AgencyRejectRequest,
     current_user: UserResponse = Depends(get_current_admin_user),
     _: None = Depends(validate_request_size)
 ) -> Any:
@@ -164,6 +171,7 @@ def approve_agency_application(
                 "status": "approved",
                 "is_verified": True,
                 "rejection_reason": None,
+                "status_reason": decision_in.reason,
             },
             updated_by=actor_supabase_id,
         )
@@ -193,11 +201,11 @@ def reject_agency_application(
     *,
     db: Session = Depends(get_db),
     agency_id: int,
-    reject_in: AgencyRejectRequest | None = None,
+    reject_in: AgencyRejectRequest,
     current_user: UserResponse = Depends(get_current_admin_user),
     _: None = Depends(validate_request_size)
 ) -> Any:
-    """Reject a pending agency application with an optional reason."""
+    """Reject a pending agency application with a required audit reason."""
     agency = agency_crud.get(db, agency_id=agency_id)
     if agency is None:
         raise HTTPException(
@@ -205,7 +213,7 @@ def reject_agency_application(
             detail="Agency not found",
         )
 
-    reason = reject_in.reason if reject_in is not None else None
+    reason = reject_in.reason
     agency = agency_crud.update(
         db,
         db_obj=agency,
@@ -213,6 +221,7 @@ def reject_agency_application(
             "status": "rejected",
             "is_verified": False,
             "rejection_reason": reason,
+            "status_reason": reason,
         },
         updated_by=str(current_user.supabase_id),
     )
@@ -232,10 +241,11 @@ def revoke_agency_approval(
     *,
     db: Session = Depends(get_db),
     agency_id: int,
+    decision_in: AgencyRejectRequest,
     current_user: UserResponse = Depends(get_current_admin_user),
     _: None = Depends(validate_request_size)
 ) -> Any:
-    """Revoke an approved agency back to pending review."""
+    """Revoke an approved agency back to pending review with a required reason."""
     agency = agency_crud.get(db, agency_id=agency_id)
     if agency is None:
         raise HTTPException(
@@ -249,7 +259,7 @@ def revoke_agency_approval(
         obj_in={
             "status": "pending",
             "is_verified": False,
-            "rejection_reason": None,
+            "status_reason": decision_in.reason,
         },
         updated_by=str(current_user.supabase_id),
     )
@@ -260,10 +270,11 @@ def suspend_agency(
     *,
     db: Session = Depends(get_db),
     agency_id: int,
+    decision_in: AgencyRejectRequest,
     current_user: UserResponse = Depends(get_current_admin_user),
     _: None = Depends(validate_request_size)
 ) -> Any:
-    """Suspend an agency without soft-deleting its data."""
+    """Suspend an agency without soft-deleting its data, requiring a reason."""
     agency = agency_crud.get(db, agency_id=agency_id)
     if agency is None:
         raise HTTPException(
@@ -277,6 +288,7 @@ def suspend_agency(
         obj_in={
             "status": "suspended",
             "is_verified": False,
+            "status_reason": decision_in.reason,
         },
         updated_by=str(current_user.supabase_id),
     )
@@ -507,6 +519,7 @@ def deactivate_user(
     *,
     db: Session = Depends(get_db),
     user_id: int,
+    deactivation_in: UserDeactivateRequest,
     current_user: UserResponse = Depends(get_current_admin_user),
     _: None = Depends(validate_request_size)
 ) -> Any:
@@ -542,7 +555,8 @@ def deactivate_user(
     db_user = user_crud.deactivate(
         db, 
         user_id=user_id,
-        updated_by=str(current_user.supabase_id)  # Normalize the admin Supabase UUID to the CRUD audit string type at the call site.
+        updated_by=str(current_user.supabase_id),  # Normalize the admin Supabase UUID to the CRUD audit string type at the call site.
+        reason=deactivation_in.reason,
     )
     
     logger.info(f"User deactivated: {user_id} by admin {current_user.user_id}")
