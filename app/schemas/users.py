@@ -79,6 +79,7 @@ class UserUpdate(BaseModel):
     phone_number: Optional[str] = None
     profile_image_url: Optional[str] = None
     user_role: Optional[UserRole] = None
+    role_change_reason: Optional[str] = None
     # Password change (if provided, must be validated)
     password: Optional[str] = None
 
@@ -100,6 +101,13 @@ class UserUpdate(BaseModel):
     @classmethod
     def validate_phone_number(cls, v: Optional[str]) -> Optional[str]:
         """Ensure phone_number is not empty if provided"""
+        if v is not None and not v.strip():
+            return None
+        return v.strip() if v else None
+
+    @field_validator("role_change_reason")
+    @classmethod
+    def validate_role_change_reason(cls, v: Optional[str]) -> Optional[str]:
         if v is not None and not v.strip():
             return None
         return v.strip() if v else None
@@ -137,6 +145,7 @@ class UserResponse(UserBase):
     last_login: Optional[datetime] = None
     deleted_at: Optional[datetime] = None
     deactivation_reason: Optional[str] = None
+    role_change_reason: Optional[str] = None
     created_by: Optional[UUID] = None
     updated_by: Optional[UUID] = None
     deleted_by: Optional[UUID] = None

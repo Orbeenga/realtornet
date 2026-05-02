@@ -362,6 +362,37 @@ class TestAdminAgencyApplications:
         mock_sync.assert_called_once()
         mock_email.assert_called_once()
 
+    def test_admin_approves_agency_without_existing_owner_sends_account_setup(
+        self, client: TestClient, admin_token_headers, db
+    ):
+        from app.models.agencies import Agency
+
+        owner_email = f"new_owner_{uuid.uuid4().hex[:6]}@example.com"
+        pending_agency = Agency(
+            name=f"First Time Owner Agency {uuid.uuid4().hex[:6]}",
+            status="pending",
+            owner_email=owner_email,
+            owner_name="New Owner",
+        )
+        db.add(pending_agency)
+        db.flush()
+        db.refresh(pending_agency)
+
+        with patch("app.api.endpoints.admin.sync_supabase_auth_user_metadata") as mock_sync, \
+             patch("app.api.endpoints.admin.dispatch_email_task") as mock_email:
+            response = client.patch(
+                f"/api/v1/admin/agencies/{pending_agency.agency_id}/approve/",
+                headers=admin_token_headers,
+                json={"reason": "Business registration verified"},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "approved"
+        assert response.json()["status_reason"] == "Business registration verified"
+        mock_sync.assert_not_called()
+        mock_email.assert_called_once()
+        assert mock_email.call_args.args[3] is True
+
     def test_admin_rejects_agency_with_reason(
         self, client: TestClient, admin_token_headers, db
     ):
@@ -449,6 +480,41 @@ class TestAdminAgencyApplications:
         mock_sync.assert_called_once()
         synced_user = mock_sync.call_args.args[0]
         assert synced_user.user_id == normal_user.user_id
+
+    def test_admin_role_demotion_requires_reason(
+        self, client: TestClient, admin_token_headers, agent_user
+    ):
+        response = client.put(
+            f"/api/v1/admin/users/{agent_user.user_id}",
+            headers=admin_token_headers,
+            json={"user_role": "seeker"},
+        )
+
+        assert response.status_code == 422
+        assert "role change reason" in response.json()["detail"].lower()
+
+    def test_admin_role_demotion_stores_reason_and_syncs_metadata(
+        self, client: TestClient, admin_token_headers, agent_user, db
+    ):
+        with patch(
+            "app.api.endpoints.admin.sync_supabase_auth_user_metadata"
+        ) as mock_sync:
+            response = client.put(
+                f"/api/v1/admin/users/{agent_user.user_id}",
+                headers=admin_token_headers,
+                json={
+                    "user_role": "seeker",
+                    "role_change_reason": "License expired",
+                },
+            )
+
+        assert response.status_code == 200
+        assert response.json()["user_role"] == "seeker"
+        assert response.json()["role_change_reason"] == "License expired"
+        db.refresh(agent_user)
+        assert getattr(agent_user.user_role, "value", agent_user.user_role) == "seeker"
+        assert agent_user.role_change_reason == "License expired"
+        mock_sync.assert_called_once()
 
     def test_admin_role_promotion_rolls_back_when_supabase_sync_fails(
         self, client: TestClient, admin_token_headers, normal_user

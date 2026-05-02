@@ -206,20 +206,35 @@ def send_agency_approval_email(
     self,
     to_email: str,
     agency_name: str,
+    requires_registration: bool = False,
 ) -> str:
     """Notify an applicant that their agency application was approved."""
-    login_url = _frontend_url("/login")
+    action_url = _frontend_url(
+        "/register" if requires_registration else "/login",
+        {"email": to_email} if requires_registration else None,
+    )
+    action_label = (
+        "Create your owner account"
+        if requires_registration
+        else "Sign in to manage your agency dashboard"
+    )
     subject = "Your agency application was approved"
+    next_step = (
+        "Create your RealtorNet owner account with this email address to manage your agency dashboard."
+        if requires_registration
+        else "Sign in to manage your agency dashboard."
+    )
     text_body = (
         f"Good news - {agency_name} has been approved on RealtorNet.\n\n"
-        f"Sign in to manage your agency dashboard: {login_url}"
+        f"{next_step}\n\n{action_label}: {action_url}"
     )
     html_body = f"""
     <html>
         <body>
             <h2>Your agency application was approved</h2>
             <p>Good news - <strong>{agency_name}</strong> has been approved on RealtorNet.</p>
-            <p><a href="{login_url}">Sign in to manage your agency dashboard</a></p>
+            <p>{next_step}</p>
+            <p><a href="{action_url}">{action_label}</a></p>
         </body>
     </html>
     """

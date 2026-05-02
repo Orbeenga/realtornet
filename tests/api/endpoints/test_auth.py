@@ -323,6 +323,45 @@ class TestRegisterBranches:
         assert user is not None
         assert str(user.user_role) == "UserRole.SEEKER" or getattr(user.user_role, "value", user.user_role) == "seeker"
         assert response.json()["user_role"] == "seeker"
+
+    def test_register_claims_preapproved_agency_owner_role(self, client: TestClient, db):
+        from app.models.agencies import Agency
+        import uuid
+
+        owner_email = f"approved_owner_{uuid.uuid4().hex[:6]}@example.com"
+        agency = Agency(
+            name=f"Approved Owner Agency {uuid.uuid4().hex[:6]}",
+            email=owner_email,
+            status="approved",
+            is_verified=True,
+            owner_email=owner_email,
+            owner_name="Approved Owner",
+        )
+        db.add(agency)
+        db.flush()
+        db.refresh(agency)
+
+        with patch("app.api.endpoints.auth.create_supabase_auth_user_for_registration") as mock_signup, \
+             patch("app.api.endpoints.auth.send_welcome_email") as mock_email:
+            mock_signup.return_value = str(uuid.uuid4())
+            mock_email.delay.return_value = None
+            response = client.post(
+                "/api/v1/auth/register",
+                json={
+                    "email": owner_email,
+                    "password": "ValidPass123!",
+                    "first_name": "Approved",
+                    "last_name": "Owner",
+                    "user_role": "seeker",
+                },
+            )
+
+        assert response.status_code == 200
+        assert response.json()["user_role"] == "agency_owner"
+        assert response.json()["agency_id"] == agency.agency_id
+        created_payload = mock_signup.call_args.args[0]
+        assert created_payload.user_role.value == "agency_owner"
+        assert created_payload.agency_id == agency.agency_id
         assert agent_profile is None
         assert user_profile is not None
         assert user_profile.full_name == "Agent User"

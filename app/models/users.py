@@ -100,6 +100,7 @@ class User(Base, AuditMixin, SoftDeleteMixin):
     # Profile image
     profile_image_url = Column(String, nullable=True)
     deactivation_reason = Column(Text, nullable=True)
+    role_change_reason = Column(Text, nullable=True)
 
     # Last login tracking
     last_login = Column(DateTime(timezone=True), nullable=True)
