@@ -3,7 +3,7 @@
 ## Entry State
 
 FastAPI backend deployed on Railway. Sentry is instrumented.
-Phase F is closed. Phase G is closed as of April 29, 2026.
+Phase F is closed. Phase G is closed as of April 29, 2026. Phase H is active.
 
 Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this file for backend-specific state.
 
@@ -20,7 +20,7 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 - Auth source of truth: Supabase Auth
 - Production Supabase project ref: `avkhpachzsbgmbnkfnhu`
 - Dev Supabase project ref: `umhtnqxdvffpifqbdtjs`
-- Production migration head: `c8f3b2a91e44`
+- Production migration head: `a6b2d9f4c801`
 - Public registration creates a Supabase Auth identity first, then mirrors that UUID into the local `users` row
 - Registration rollback deletes the Supabase Auth user if the local DB write fails
 - Runtime auth is still based on backend-issued JWTs after login, not direct validation of raw Supabase access tokens
@@ -47,6 +47,7 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 - `POST /api/v1/agencies/{agency_id}/invite/` creates agency invitations
 - `POST /api/v1/agencies/accept-invite/` accepts invitation tokens and promotes users to agency agents
 - `GET /api/v1/properties/featured` returns featured public listings
+- `GET /api/v1/agencies/{agency_id}/inquiries/` returns paginated agency-wide inquiry rollup for agency owners and admins
 - `PATCH /api/v1/properties/{property_id}/verify` accepts moderation status values: pending_review / verified / rejected / revoked
 - `/api/v1/admin/properties` is admin-only and must serialize safely without leaking raw PostGIS objects
 - `/api/v1/property-types/` is the source of truth for property type dropdowns
@@ -66,6 +67,15 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 - Local pyright passed with 0 errors
 - Local pytest passed after local PostGIS was started: coverage 92.99%
 - G.7 smoke production cleanup completed: `agency_id=8`, `property_id=5`, `inquiry_id=5`, related invitation/membership rows, and disposable smoke users `86`, `87`, `88` are soft-deleted; the four real accounts remain active
+
+## Phase H Active State
+
+- Current migration head is `a6b2d9f4c801`
+- Agency inquiry aggregation endpoint is live: `GET /api/v1/agencies/{agency_id}/inquiries/`
+- Agency and user decision reasons are live: `agencies.status_reason`, `users.deactivation_reason`, and `users.role_change_reason`
+- First-time agency owner approval flow is live: approved applicants can register with the approved owner email and receive `agency_owner` plus the approved `agency_id`
+- Email provider is SendGrid via `SENDGRID_API_KEY` and `MAIL_FROM`/`EMAIL_FROM`
+- Transactional email dispatch is fail-open: provider failures are logged and must not block the triggering API request
 
 ## Locked Invariants
 
