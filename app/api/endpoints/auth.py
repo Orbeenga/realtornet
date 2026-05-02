@@ -8,12 +8,14 @@ from uuid import UUID
 from typing import Any, cast as typing_cast  # Alias typing.cast so endpoint-local narrowing stays explicit without affecting runtime token helpers.
 from fastapi import APIRouter, Depends, HTTPException, status, Body
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 # --- DIRECT CRUD IMPORTS ---
 from app.crud.agent_profiles import agent_profile as agent_profile_crud
 from app.crud.profiles import profile as profile_crud
 from app.crud.users import user as user_crud
+from app.models.agencies import Agency
 
 # --- DIRECT DEPENDENCY IMPORTS ---
 from app.api.dependencies import get_db, get_current_active_user, validate_request_size
@@ -59,6 +61,19 @@ def _normalize_public_registration(user_in: UserCreate) -> UserCreate:
     `admin` permissions during a public signup flow.
     """
     return user_in.model_copy(update={"user_role": UserRole.SEEKER})
+
+
+def _get_preapproved_agency_for_owner_email(db: Session, email: str) -> Agency | None:
+    """Return an approved agency claim for this email, if an admin already approved it."""
+    return db.execute(
+        select(Agency)
+        .where(
+            Agency.owner_email == email.lower(),
+            Agency.status == "approved",
+            Agency.deleted_at.is_(None),
+        )
+        .order_by(Agency.updated_at.desc())
+    ).scalars().first()
 
 
 @router.post("/login", response_model=Token)
@@ -224,9 +239,17 @@ def register_user(
     - User data meets schema requirements
     - Supabase Auth identity is created before local domain records
     """
-    # Public registration always creates seekers. Higher-trust roles are granted
-    # later through internal workflows, never directly from browser input.
+    # Public registration defaults to seeker. Higher-trust roles are granted only
+    # from server-owned workflows, such as an admin-approved agency application.
     user_in = _normalize_public_registration(user_in)
+    preapproved_agency = _get_preapproved_agency_for_owner_email(db, user_in.email)
+    if preapproved_agency is not None:
+        user_in = user_in.model_copy(
+            update={
+                "user_role": UserRole.AGENCY_OWNER,
+                "agency_id": preapproved_agency.agency_id,
+            }
+        )
 
     # Check if user with email already exists
     # CRUD checks both active and soft-deleted users

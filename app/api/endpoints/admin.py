@@ -149,14 +149,29 @@ def approve_agency_application(
             detail="Agency application has no owner email",
         )
 
-    owner_user = user_crud.get_by_email(db, email=owner_email)
-    if owner_user is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Applicant user account not found",
-        )
-
     actor_supabase_id = str(current_user.supabase_id)
+    owner_user = user_crud.get_by_email(db, email=owner_email)
+
+    if owner_user is None:
+        agency = agency_crud.update(
+            db,
+            db_obj=agency,
+            obj_in={
+                "status": "approved",
+                "is_verified": True,
+                "rejection_reason": None,
+                "status_reason": decision_in.reason,
+            },
+            updated_by=actor_supabase_id,
+        )
+        dispatch_email_task(
+            send_agency_approval_email,
+            owner_email,
+            str(agency.name),
+            True,
+        )
+        return agency
+
     try:
         owner_user = user_crud.update(
             db,
@@ -192,6 +207,7 @@ def approve_agency_application(
         send_agency_approval_email,
         owner_email,
         str(agency.name),
+        False,
     )
     return agency
 
@@ -409,6 +425,18 @@ def update_user(
     # Update with audit tracking
     update_data = user_in.dict(exclude_unset=True)
     should_sync_supabase_auth = "user_role" in update_data
+    next_role = update_data.get("user_role")
+    current_role = getattr(db_user.user_role, "value", db_user.user_role)
+    next_role_value = getattr(next_role, "value", next_role)
+    is_access_reducing_role_change = (
+        current_role in {UserRole.AGENT.value, UserRole.AGENCY_OWNER.value}
+        and next_role_value == UserRole.SEEKER.value
+    )
+    if is_access_reducing_role_change and not update_data.get("role_change_reason"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="A role change reason is required when demoting a user",
+        )
 
     try:
         db_user = user_crud.update(
