@@ -230,20 +230,20 @@ class AgencyCRUD:
         obj_in: AgencyApplicationCreate,
     ) -> Agency:
         """Reopen a rejected application from the same owner without losing audit history."""
-        db_obj.name = obj_in.name
-        db_obj.email = obj_in.email.lower() if obj_in.email is not None else obj_in.owner_email.lower()
-        db_obj.phone_number = obj_in.phone_number or obj_in.owner_phone_number
-        db_obj.address = obj_in.address
-        db_obj.description = obj_in.description
-        db_obj.website_url = obj_in.website_url
-        db_obj.is_verified = False
-        db_obj.status = "pending"
-        db_obj.owner_email = obj_in.owner_email.lower()
-        db_obj.owner_name = obj_in.owner_name
-        db_obj.owner_phone_number = obj_in.owner_phone_number
-        db_obj.rejection_reason = None
-        if hasattr(db_obj, "status_reason"):
-            db_obj.status_reason = None
+        db_obj_any = cast(Any, db_obj)
+        db_obj_any.name = obj_in.name
+        db_obj_any.email = obj_in.email.lower() if obj_in.email is not None else obj_in.owner_email.lower()
+        db_obj_any.phone_number = obj_in.phone_number or obj_in.owner_phone_number
+        db_obj_any.address = obj_in.address
+        db_obj_any.description = obj_in.description
+        db_obj_any.website_url = obj_in.website_url
+        db_obj_any.is_verified = False
+        db_obj_any.status = "pending"
+        db_obj_any.owner_email = obj_in.owner_email.lower()
+        db_obj_any.owner_name = obj_in.owner_name
+        db_obj_any.owner_phone_number = obj_in.owner_phone_number
+        db_obj_any.rejection_reason = None
+        db_obj_any.status_reason = None
         db.add(db_obj)
         db.flush()
         db.refresh(db_obj)

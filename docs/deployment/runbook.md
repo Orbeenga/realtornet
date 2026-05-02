@@ -76,7 +76,7 @@ python -m alembic upgrade head
 
 # Confirm at head
 python -m alembic current
-# Expected: 6c0087f609b4 (head)
+# Expected: latest repo revision marked "(head)"
 ```
 
 ### 2.5 Start development server
@@ -152,7 +152,8 @@ Optional but recommended:
 Run through this before every production deployment:
 
 - [ ] All tests passing locally: `make test`
-- [ ] No unapplied migrations: `python -m alembic current` shows head
+- [ ] Production DB migrated before traffic: `python -m alembic upgrade head`
+- [ ] No unapplied migrations: `python -m alembic current` shows latest repo head
 - [ ] `.env` production values verified — no placeholder values
 - [ ] `ENV=production` set in production environment
 - [ ] `SECRET_KEY` is 64+ hex characters, unique to production
@@ -177,6 +178,20 @@ python -m alembic upgrade head
 
 # Confirm head
 python -m alembic current
+
+# If this deploy added a migration file, verify newly mapped columns before
+# browser traffic is considered live. A code deploy with an old schema can
+# break unrelated routes such as login because SQLAlchemy loads all mapped
+# columns during user fetches.
+python - <<'PY'
+from sqlalchemy import create_engine, inspect
+from app.core.config import settings
+
+engine = create_engine(settings.DATABASE_URI)
+inspector = inspect(engine)
+print([column["name"] for column in inspector.get_columns("users")])
+print([column["name"] for column in inspector.get_columns("agencies")])
+PY
 
 # 4. Restart application server
 # Via systemd:
