@@ -60,6 +60,33 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 - Pagination and visibility assumptions should always be pulled from actual endpoint code, not memory
 - Trailing slashes matter on authenticated endpoints because 308 redirects can drop Bearer headers on some clients; frontend OPEN-001 normalized paths and is deployed
 
+## Phase H Endpoint Maps
+
+### Analytics And Admin Stats
+
+- Canonical admin dashboard analytics surface: `/api/v1/analytics/system/stats`, `/api/v1/analytics/system/usage`, and `/api/v1/analytics/system/integrity`; all are admin-only and return the typed `SystemStatsResponse`, `UsageMetricsResponse`, and `DataIntegrityResponse` contracts.
+- `/api/v1/admin/stats` is an admin-only compatibility wrapper over the same system-stats service used by `/analytics/system/stats`.
+- `/api/v1/admin/stats/overview` is intentionally smaller than analytics: it returns only `total_users`, `total_properties`, `approved_properties`, and `pending_properties` for quick back-office counters.
+
+### Agent Profile Support
+
+- `GET /api/v1/agent-profiles/{profile_id}/reviews` is public and paginated through the shared `skip`/`limit` dependency; it returns `AgentReviewResponse[]` for the profile user's agent reviews.
+- `GET /api/v1/agent-profiles/{profile_id}/stats` is public and returns aggregate profile stats from `agent_profile_crud.get_stats`.
+
+### Inquiry And Review Support
+
+- `GET /api/v1/inquiries/by-property/{property_id}` is authenticated; only the property owner or an admin can read the non-deleted inquiries for that listing.
+- `GET /api/v1/reviews/by-user/property/` and `/api/v1/reviews/by-user/agent/` are authenticated owner-scoped endpoints; they return the current user's own non-deleted property and agent reviews.
+
+### Amenities And Favorites Support
+
+- `GET /api/v1/amenities/categories` is public and returns distinct amenity category strings.
+- `GET /api/v1/amenities/stats/popular` is public and returns amenities sorted by active-property usage count.
+- `GET /api/v1/favorites/is-favorited` is authenticated and returns `{"is_favorited": bool}` for the current user.
+- `GET /api/v1/favorites/count/{property_id}` is public and returns `{"property_id": int, "favorite_count": int}` after confirming the property exists.
+- `GET /api/v1/favorites/count/user/{user_id}` is authenticated and owner/admin scoped.
+- `DELETE /api/v1/favorites/bulk` is authenticated and atomically soft-deletes the current user's favorites for the supplied `property_ids` query list.
+
 ## Phase G Close State
 
 - Four-role model is live: seeker / agent / agency_owner / admin
