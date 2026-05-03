@@ -70,8 +70,15 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 
 ### Agent Profile Support
 
+- `GET /api/v1/agent-profiles/` is the public agent directory contract. It supports shared `skip`/`limit` pagination plus optional `agency_id` and `location_id` filters. The `location_id` filter is inventory-derived because `agent_profiles` has no location column: an agent matches when they have at least one verified, non-deleted listing in that location.
 - `GET /api/v1/agent-profiles/{profile_id}/reviews` is public and paginated through the shared `skip`/`limit` dependency; it returns `AgentReviewResponse[]` for the profile user's agent reviews.
 - `GET /api/v1/agent-profiles/{profile_id}/stats` is public and returns aggregate profile stats from `agent_profile_crud.get_stats`.
+
+### Agency Profile Editing
+
+- `PUT /api/v1/agencies/{agency_id}` is available to admins for any agency and to `agency_owner` users for their own agency only.
+- Agency owners may edit public profile fields such as name, email, phone, address, description, logo, and website.
+- Only admins may change agency status, verification, owner identity, rejection reason, or status decision fields.
 
 ### Inquiry And Review Support
 
@@ -86,6 +93,19 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 - `GET /api/v1/favorites/count/{property_id}` is public and returns `{"property_id": int, "favorite_count": int}` after confirming the property exists.
 - `GET /api/v1/favorites/count/user/{user_id}` is authenticated and owner/admin scoped.
 - `DELETE /api/v1/favorites/bulk` is authenticated and atomically soft-deletes the current user's favorites for the supplied `property_ids` query list.
+
+### Location Hierarchy
+
+- The current DB contract stores locations as normalized row values, not separate state/city/neighborhood ID tables.
+- `GET /api/v1/locations/states` returns distinct state strings.
+- `GET /api/v1/locations/cities?state={state}` returns distinct city strings, optionally filtered by normalized state string.
+- `GET /api/v1/locations/neighborhoods?state={state}&city={city}` returns distinct neighborhood strings, optionally filtered by normalized state and/or city strings.
+
+### Saved Searches
+
+- `GET /api/v1/saved-searches/{search_id}` returns the authenticated user's own saved search; admins may access any saved search.
+- `PUT /api/v1/saved-searches/{search_id}` updates the authenticated user's own saved search; admins may update any saved search.
+- Saved search criteria remain JSONB and execution reuses the canonical property filter path.
 
 ## Phase G Close State
 
@@ -102,6 +122,7 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 
 - Current migration head is `a6b2d9f4c801`
 - Agency inquiry aggregation endpoint is live: `GET /api/v1/agencies/{agency_id}/inquiries/`
+- Backend B1/B2/B3 contracts are closed: membership alias removed, property type property-list filter live, storage service coverage raised, canonical endpoint maps documented, agency-owner profile edit live, agent directory `agency_id`/`location_id` filters live, location hierarchy contract documented, and saved-search detail/update reconfirmed.
 - Agency and user decision reasons are live: `agencies.status_reason`, `users.deactivation_reason`, and `users.role_change_reason`
 - First-time agency owner approval flow is live: approved applicants can register with the approved owner email and receive `agency_owner` plus the approved `agency_id`
 - Email provider is SendGrid via `SENDGRID_API_KEY` and `MAIL_FROM`/`EMAIL_FROM`

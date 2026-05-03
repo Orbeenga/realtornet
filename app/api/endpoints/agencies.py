@@ -696,16 +696,40 @@ def update_agency(
     db: Session = Depends(get_db),
     agency_id: int,
     agency_in: AgencyUpdate,
-    current_user: UserResponse = Depends(get_current_admin_user),
+    current_user: UserResponse = Depends(get_current_active_user),
     _: None = Depends(validate_request_size)
 ) -> Any:
     """
-    Update an agency. Admin only.
+    Update an agency. Admins can update any agency; agency owners can update their own public profile fields.
     
     Validates name and email uniqueness if being changed.
     
     Audit: Tracks updater via updated_by (Supabase UUID).
     """
+    current_user_model: User = cast(User, current_user)
+    is_admin = user_crud.is_admin(current_user_model)
+    if not is_admin and not _is_agency_owner_for(user=current_user_model, agency_id=agency_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Agency owners can only update their own agency",
+        )
+
+    update_fields = agency_in.model_dump(exclude_unset=True)
+    owner_blocked_fields = {
+        "is_verified",
+        "status",
+        "owner_email",
+        "owner_name",
+        "owner_phone_number",
+        "rejection_reason",
+        "status_reason",
+    }
+    if not is_admin and owner_blocked_fields.intersection(update_fields):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can update agency status, verification, and owner decision fields",
+        )
+
     agency = agency_crud.get(db, agency_id=agency_id)
     
     if agency is None:

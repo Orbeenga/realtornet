@@ -47,6 +47,7 @@ def read_agent_profiles(
     db: Session = Depends(get_db), # Updated: Direct dependency call
     pagination: dict = Depends(pagination_params),
     agency_id: int | None = None,  # Treat the agency filter as optional so pyright matches the query parameter's default.
+    location_id: int | None = None,
 ) -> Any:
     """
     Retrieve agent profiles with optional agency filtering.
@@ -55,18 +56,12 @@ def read_agent_profiles(
     Used for agent directory, search, or agency team pages.
     CRUD layer enforces deleted_at IS NULL filtering.
     """
-    if agency_id is not None:
-        # Updated: Using direct crud alias agent_profile_crud
-        agent_profiles = agent_profile_crud.get_by_agency(
-            db, 
-            agency_id=agency_id, 
-            **pagination,
-        )
-    else:
-        # Updated: Using direct crud alias agent_profile_crud
-        agent_profiles = agent_profile_crud.get_multi(db, **pagination,)
-    
-    return agent_profiles
+    return agent_profile_crud.get_public_directory(
+        db,
+        agency_id=agency_id,
+        location_id=location_id,
+        **pagination,
+    )
 
 
 @router.get("/{profile_id}", response_model=AgentProfileResponse)
