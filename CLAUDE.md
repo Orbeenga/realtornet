@@ -22,8 +22,10 @@
 ## Current phase state
 - Phase F closed April 25 2026
 - Phase G closed April 29 2026
+- Phase H is active
 - Backend G.7 exit sweep passed: pyright 0 errors; pytest passed with 92.99% coverage; production smoke 12/12; new agency journey passed end to end
 - Frontend G.7 closed in commit `d74806f`: tsc 0 errors, production build clean, Lighthouse mobile LCP 1.5s, accessibility 1.00, production routes 200
+- Backend Phase H B1/B2/B3 completed in May 2026: membership alias clarified, `property_type_id` property filter live, storage service tests raised, endpoint maps documented, agency-owner profile edit live, public agent directory filters live, location hierarchy documented, and saved-search owner detail/update confirmed
 
 ## Locked environment decisions
 - Production Supabase project ref: `avkhpachzsbgmbnkfnhu`
@@ -69,7 +71,7 @@
 
 ## Next session handover
 - Phase G is closed; do not reopen Phase G unless investigating a regression from the closed state
-- Phase H scope has not been opened in this repo
+- Phase H scope is active in this repo
 - G.7 smoke production cleanup has been completed; verify it at Phase H start before new production work
 - Keep production vs dev Supabase separation strict during all investigations
 - Treat agency card branding as blocked on backend enrichment, not frontend fetch fan-out

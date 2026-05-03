@@ -918,6 +918,44 @@ class TestUpdateAgency:
         )
         assert response.status_code == 403
 
+    def test_agency_owner_can_update_own_public_profile_fields(
+        self, client: TestClient, agency, agency_owner_token_headers
+    ):
+        response = client.put(
+            f"/api/v1/agencies/{agency.agency_id}",
+            json={"description": "Updated by the agency owner", "website_url": "https://agency.example.com"},
+            headers=agency_owner_token_headers,
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["description"] == "Updated by the agency owner"
+        assert data["website_url"] == "https://agency.example.com"
+
+    def test_agency_owner_cannot_update_other_agency(
+        self, client: TestClient, other_agency, agency_owner_token_headers
+    ):
+        response = client.put(
+            f"/api/v1/agencies/{other_agency.agency_id}",
+            json={"description": "Not mine"},
+            headers=agency_owner_token_headers,
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Agency owners can only update their own agency"
+
+    def test_agency_owner_cannot_update_admin_only_fields(
+        self, client: TestClient, agency, agency_owner_token_headers
+    ):
+        response = client.put(
+            f"/api/v1/agencies/{agency.agency_id}",
+            json={"status": "suspended", "status_reason": "Manual hold"},
+            headers=agency_owner_token_headers,
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Only admins can update agency status, verification, and owner decision fields"
+
     def test_agency_not_found_returns_404(
         self, client: TestClient, admin_token_headers
     ):

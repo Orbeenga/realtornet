@@ -99,6 +99,43 @@ class AgentProfileCRUD:
         ).offset(skip).limit(limit)
         
         return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
+
+    def get_public_directory(
+        self,
+        db: Session,
+        *,
+        agency_id: int | None = None,
+        location_id: int | None = None,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> List[AgentProfile]:
+        """
+        Get public directory agent profiles with optional agency and listing-location filters.
+
+        Agent profiles do not have their own location column in the current schema.
+        The location filter is therefore inventory-derived: an agent matches when
+        they have at least one verified, non-deleted listing in the requested location.
+        """
+        from app.models.properties import Property
+
+        query = select(AgentProfile).where(AgentProfile.deleted_at.is_(None))
+
+        if agency_id is not None:
+            query = query.where(AgentProfile.agency_id == agency_id)
+
+        if location_id is not None:
+            query = (
+                query.join(Property, Property.user_id == AgentProfile.user_id)
+                .where(
+                    Property.location_id == location_id,
+                    Property.deleted_at.is_(None),
+                    Property.is_verified.is_(True),
+                )
+                .distinct()
+            )
+
+        query = query.order_by(AgentProfile.profile_id.desc()).offset(skip).limit(limit)
+        return list(db.execute(query).scalars().all())
     
     def search(
         self,

@@ -23,6 +23,92 @@ class TestReadAgentProfiles:
         assert response.status_code == 200
         assert isinstance(response.json(), list)
 
+    def test_filter_by_location_id_uses_verified_listing_inventory(
+        self, client: TestClient, db, agency, agent_user, location, location_lekki, property_type
+    ):
+        from geoalchemy2.elements import WKTElement
+        from app.models.agent_profiles import AgentProfile
+        from app.models.properties import Property, ListingType, ListingStatus
+
+        profile = AgentProfile(
+            user_id=agent_user.user_id,
+            agency_id=agency.agency_id,
+            license_number=f"LIC-LOC-{uuid.uuid4().hex[:6]}",
+        )
+        matching_property = Property(
+            title="Location Matched Listing",
+            description="Verified listing in requested location",
+            user_id=agent_user.user_id,
+            agency_id=agency.agency_id,
+            property_type_id=property_type.property_type_id,
+            location_id=location.location_id,
+            geom=WKTElement('POINT(3.3488 6.6018)', srid=4326),
+            price=25000000,
+            bedrooms=3,
+            bathrooms=2,
+            property_size=120.0,
+            listing_type=ListingType.sale,
+            listing_status=ListingStatus.available,
+            is_verified=True,
+        )
+        db.add_all([profile, matching_property])
+        db.flush()
+        db.refresh(profile)
+
+        matched_response = client.get(
+            "/api/v1/agent-profiles/",
+            params={"location_id": location.location_id},
+        )
+        unmatched_response = client.get(
+            "/api/v1/agent-profiles/",
+            params={"location_id": location_lekki.location_id},
+        )
+
+        assert matched_response.status_code == 200
+        assert profile.profile_id in {item["profile_id"] for item in matched_response.json()}
+        assert unmatched_response.status_code == 200
+        assert profile.profile_id not in {item["profile_id"] for item in unmatched_response.json()}
+
+    def test_filter_by_agency_and_location_must_match_both(
+        self, client: TestClient, db, agency, other_agency, agent_user, location, property_type
+    ):
+        from geoalchemy2.elements import WKTElement
+        from app.models.agent_profiles import AgentProfile
+        from app.models.properties import Property, ListingType, ListingStatus
+
+        profile = AgentProfile(
+            user_id=agent_user.user_id,
+            agency_id=agency.agency_id,
+            license_number=f"LIC-AGLOC-{uuid.uuid4().hex[:6]}",
+        )
+        listing = Property(
+            title="Agency Location Matched Listing",
+            description="Verified listing in requested location and agency",
+            user_id=agent_user.user_id,
+            agency_id=agency.agency_id,
+            property_type_id=property_type.property_type_id,
+            location_id=location.location_id,
+            geom=WKTElement('POINT(3.3488 6.6018)', srid=4326),
+            price=25000000,
+            bedrooms=3,
+            bathrooms=2,
+            property_size=120.0,
+            listing_type=ListingType.sale,
+            listing_status=ListingStatus.available,
+            is_verified=True,
+        )
+        db.add_all([profile, listing])
+        db.flush()
+        db.refresh(profile)
+
+        response = client.get(
+            "/api/v1/agent-profiles/",
+            params={"agency_id": other_agency.agency_id, "location_id": location.location_id},
+        )
+
+        assert response.status_code == 200
+        assert profile.profile_id not in {item["profile_id"] for item in response.json()}
+
     def test_pagination_params_accepted(self, client: TestClient):
         response = client.get(
             "/api/v1/agent-profiles/",
