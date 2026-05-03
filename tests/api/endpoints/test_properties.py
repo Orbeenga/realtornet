@@ -204,6 +204,57 @@ class TestReadProperties:
             for item in data
         )
 
+    def test_property_type_id_filter_limits_public_results(
+        self, client: TestClient, db, normal_user, location, property_type, property_type_villa
+    ):
+        """Public property search accepts property_type_id and forwards it to CRUD filters."""
+        from geoalchemy2.elements import WKTElement
+
+        apartment = Property(
+            title="Filtered Apartment",
+            description="Apartment should match the property type filter",
+            user_id=normal_user.user_id,
+            property_type_id=property_type.property_type_id,
+            location_id=location.location_id,
+            geom=WKTElement('POINT(3.3488 6.6018)', srid=4326),
+            price=25000000,
+            bedrooms=3,
+            bathrooms=2,
+            property_size=120.0,
+            listing_type=ListingType.sale,
+            listing_status=ListingStatus.available,
+            is_verified=True,
+        )
+        villa = Property(
+            title="Filtered Villa",
+            description="Villa should not match the apartment property type filter",
+            user_id=normal_user.user_id,
+            property_type_id=property_type_villa.property_type_id,
+            location_id=location.location_id,
+            geom=WKTElement('POINT(3.3488 6.6018)', srid=4326),
+            price=75000000,
+            bedrooms=5,
+            bathrooms=4,
+            property_size=320.0,
+            listing_type=ListingType.sale,
+            listing_status=ListingStatus.available,
+            is_verified=True,
+        )
+        db.add_all([apartment, villa])
+        db.flush()
+        db.refresh(apartment)
+        db.refresh(villa)
+
+        response = client.get(
+            "/api/v1/properties/",
+            params={"property_type_id": property_type.property_type_id},
+        )
+
+        assert response.status_code == 200
+        returned_ids = {item["property_id"] for item in response.json()}
+        assert apartment.property_id in returned_ids
+        assert villa.property_id not in returned_ids
+
 
 # ===========================================================================
 # POST /  —  create property

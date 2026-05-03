@@ -1593,7 +1593,7 @@ class TestMyAgencyMemberships:
         db.flush()
 
         response = client.get(
-            "/api/v1/membership/me/status",
+            "/api/v1/agency-memberships/me/status",
             headers=agent_token_headers,
         )
 
@@ -1620,7 +1620,7 @@ class TestMyAgencyMemberships:
         db.flush()
 
         response = client.get(
-            "/api/v1/membership/me/status",
+            "/api/v1/agency-memberships/me/status",
             headers=agent_token_headers,
         )
 
@@ -1632,7 +1632,7 @@ class TestMyAgencyMemberships:
         self, client: TestClient, normal_user_token_headers
     ):
         response = client.get(
-            "/api/v1/membership/me/status",
+            "/api/v1/agency-memberships/me/status",
             headers=normal_user_token_headers,
         )
 

@@ -84,12 +84,6 @@ api_router.include_router(
 )
 
 api_router.include_router(
-    agency_memberships.router,
-    prefix="/membership",
-    tags=["membership"]
-)
-
-api_router.include_router(
     agent_profiles.router,
     prefix="/agent-profiles",
     tags=["agent-profiles"]
