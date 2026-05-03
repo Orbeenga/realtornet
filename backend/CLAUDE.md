@@ -49,9 +49,12 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 - `GET /api/v1/properties/featured` returns featured public listings
 - `GET /api/v1/agencies/{agency_id}/inquiries/` returns paginated agency-wide inquiry rollup for agency owners and admins
 - `PATCH /api/v1/properties/{property_id}/verify` accepts moderation status values: pending_review / verified / rejected / revoked
+- `GET /api/v1/properties/` accepts `property_type_id` as a public query filter; the endpoint forwards it through the shared `PropertyFilter` contract to the canonical property CRUD query.
 - `/api/v1/admin/properties` is admin-only and must serialize safely without leaking raw PostGIS objects
 - `/api/v1/property-types/` is the source of truth for property type dropdowns
-- `PATCH /api/v1/properties/{property_id}/verify` exists and is the backend verification contract
+- `PATCH /api/v1/properties/{property_id}/verify` is the canonical listing moderation contract for UI review flows; admins can set all moderation states, while owning agents can publish or return their own listing to pending review.
+- `PUT /api/v1/admin/properties/{property_id}/approve` is an admin-only legacy activation shortcut retained for back-office compatibility; it aligns the record to the verified moderation state and activates listing status.
+- `/api/v1/agency-memberships/*` is the canonical authenticated membership visibility surface. The legacy `/api/v1/membership/*` alias was removed in Phase H B1 because frontend consumers use `/agency-memberships/*`.
 - Property creation currently enforces agency membership via `users.agency_id`
 - Agent promotion must atomically create an `agent_profiles` row in the same transaction
 - Pagination and visibility assumptions should always be pulled from actual endpoint code, not memory
