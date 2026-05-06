@@ -3,7 +3,7 @@
 ## Entry State
 
 FastAPI backend deployed on Railway. Sentry is instrumented.
-Phase F is closed. Phase G is closed as of April 29, 2026. Phase H is active.
+Phase F is closed. Phase G is closed as of April 29, 2026. Phase H is closed as of May 6, 2026. Phase I is opening.
 
 Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this file for backend-specific state.
 
@@ -21,6 +21,7 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 - Production Supabase project ref: `avkhpachzsbgmbnkfnhu`
 - Dev Supabase project ref: `umhtnqxdvffpifqbdtjs`
 - Production migration head: `a6b2d9f4c801`
+- Current quality gate: pyright 0 errors; pytest 1856 passed; total coverage 94.54%
 - Public registration creates a Supabase Auth identity first, then mirrors that UUID into the local `users` row
 - Registration rollback deletes the Supabase Auth user if the local DB write fails
 - Runtime auth is still based on backend-issued JWTs after login, not direct validation of raw Supabase access tokens
@@ -118,16 +119,20 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 - Local pytest passed after local PostGIS was started: coverage 92.99%
 - G.7 smoke production cleanup completed: `agency_id=8`, `property_id=5`, `inquiry_id=5`, related invitation/membership rows, and disposable smoke users `86`, `87`, `88` are soft-deleted; the four real accounts remain active
 
-## Phase H Active State
+## Phase H Closed State
 
 - Current migration head is `a6b2d9f4c801`
+- Final local backend gate: pyright 0 errors; pytest 1856 passed; coverage 94.54%
 - Agency inquiry aggregation endpoint is live: `GET /api/v1/agencies/{agency_id}/inquiries/`
 - Backend B1/B2/B3 contracts are closed: membership alias removed, property type property-list filter live, storage service coverage raised, canonical endpoint maps documented, agency-owner profile edit live, agent directory `agency_id`/`location_id` filters live, location hierarchy contract documented, and saved-search detail/update reconfirmed.
+- Public `/agents` directory backend contract is live through `GET /api/v1/agent-profiles/` with pagination, agency filtering, and inventory-derived location filtering.
+- `/account/reviews` backend support is live through authenticated current-user review endpoints for property and agent reviews.
 - Agency and user decision reasons are live: `agencies.status_reason`, `users.deactivation_reason`, and `users.role_change_reason`
 - First-time agency owner approval flow is live: approved applicants can register with the approved owner email and receive `agency_owner` plus the approved `agency_id`
-- Email provider is Resend via `RESEND_API_KEY` and `MAIL_FROM`/`EMAIL_FROM`
+- Email provider is Resend via `RESEND_API_KEY` and `MAIL_FROM`/`EMAIL_FROM`; `RESEND_API_KEY` must be set in Railway service `imaginative-peace` Variables
 - Current temporary sender is `onboarding@resend.dev` until a custom RealtorNet sender domain is registered and verified
 - Transactional email dispatch is fail-open: provider failures are logged and must not block the triggering API request
+- Railway backend now runs with `ENV=production`; do not allow production deploys to fall back to the development default.
 
 ## Locked Invariants
 
@@ -163,8 +168,7 @@ Do not answer from stale docs when the router, schema, or CRUD layer says otherw
 
 ## Next Session Handover
 
-- Phase G is closed; start future work from Phase H only after Phase H scope is explicitly opened
-- First Phase H action should verify the G.7 production smoke cleanup remains complete before new production work
+- Phase H is closed; start future work from Phase I unless investigating a regression from the closed Phase H state
 - Keep production and dev Supabase separation strict during all work
 - Treat agency card branding as blocked on backend enrichment until the response contract changes
 - Keep Railway `/healthz` returning 200 in degraded mode; Redis rate limiting should connect through `REDIS_URL` or Railway `REDISHOST`/`REDISPORT`/`REDISUSER`/`REDISPASSWORD`

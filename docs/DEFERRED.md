@@ -18,7 +18,15 @@ Promoted to Phase H:
 - `DEF-007`: psycopg3 dev restart workaround remains a development-environment follow-up.
 - Agency owner onboarding self-service, advanced map view, admin analytics, saved search notifications, Nominatim/OSM geocoding, email notification service, agency aggregation optimization, custom domain setup.
 
-## Phase H backend B1-B3 close update (May 3, 2026)
+## Phase H close update (May 6, 2026)
+
+Phase H is closed after backend B1-B3, frontend F1-F3, Resend delivery confirmation, and production smoke validation.
+
+Closed in H.1 email:
+- H.1 transactional email infrastructure is formally closed: Resend is live, a test email was delivered through the verified temporary sender, and the production smoke passed.
+- Resend is the canonical provider. `MAIL_FROM=onboarding@resend.dev` is temporary until a custom RealtorNet sender domain is registered and verified.
+- Railway backend service `imaginative-peace` now requires `RESEND_API_KEY` in Variables; the propagation issue was resolved and verified during the provider swap.
+- Railway `ENV=production` drift was caught and fixed; the backend was previously booting from the development default.
 
 Closed in backend B1:
 - Membership alias ambiguity resolved: `/api/v1/agency-memberships/*` is canonical and the legacy `/api/v1/membership/*` router registration was removed.
@@ -36,12 +44,12 @@ Closed in backend B3:
 - Location hierarchy contract is documented as string-based state/city/neighborhood filtering because the current DB does not have separate state_id/city_id tables.
 - Saved search detail and update owner/admin contracts are implemented and covered by endpoint tests.
 
-Remaining Phase H/backlog items after B1-B3:
-- Frontend-only TBT and `core-js` cleanup remain outside this backend batch.
+Promoted to Phase I:
+- `DEF-H4-MOBILE-TBT`: Mobile total blocking time remains Phase I frontend performance work.
+- `DEF-I-LOC-001`: Location hierarchy/geocoding remains Phase I location architecture work.
 - Audit log retention remains deferred until enough production traffic exists to size policy.
 - psycopg3 dev prepared-statement investigation remains a dev-environment follow-up.
 - Advanced map view, saved search notifications, Nominatim/OSM geocoding, custom domain setup, and external storage bucket policy automation remain open.
-- Email notification service is code-complete for Resend and uses the temporary verified `onboarding@resend.dev` sender until a custom domain is registered; live delivery confirmation remains the H.1 close gate.
 
 ## DEF-006: Supabase storage bucket provisioning and policy verification
 
