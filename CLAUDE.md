@@ -29,6 +29,7 @@
 - Backend Phase H B1/B2/B3 completed in May 2026: membership alias clarified, `property_type_id` property filter live, storage service tests raised, endpoint maps documented, agency-owner profile edit live, public agent directory filters live, location hierarchy documented, and saved-search owner detail/update confirmed
 - Phase H close gate: Resend email delivery confirmed, production smoke passed, backend pyright 0 errors, pytest 1856 passed, total coverage 94.54%
 - Backend Phase I I.2 completed May 6 2026: saved-search match emails fire on first transition to `verified`, `saved_searches.unsubscribe_token` is live, and public unsubscribe is available at `GET /api/v1/saved-searches/unsubscribe/{token}/`
+- Backend Phase I I.3 completed May 6 2026: membership audit table and `users.role_version` are live in production at migration `d3e7c5a1b9f2`; backend pyright 0 errors; pytest 1866 passed; total coverage 94.15%
 
 ## Locked environment decisions
 - Production Supabase project ref: `avkhpachzsbgmbnkfnhu`
@@ -45,6 +46,7 @@
 - Property moderation status enum is active: pending_review / verified / rejected / revoked
 - Seeker join-request flow is live
 - Agent invitation flow is live
+- Membership-role resolution is backend-authoritative: membership state changes append to `agent_membership_audit`, last active membership revocation/leave demotes agents to `seeker`, and stale JWTs are rejected by `role_version`
 - Agency application and admin approval flow is live
 - Featured properties endpoint is live
 - Agency branding is pre-launch scope on property detail only for now

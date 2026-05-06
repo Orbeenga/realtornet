@@ -23,6 +23,7 @@ from app.models.property_types import PropertyType
 from app.models.locations import Location
 from app.models.agencies import Agency
 from app.models.agency_join_requests import AgencyAgentMembership, AgencyJoinRequest, AgencyMembershipReviewRequest
+from app.models.agent_membership_audit import AgentMembershipAudit
 from app.crud.properties import property as property_crud
 from app.schemas.properties import PropertyCreate
 
@@ -112,6 +113,10 @@ def db():
         schema_conn.execute(text("""
             ALTER TABLE users
             ADD COLUMN IF NOT EXISTS role_change_reason TEXT;
+        """))
+        schema_conn.execute(text("""
+            ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS role_version INTEGER DEFAULT 1 NOT NULL;
         """))
         schema_conn.execute(text("""
             ALTER TABLE agencies

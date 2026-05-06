@@ -123,7 +123,8 @@ def login_access_token(
         supabase_id=user_supabase_id,
         user_id=user_id_value,
         user_role=user_role_value,
-        agency_id=user_agency_id
+        agency_id=user_agency_id,
+        role_version=typing_cast(int, user.role_version),
     )
     
     # Generate refresh token
@@ -131,7 +132,8 @@ def login_access_token(
         supabase_id=user_supabase_id,
         user_id=user_id_value,
         user_role=user_role_value,
-        agency_id=user_agency_id
+        agency_id=user_agency_id,
+        role_version=typing_cast(int, user.role_version),
     )
     
     return {
@@ -209,11 +211,15 @@ def refresh_access_token(
         )
 
     # Generate new access token with full user data
+    user_supabase_id = typing_cast(UUID, user.supabase_id)
+    user_role_value = _serialize_user_role(user.user_role)
+    user_agency_id = typing_cast(int | None, user.agency_id)
     new_access_token = generate_access_token(
-        supabase_id=UUID(refresh_payload.supabase_id),
-        user_id=user_id,  # Reuse the narrowed payload user ID without changing refresh-token behavior.
-        user_role=refresh_payload.role,
-        agency_id=refresh_payload.agency_id
+        supabase_id=user_supabase_id,
+        user_id=typing_cast(int, user.user_id),
+        user_role=user_role_value,
+        agency_id=user_agency_id,
+        role_version=typing_cast(int, user.role_version),
     )
 
     return {

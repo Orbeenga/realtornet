@@ -8,6 +8,7 @@ import uuid
 from unittest.mock import patch
 from app.api.endpoints import agencies as agencies_api
 from app.models.users import User, UserRole
+from app.models.agent_membership_audit import AgentMembershipAudit
 from app.core.security import decode_token, generate_access_token
 
 
@@ -1268,6 +1269,13 @@ class TestAgencyAgentMembershipManagement:
         from app.models.agency_join_requests import AgencyAgentMembership
         from app.models.users import UserRole
 
+        stale_token = generate_access_token(
+            supabase_id=agent_user.supabase_id,
+            user_id=agent_user.user_id,
+            user_role=agent_user.user_role.value,
+            agency_id=agent_user.agency_id,
+            role_version=agent_user.role_version,
+        )
         membership = AgencyAgentMembership(
             agency_id=agency.agency_id,
             user_id=agent_user.user_id,
@@ -1288,6 +1296,20 @@ class TestAgencyAgentMembershipManagement:
         db.refresh(agent_user)
         assert agent_user.user_role == UserRole.SEEKER
         assert agent_user.agency_id is None
+        assert agent_user.role_version == 2
+        audit = db.query(AgentMembershipAudit).filter(
+            AgentMembershipAudit.user_id == agent_user.user_id,
+            AgentMembershipAudit.agency_id == agency.agency_id,
+            AgentMembershipAudit.action == "revoked",
+        ).one()
+        assert audit.reason == "Contract ended"
+        assert audit.prior_role == UserRole.AGENT
+        assert audit.post_role == UserRole.SEEKER
+        stale_response = client.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": f"Bearer {stale_token}"},
+        )
+        assert stale_response.status_code == 401
         sync_mock.assert_called_once()
 
     def test_revoking_one_of_multiple_active_memberships_keeps_agent_role(
@@ -1322,6 +1344,44 @@ class TestAgencyAgentMembershipManagement:
         db.refresh(agent_user)
         assert agent_user.user_role == UserRole.AGENT
         assert agent_user.agency_id == other_agency.agency_id
+        assert agent_user.role_version == 1
+        audit = db.query(AgentMembershipAudit).filter(
+            AgentMembershipAudit.user_id == agent_user.user_id,
+            AgentMembershipAudit.agency_id == agency.agency_id,
+            AgentMembershipAudit.action == "revoked",
+        ).one()
+        assert audit.reason == "Left this branch"
+
+    def test_membership_history_endpoints_return_audit_context(
+        self, client: TestClient, db, agency, agent_user, agency_owner_token_headers, agent_token_headers
+    ):
+        write_time = datetime.now(timezone.utc)
+        audit = AgentMembershipAudit(
+            user_id=agent_user.user_id,
+            agency_id=agency.agency_id,
+            action="revoked",
+            actor_id=None,
+            reason="Prior compliance decision",
+            prior_role=UserRole.AGENT,
+            post_role=UserRole.SEEKER,
+            created_at=write_time,
+        )
+        db.add(audit)
+        db.flush()
+
+        user_response = client.get(
+            "/api/v1/users/me/membership-history/",
+            headers=agent_token_headers,
+        )
+        owner_response = client.get(
+            f"/api/v1/agencies/{agency.agency_id}/member-history/{agent_user.user_id}/",
+            headers=agency_owner_token_headers,
+        )
+
+        assert user_response.status_code == 200
+        assert owner_response.status_code == 200
+        assert user_response.json()[0]["reason"] == "Prior compliance decision"
+        assert owner_response.json()[0]["action"] == "revoked"
 
     def test_restore_membership_promotes_seeker_back_to_agent(
         self, client: TestClient, db, agency, normal_user, agency_owner_token_headers

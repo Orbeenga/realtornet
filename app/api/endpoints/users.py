@@ -27,9 +27,11 @@ from app.api.dependencies import (
 
 # --- DIRECT SCHEMA IMPORTS (using aliases) ---
 from app.schemas.users import UserResponse as UserResponse, UserCreate, UserUpdate
+from app.schemas.membership_audit import AgentMembershipAuditResponse
 
 # --- SERVICES ---
 from app.services.storage_services import upload_profile_image
+from app.services.membership_audit_service import get_user_membership_history
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -62,6 +64,22 @@ def read_realtors(
     """
     realtors = user_crud.get_realtors(db, **pagination,)
     return realtors
+
+
+@router.get("/me/membership-history/", response_model=List[AgentMembershipAuditResponse])
+def read_my_membership_history(
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_active_user),
+    pagination: dict = Depends(pagination_params),
+) -> Any:
+    """Return the authenticated user's complete agency membership audit history."""
+    current_user_id = cast(int, current_user.user_id)
+    return get_user_membership_history(
+        db=db,
+        user_id=current_user_id,
+        skip=pagination["skip"],
+        limit=pagination["limit"],
+    )
 
 
 @router.get("/{user_id}", response_model=UserResponse)

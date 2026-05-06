@@ -20,8 +20,8 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 - Auth source of truth: Supabase Auth
 - Production Supabase project ref: `avkhpachzsbgmbnkfnhu`
 - Dev Supabase project ref: `umhtnqxdvffpifqbdtjs`
-- Production migration head: `b1f4a9c7e2d3`
-- Current quality gate: pyright 0 errors; pytest 1856 passed; total coverage 94.54%
+- Production migration head: `d3e7c5a1b9f2`
+- Current quality gate: pyright 0 errors; pytest 1866 passed; total coverage 94.15%
 - Public registration creates a Supabase Auth identity first, then mirrors that UUID into the local `users` row
 - Registration rollback deletes the Supabase Auth user if the local DB write fails
 - Runtime auth is still based on backend-issued JWTs after login, not direct validation of raw Supabase access tokens
@@ -56,6 +56,9 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 - `PATCH /api/v1/properties/{property_id}/verify` is the canonical listing moderation contract for UI review flows; admins can set all moderation states, while owning agents can publish or return their own listing to pending review.
 - `PUT /api/v1/admin/properties/{property_id}/approve` is an admin-only legacy activation shortcut retained for back-office compatibility; it aligns the record to the verified moderation state and activates listing status.
 - `/api/v1/agency-memberships/*` is the canonical authenticated membership visibility surface. The legacy `/api/v1/membership/*` alias was removed in Phase H B1 because frontend consumers use `/agency-memberships/*`.
+- `GET /api/v1/users/me/membership-history/` returns the authenticated user's membership audit history.
+- `GET /api/v1/agencies/{agency_id}/member-history/{user_id}/` returns agency-owner/admin scoped membership audit history for a specific user in that agency.
+- `PATCH /api/v1/agency-memberships/{membership_id}/leave/` lets the authenticated member voluntarily leave an active membership and records audit action `left`.
 - Property creation currently enforces agency membership via `users.agency_id`
 - Agent promotion must atomically create an `agent_profiles` row in the same transaction
 - Pagination and visibility assumptions should always be pulled from actual endpoint code, not memory
@@ -138,10 +141,21 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 
 ## Phase I I.2 Saved Search Notifications
 
-- Current migration head is `b1f4a9c7e2d3`
+- I.2 migration head was `b1f4a9c7e2d3`
 - `saved_searches.unsubscribe_token` is a non-null UUID with a unique index.
 - Saved-search unsubscribe uses the existing soft-delete lifecycle because there is no `is_active` column on `saved_searches`.
 - Notification frequency preferences are deferred as `DEF-I-SEARCH-FREQ-001`; until that preference exists, saved-search match notifications send immediately.
+
+## Phase I I.3 Membership Audit And Role Resolution
+
+- Current migration head is `d3e7c5a1b9f2`
+- `agent_membership_audit` is the append-only membership memory layer with actions: `invited`, `joined`, `suspended`, `revoked`, `left`, `reinstated`.
+- Production migration verification passed on Supabase project `avkhpachzsbgmbnkfnhu`: Alembic head `d3e7c5a1b9f2`, `users.role_version` present, audit table present, RLS enabled, two append-only triggers present, and 3 backfilled `joined` rows for 3 active memberships.
+- Backend-issued JWTs include `role_version`; `get_current_user` rejects access tokens whose `role_version` no longer matches the database user row.
+- Last active membership revocation or voluntary leave demotes non-owner/non-admin agents to `seeker`, clears `users.agency_id`, increments `users.role_version`, writes audit, and syncs Supabase Auth `app_metadata.role_version`.
+- Revoking one membership while another active membership remains does not demote the user; it switches `users.agency_id` to the remaining active membership if needed.
+- Agency invitation, invite acceptance, join approval, suspension, revocation/block, restore, review approval, and voluntary leave now write audit rows.
+- Final local backend gate: pyright 0 errors; pytest 1866 passed; coverage 94.15%.
 
 ## Locked Invariants
 

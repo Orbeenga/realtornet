@@ -138,6 +138,7 @@ class UserResponse(UserBase):
     """Schema for user responses (includes DB-generated fields, no sensitive data)"""
     user_id: int  # Matches DB column name exactly
     supabase_id: UUID
+    role_version: int
     is_verified: bool
     is_admin: bool
     created_at: datetime
