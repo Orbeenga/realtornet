@@ -128,6 +128,7 @@ class Settings(BaseSettings):
     EMAIL_DRY_RUN: bool = False
     EMAIL_DELIVERY_MODE: str = "sync"  # sync is reliable on single-process Railway deploys; celery remains available.
     FRONTEND_BASE_URL: str = "https://realtornet-web.vercel.app"
+    BACKEND_BASE_URL: str = "https://realtornet-production.up.railway.app"
     
     model_config = SettingsConfigDict(
         env_file=".env",

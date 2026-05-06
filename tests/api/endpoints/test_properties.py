@@ -11,6 +11,8 @@ from fastapi.testclient import TestClient
 
 from app.core.security import generate_access_token, get_password_hash
 from app.models.properties import Property, ListingType, ListingStatus
+from app.models.property_images import PropertyImage
+from app.models.saved_searches import SavedSearch
 from app.models.users import User, UserRole
 
 
@@ -659,6 +661,50 @@ class TestVerifyProperty:
         assert args[2] == unverified_property.title
         assert args[3] == "rejected"
         assert args[5] == "Photos are unclear"
+
+    def test_admin_verification_dispatches_saved_search_match_email(
+        self, client: TestClient, admin_token_headers, db, normal_user, unverified_property
+    ):
+        saved = SavedSearch(
+            user_id=normal_user.user_id,
+            search_params={
+                "min_price": 1000000,
+                "max_price": 6000000,
+                "bedrooms": 3,
+                "location_id": unverified_property.location_id,
+                "property_type_id": unverified_property.property_type_id,
+                "listing_type": "sale",
+            },
+            name="Matching homes",
+        )
+        image = PropertyImage(
+            property_id=unverified_property.property_id,
+            image_url="https://cdn.example.com/property.jpg",
+            is_primary=True,
+        )
+        db.add(saved)
+        db.add(image)
+        db.flush()
+        db.refresh(saved)
+
+        with patch("app.api.endpoints.properties.dispatch_email_task") as mock_moderation_email, patch(
+            "app.services.saved_search_notification_service.dispatch_email_task"
+        ) as mock_match_email:
+            response = client.patch(
+                f"/api/v1/properties/{unverified_property.property_id}/verify",
+                json={"moderation_status": "verified"},
+                headers=admin_token_headers,
+            )
+
+        assert response.status_code == 200
+        mock_moderation_email.assert_called_once()
+        mock_match_email.assert_called_once()
+        args = mock_match_email.call_args.args
+        assert args[1] == normal_user.email
+        assert args[2] == "Matching homes"
+        assert args[3] == unverified_property.title
+        assert args[6] == str(saved.unsubscribe_token)
+        assert args[7] == "https://cdn.example.com/property.jpg"
 
     def test_admin_verified_property_becomes_publicly_visible(
         self, client: TestClient, admin_token_headers, unverified_property

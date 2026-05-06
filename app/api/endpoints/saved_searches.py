@@ -25,7 +25,8 @@ from app.schemas.users import UserResponse
 from app.schemas.saved_searches import (
     SavedSearchResponse,
     SavedSearchCreate,
-    SavedSearchUpdate
+    SavedSearchUpdate,
+    SavedSearchUnsubscribeResponse,
 )
 from app.schemas.properties import PropertyResponse
 from app.models.users import User  # Reuse the ORM-backed user type for local permission-helper narrowing.
@@ -77,6 +78,35 @@ def read_user_saved_searches(
         limit=limit
     )
     return saved_searches
+
+
+@router.get("/unsubscribe/{unsubscribe_token}/", response_model=SavedSearchUnsubscribeResponse)
+def unsubscribe_saved_search(
+    *,
+    db: Session = Depends(get_db),
+    unsubscribe_token: str,
+) -> Any:
+    """
+    Public one-click unsubscribe for saved-search match emails.
+
+    No authentication is required because the UUID token is the capability.
+    The table uses soft delete as its active/deactivated state.
+    """
+    saved_search = saved_search_crud.unsubscribe_by_token(
+        db=db,
+        unsubscribe_token=unsubscribe_token,
+    )
+    if not saved_search:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Saved search unsubscribe token not found",
+        )
+
+    return {
+        "status": "unsubscribed",
+        "search_id": saved_search.search_id,
+        "message": "Saved search notifications have been turned off.",
+    }
 
 
 @router.get("/{search_id}", response_model=SavedSearchResponse)

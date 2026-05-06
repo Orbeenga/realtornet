@@ -77,6 +77,14 @@ def _frontend_url(path: str, query: dict[str, str] | None = None) -> str:
     return f"{base_url}{normalized_path}"
 
 
+def _backend_url(path: str, query: dict[str, str] | None = None) -> str:
+    base_url = settings.BACKEND_BASE_URL.rstrip("/")
+    normalized_path = path if path.startswith("/") else f"/{path}"
+    if query:
+        return f"{base_url}{normalized_path}?{urlencode(query)}"
+    return f"{base_url}{normalized_path}"
+
+
 def _display_value(value: str | None, fallback: str = "Not provided") -> str:
     value = (value or "").strip()
     return value if value else fallback
@@ -519,6 +527,62 @@ def send_property_moderation_email(
 
 
 @celery_app.task(
+    name="app.tasks.email_tasks.send_saved_search_match_email",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+)
+def send_saved_search_match_email(
+    self,
+    to_email: str,
+    search_name: Optional[str],
+    property_title: str,
+    property_price: str,
+    property_id: int,
+    unsubscribe_token: str,
+    thumbnail_url: Optional[str] = None,
+) -> str:
+    """Notify a seeker that a newly verified listing matches a saved search."""
+    property_url = _frontend_url(f"/properties/{property_id}")
+    unsubscribe_url = _backend_url(f"/api/v1/saved-searches/unsubscribe/{unsubscribe_token}/")
+    search_label = search_name or "your saved search"
+    subject = f"New listing match: {property_title}"
+    thumbnail_text = f"\nPhoto: {thumbnail_url}" if thumbnail_url else ""
+    thumbnail_html = f'<p><img src="{escape(thumbnail_url)}" alt="{escape(property_title)}" style="max-width: 640px; width: 100%; height: auto;" /></p>' if thumbnail_url else ""
+    text_body = (
+        f"A new listing matches {search_label}.\n\n"
+        f"{property_title}\n"
+        f"Price: {property_price}"
+        f"{thumbnail_text}\n\n"
+        f"View listing: {property_url}\n"
+        f"Unsubscribe from this saved search: {unsubscribe_url}"
+    )
+    html_body = f"""
+    <html>
+        <body>
+            <h2>New listing match</h2>
+            <p>A new listing matches <strong>{escape(search_label)}</strong>.</p>
+            {thumbnail_html}
+            <p><strong>{escape(property_title)}</strong></p>
+            <p><strong>Price:</strong> {escape(property_price)}</p>
+            <p><a href="{property_url}">View listing</a></p>
+            <p><a href="{unsubscribe_url}">Unsubscribe from this saved search</a></p>
+        </body>
+    </html>
+    """
+    try:
+        return _run_send_email(
+            task_name="Saved search match",
+            to_email=to_email,
+            subject=subject,
+            text=text_body,
+            html=html_body,
+        )
+    except Exception as exc:
+        _retry_or_raise(self, exc, to_email=to_email, task_name="saved search match")
+
+
+@celery_app.task(
     name="app.tasks.email_tasks.send_role_change_email",
     bind=True,
     max_retries=3,
@@ -581,5 +645,6 @@ __all__ = [
     "send_join_request_status_email",
     "send_inquiry_received_email",
     "send_property_moderation_email",
+    "send_saved_search_match_email",
     "send_role_change_email",
 ]

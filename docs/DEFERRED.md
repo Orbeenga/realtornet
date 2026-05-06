@@ -51,6 +51,15 @@ Promoted to Phase I:
 - psycopg3 dev prepared-statement investigation remains a dev-environment follow-up.
 - Advanced map view, saved search notifications, Nominatim/OSM geocoding, custom domain setup, and external storage bucket policy automation remain open.
 
+## Phase I saved-search notifications update (May 6, 2026)
+
+Implemented in I.2:
+- Saved-search match notifications default to immediate delivery when a listing first transitions to `verified`.
+- Unsubscribe uses the existing saved-search soft-delete lifecycle because the table does not have an `is_active` column.
+
+Deferred to Phase J:
+- `DEF-I-SEARCH-FREQ-001`: Add saved-search notification frequency preferences and UI. Until that preference exists, Phase I sends immediately and records this default in backend behavior/tests.
+
 ## DEF-006: Supabase storage bucket provisioning and policy verification
 
 Phase D fixed backend storage writes by switching all upload/delete operations to the admin client, but bucket existence, public exposure, and environment-side policy verification still live outside this repo.

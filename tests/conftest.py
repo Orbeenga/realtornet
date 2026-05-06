@@ -42,6 +42,7 @@ engine = create_engine(
 
 with engine.connect() as conn:
     conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis;"))
+    conn.execute(text("CREATE EXTENSION IF NOT EXISTS pgcrypto;"))
     conn.execute(text("""
         DO $$ BEGIN
             CREATE TYPE user_role_enum AS ENUM ('seeker', 'agent', 'agency_owner', 'admin');
@@ -135,6 +136,14 @@ def db():
         schema_conn.execute(text("""
             ALTER TABLE agency_agent_memberships
             ADD COLUMN IF NOT EXISTS status_decided_by BIGINT;
+        """))
+        schema_conn.execute(text("""
+            ALTER TABLE saved_searches
+            ADD COLUMN IF NOT EXISTS unsubscribe_token UUID DEFAULT gen_random_uuid() NOT NULL;
+        """))
+        schema_conn.execute(text("""
+            CREATE UNIQUE INDEX IF NOT EXISTS ix_saved_searches_unsubscribe_token
+            ON saved_searches (unsubscribe_token);
         """))
         schema_conn.execute(text("""
             ALTER TABLE agency_agent_memberships

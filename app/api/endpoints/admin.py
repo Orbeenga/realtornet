@@ -32,6 +32,7 @@ from app.services.auth_user_sync_service import (
     SupabaseUserSyncError,
     sync_supabase_auth_user_metadata,
 )
+from app.services.saved_search_notification_service import notify_saved_search_matches_for_property
 from app.tasks.email_tasks import (
     dispatch_email_task,
     send_agency_approval_email,
@@ -717,6 +718,7 @@ def verify_property(
 
     moderation_update = verification_in or PropertyVerificationUpdate()
     requested_status = moderation_update.resolved_moderation_status
+    previous_status = str(getattr(prop.moderation_status, "value", prop.moderation_status))
 
     # Use CRUD method with audit tracking
     prop = property_crud.verify_property(
@@ -742,6 +744,9 @@ def verify_property(
                     typing_cast(int, prop.property_id),
                     moderation_update.moderation_reason,
                 )
+
+        if previous_status != "verified" and requested_status.value == "verified":
+            notify_saved_search_matches_for_property(db, property_obj=prop)
     
     logger.info(f"Property verified: {property_id} by admin {current_user.user_id}")
     return prop
