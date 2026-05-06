@@ -200,6 +200,21 @@ def test_role_change_email_includes_prior_and_new_role(monkeypatch: pytest.Monke
     assert "Membership revoked" in payload["html"]
 
 
+def test_review_request_status_email_includes_decision_reason(monkeypatch: pytest.MonkeyPatch) -> None:
+    mock_send = _patch_send_email(monkeypatch)
+
+    task = cast(Any, email_tasks.send_review_request_status_email)
+    result = task.apply(
+        args=("agent@example.com", "Test Agent", "Acme Realty", "declined", "Still missing documents")
+    ).get()
+
+    assert result == "Review request status email sent to agent@example.com"
+    payload = _sent_payload(mock_send)
+    assert payload["subject"] == "Your Acme Realty review request was declined"
+    assert "Acme Realty has declined your review request." in payload["text"]
+    assert "Still missing documents" in payload["html"]
+
+
 def test_dispatch_email_task_uses_celery_delay_when_configured(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "EMAIL_DELIVERY_MODE", "celery")
     task = Mock()

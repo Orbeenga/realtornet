@@ -30,6 +30,7 @@
 - Phase H close gate: Resend email delivery confirmed, production smoke passed, backend pyright 0 errors, pytest 1856 passed, total coverage 94.54%
 - Backend Phase I I.2 completed May 6 2026: saved-search match emails fire on first transition to `verified`, `saved_searches.unsubscribe_token` is live, and public unsubscribe is available at `GET /api/v1/saved-searches/unsubscribe/{token}/`
 - Backend Phase I I.3 completed May 6 2026: membership audit table and `users.role_version` are live in production at migration `d3e7c5a1b9f2`; backend pyright 0 errors; pytest 1866 passed; total coverage 94.15%
+- Backend Phase I I.5 completed May 6 2026: generic agency review requests are live in production at migration `f4a8c2d9e5b1`; `review_requests` has RLS enabled, duplicate pending user+agency requests are blocked, accept/decline endpoints are available for agency-owner/admin review queues, pyright 0 errors, pytest passed with 93.97% coverage.
 
 ## Locked environment decisions
 - Production Supabase project ref: `avkhpachzsbgmbnkfnhu`
