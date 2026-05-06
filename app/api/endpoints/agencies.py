@@ -56,12 +56,18 @@ from app.schemas.agencies import (
 )
 from app.schemas.properties import PropertyResponse
 from app.schemas.inquiries import InquiryExtendedResponse
+from app.schemas.membership_audit import AgentMembershipAuditResponse
 from app.core.config import settings
 from app.models.agency_join_requests import AgencyAgentMembership, AgencyInvitation, AgencyJoinRequest, AgencyMembershipReviewRequest
 from app.models.users import UserRole
 from app.api.endpoints.inquiries import _build_inquiry_extended_response
 from app.services.agency_inquiry_service import get_agency_inquiries
 from app.services.auth_user_sync_service import SupabaseUserSyncError, sync_supabase_auth_user_metadata
+from app.services.membership_audit_service import (
+    get_agency_member_history,
+    membership_audit_action_for_status,
+    write_membership_audit,
+)
 from app.tasks.email_tasks import (
     dispatch_email_task,
     send_agent_invitation_email,
@@ -320,6 +326,7 @@ def _apply_membership_role_after_status_change(
         if remaining_active_agency_id is None:
             if member_role == UserRole.AGENT:
                 update_payload["user_role"] = UserRole.SEEKER
+                update_payload["role_version"] = cast(int, member.role_version) + 1
             if cast(int | None, member.agency_id) is not None:
                 update_payload["agency_id"] = None
         elif cast(int | None, member.agency_id) != remaining_active_agency_id:
@@ -343,7 +350,10 @@ def _set_membership_status_and_sync_user(
     current_user: User,
     status_value: str,
     reason: str | None,
+    audit_action: str | None = None,
 ) -> AgencyAgentMembership:
+    member_before = user_crud.get(db, user_id=cast(int, membership.user_id))
+    prior_role = cast(UserRole | None, member_before.user_role if member_before is not None else None)
     try:
         membership = _set_membership_status(
             db=db,
@@ -357,6 +367,16 @@ def _set_membership_status_and_sync_user(
             membership=membership,
             actor=current_user,
             new_status=status_value,
+        )
+        write_membership_audit(
+            db=db,
+            user_id=cast(int, membership.user_id),
+            agency_id=cast(int, membership.agency_id),
+            action=audit_action or membership_audit_action_for_status(status_value),
+            actor_id=cast(int, current_user.user_id),
+            reason=reason,
+            prior_role=prior_role,
+            post_role=cast(UserRole, member.user_role),
         )
         if user_changed:
             sync_supabase_auth_user_metadata(member)
@@ -419,6 +439,7 @@ def _accept_agency_invitation_for_user(
     actor: User,
 ) -> AgencyInviteAcceptResponse:
     agency_id = cast(int, invitation.agency_id)
+    prior_role = cast(UserRole, invited_user.user_role)
     update_payload: dict[str, Any] = {}
     if cast(UserRole, invited_user.user_role) == UserRole.SEEKER:
         update_payload["user_role"] = UserRole.AGENT
@@ -438,6 +459,16 @@ def _accept_agency_invitation_for_user(
             agency_id=agency_id,
             user=invited_user,
             actor=actor,
+        )
+        write_membership_audit(
+            db=db,
+            user_id=cast(int, invited_user.user_id),
+            agency_id=agency_id,
+            action="joined",
+            actor_id=cast(int, actor.user_id),
+            reason="Agency invitation accepted",
+            prior_role=prior_role,
+            post_role=cast(UserRole, invited_user.user_role),
         )
         cast(Any, invitation).status = "accepted"
         cast(Any, invitation).accepted_at = datetime.now(timezone.utc)
@@ -918,6 +949,37 @@ def read_agency_agents(
         )
         for membership, user in membership_rows
     ]
+
+
+@router.get("/{agency_id}/member-history/{user_id}/", response_model=List[AgentMembershipAuditResponse])
+def read_agency_member_history(
+    *,
+    db: Session = Depends(get_db),
+    agency_id: int,
+    user_id: int,
+    current_user: UserResponse = Depends(get_current_active_user),
+    pagination: dict = Depends(pagination_params),
+) -> Any:
+    """Return this agency's full membership history with a specific user."""
+    current_user_model = cast(User, current_user)
+    if not _is_agency_owner_for(user=current_user_model, agency_id=agency_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Agency owner or admin privileges required for member history",
+        )
+    agency = agency_crud.get(db, agency_id=agency_id)
+    if agency is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agency not found",
+        )
+    return get_agency_member_history(
+        db=db,
+        agency_id=agency_id,
+        user_id=user_id,
+        skip=pagination["skip"],
+        limit=pagination["limit"],
+    )
 
 
 @router.patch("/{agency_id}/agents/{membership_id}/suspend/", response_model=AgencyAgentMembershipResponse)
@@ -1435,6 +1497,7 @@ def approve_agency_join_request(
         )
 
     actor_supabase_id = str(current_user_model.supabase_id)
+    prior_role = cast(UserRole, seeker.user_role)
     try:
         update_payload: dict[str, Any] = {}
         if cast(UserRole, seeker.user_role) == UserRole.SEEKER:
@@ -1454,6 +1517,16 @@ def approve_agency_join_request(
             user=seeker,
             actor=current_user_model,
             source_join_request_id=cast(int, join_request.join_request_id),
+        )
+        write_membership_audit(
+            db=db,
+            user_id=cast(int, seeker.user_id),
+            agency_id=agency_id,
+            action="joined",
+            actor_id=cast(int, current_user_model.user_id),
+            reason="Agency join request approved",
+            prior_role=prior_role,
+            post_role=cast(UserRole, seeker.user_role),
         )
 
         cast(Any, join_request).status = "approved"
@@ -1637,6 +1710,18 @@ def invite_agency_agent(
         db.add(invitation)
         db.flush()
         db.refresh(invitation)
+
+    if invited_user is not None:
+        write_membership_audit(
+            db=db,
+            user_id=cast(int, invited_user.user_id),
+            agency_id=agency_id,
+            action="invited",
+            actor_id=cast(int, current_user_model.user_id),
+            reason="Agency invitation sent",
+            prior_role=cast(UserRole, invited_user.user_role),
+            post_role=cast(UserRole, invited_user.user_role),
+        )
 
     invite_token = _create_agency_invite_token(
         agency_id=agency_id,

@@ -2,11 +2,12 @@
 
 from typing import Any, List, cast
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import get_current_active_user, get_db, pagination_params
+from app.api.dependencies import get_current_active_user, get_db, pagination_params, validate_request_size
+from app.api.endpoints.agencies import _set_membership_status_and_sync_user
 from app.models.agencies import Agency
 from app.models.agency_join_requests import AgencyAgentMembership, AgencyMembershipReviewRequest
 from app.models.users import User, UserRole
@@ -165,3 +166,61 @@ def read_my_agent_membership_status(
         agency_name=selected_agency_name,
         current_user=current_user_model,
     )
+
+
+@router.patch("/{membership_id}/leave/", response_model=MyAgencyMembershipResponse)
+def leave_my_agency_membership(
+    *,
+    db: Session = Depends(get_db),
+    membership_id: int,
+    reason: str | None = Body(default=None, embed=True),
+    current_user: UserResponse = Depends(get_current_active_user),
+    _: None = Depends(validate_request_size),
+) -> Any:
+    """Allow an agent-facing user to voluntarily leave one agency membership."""
+    current_user_model = cast(User, current_user)
+    membership_row = db.execute(
+        select(AgencyAgentMembership, Agency.name)
+        .join(Agency, Agency.agency_id == AgencyAgentMembership.agency_id)
+        .where(
+            AgencyAgentMembership.membership_id == membership_id,
+            AgencyAgentMembership.user_id == current_user_model.user_id,
+            AgencyAgentMembership.deleted_at.is_(None),
+            Agency.deleted_at.is_(None),
+        )
+    ).one_or_none()
+    if membership_row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agency membership not found",
+        )
+    membership, agency_name = membership_row
+    if str(membership.status) != "active":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only active memberships can be left",
+        )
+
+    updated = _set_membership_status_and_sync_user(
+        db=db,
+        membership=membership,
+        current_user=current_user_model,
+        status_value="inactive",
+        reason=reason or "User left voluntarily",
+        audit_action="left",
+    )
+    return {
+        "membership_id": updated.membership_id,
+        "agency_id": updated.agency_id,
+        "agency_name": agency_name,
+        "status": updated.status,
+        "status_reason": updated.status_reason,
+        "status_decided_at": updated.status_decided_at,
+        "status_decided_by": updated.status_decided_by,
+        "source_join_request_id": updated.source_join_request_id,
+        "pending_review_request_id": None,
+        "pending_review_reason": None,
+        "pending_review_submitted_at": None,
+        "created_at": updated.created_at,
+        "updated_at": updated.updated_at,
+    }

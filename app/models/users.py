@@ -9,7 +9,7 @@ Phase 2 Aligned: Soft delete, proper FK naming, Supabase integration
 # from __future__ import annotations # <--- Added for forward ref support
 # from typing import TYPE_CHECKING
 
-from sqlalchemy import Column, String, Boolean, BigInteger, ForeignKey, CheckConstraint, DateTime, Text
+from sqlalchemy import Column, String, Boolean, BigInteger, ForeignKey, CheckConstraint, DateTime, Text, Integer, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.types import Enum as SQLAEnum
 from sqlalchemy.orm import relationship
@@ -91,6 +91,7 @@ class User(Base, AuditMixin, SoftDeleteMixin):
         nullable=False,
         index=True
     )
+    role_version = Column(Integer, nullable=False, server_default=text("1"))
     is_verified = Column(Boolean, default=False, nullable=False)
     verification_code = Column(String, nullable=True)
 

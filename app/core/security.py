@@ -53,6 +53,7 @@ class TokenPayload(BaseModel):
     role: Optional[str] = None          # User role (seeker/agent/admin)
     token_type: Optional[str] = None    # "access" or "refresh"
     agency_id: Optional[int] = None     # Multi-tenant context
+    role_version: Optional[int] = None  # Backend role freshness guard
 
 
 # TOKEN CREATION
@@ -63,7 +64,8 @@ def create_token(
     user_id: int,
     token_type: str = "access",
     user_role: Optional[str] = None,
-    agency_id: Optional[int] = None
+    agency_id: Optional[int] = None,
+    role_version: int = 1,
 ) -> str:
     """
     Generate a signed JWT token.
@@ -89,6 +91,7 @@ def create_token(
         "token_type": token_type,
         "role": user_role,
         "agency_id": agency_id,
+        "role_version": role_version,
     }
 
     return jwt.encode(
@@ -129,7 +132,8 @@ def generate_access_token(
     supabase_id: UUID,
     user_id: int,
     user_role: Optional[str] = None,
-    agency_id: Optional[int] = None
+    agency_id: Optional[int] = None,
+    role_version: int = 1,
 ) -> str:
     """Generate a short-lived access token."""
     return create_token(
@@ -137,7 +141,8 @@ def generate_access_token(
         user_id=user_id,
         token_type="access",
         user_role=user_role,
-        agency_id=agency_id
+        agency_id=agency_id,
+        role_version=role_version,
     )
 
 
@@ -145,7 +150,8 @@ def generate_refresh_token(
     supabase_id: UUID,
     user_id: int,
     user_role: Optional[str] = None,
-    agency_id: Optional[int] = None
+    agency_id: Optional[int] = None,
+    role_version: int = 1,
 ) -> str:
     """Generate a long-lived refresh token."""
     return create_token(
@@ -153,7 +159,8 @@ def generate_refresh_token(
         user_id=user_id,
         token_type="refresh",
         user_role=user_role,
-        agency_id=agency_id
+        agency_id=agency_id,
+        role_version=role_version,
     )
 
 
@@ -175,7 +182,8 @@ def validate_token_refresh(refresh_token: str, current_supabase_id: UUID) -> str
             supabase_id=UUID(refresh_payload.supabase_id),
             user_id=cast(int, refresh_payload.user_id),
             user_role=refresh_payload.role,
-            agency_id=refresh_payload.agency_id
+            agency_id=refresh_payload.agency_id,
+            role_version=refresh_payload.role_version or 1,
         )
     except AuthenticationException:
         raise

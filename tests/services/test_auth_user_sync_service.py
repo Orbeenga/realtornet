@@ -17,6 +17,7 @@ def make_user(**overrides):
         "supabase_id": str(uuid4()),
         "user_role": UserRole.AGENT,
         "is_admin": False,
+        "role_version": 1,
     }
     data.update(overrides)
     return SimpleNamespace(**data)
@@ -45,7 +46,7 @@ def test_sync_supabase_auth_user_metadata_updates_role_and_admin_flags():
 
     mock_update.assert_called_once_with(
         user.supabase_id,
-        {"app_metadata": {"role": "agent", "is_admin": True, "agency_id": None}},
+        {"app_metadata": {"role": "agent", "is_admin": True, "agency_id": None, "role_version": 1}},
     )
 
 
@@ -66,7 +67,7 @@ def test_sync_supabase_auth_user_metadata_accepts_string_roles():
 
     mock_update.assert_called_once_with(
         user.supabase_id,
-        {"app_metadata": {"role": "seeker", "is_admin": False, "agency_id": None}},
+        {"app_metadata": {"role": "seeker", "is_admin": False, "agency_id": None, "role_version": 1}},
     )
 
 

@@ -116,6 +116,13 @@ def get_current_user(
         if token_payload.user_id is not None and resolved_user_id != token_payload.user_id:
             raise credentials_exception
 
+        if token_payload.role_version != cast(int, user.role_version):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token role version is stale",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
         return user
 
     except HTTPException:
