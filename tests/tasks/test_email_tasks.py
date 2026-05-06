@@ -120,6 +120,61 @@ def test_join_request_status_email_handles_decline_reason(monkeypatch: pytest.Mo
     assert "Portfolio too thin" in payload["text"]
 
 
+def test_inquiry_received_email_contains_lead_context(monkeypatch: pytest.MonkeyPatch) -> None:
+    mock_send = _patch_send_email(monkeypatch)
+
+    task = cast(Any, email_tasks.send_inquiry_received_email)
+    result = task.apply(
+        args=(
+            "agent@example.com",
+            "Lekki Apartment",
+            "Test User",
+            "seeker@example.com",
+            "+2347000000000",
+            "Can I inspect tomorrow?",
+            42,
+        )
+    ).get()
+
+    assert result == "Inquiry received email sent to agent@example.com"
+    payload = _sent_payload(mock_send)
+    assert payload["subject"] == "New inquiry on Lekki Apartment"
+    assert "Can I inspect tomorrow?" in payload["text"]
+    assert "/account/inquiries" in payload["html"]
+    assert "/properties/42" in payload["html"]
+
+
+def test_property_moderation_email_includes_outcome_reason(monkeypatch: pytest.MonkeyPatch) -> None:
+    mock_send = _patch_send_email(monkeypatch)
+
+    task = cast(Any, email_tasks.send_property_moderation_email)
+    result = task.apply(
+        args=("agent@example.com", "Lekki Apartment", "rejected", 42, "Photos are unclear")
+    ).get()
+
+    assert result == "Property moderation email sent to agent@example.com"
+    payload = _sent_payload(mock_send)
+    assert payload["subject"] == "Listing update - Lekki Apartment"
+    assert "Photos are unclear" in payload["text"]
+    assert "/account/listings" in payload["html"]
+
+
+def test_role_change_email_includes_prior_and_new_role(monkeypatch: pytest.MonkeyPatch) -> None:
+    mock_send = _patch_send_email(monkeypatch)
+
+    task = cast(Any, email_tasks.send_role_change_email)
+    result = task.apply(
+        args=("agent@example.com", "Test Agent", "agent", "seeker", "Membership revoked")
+    ).get()
+
+    assert result == "Role change email sent to agent@example.com"
+    payload = _sent_payload(mock_send)
+    assert payload["subject"] == "Your account role has been updated"
+    assert "Previous role: agent" in payload["text"]
+    assert "New role: seeker" in payload["text"]
+    assert "Membership revoked" in payload["html"]
+
+
 def test_dispatch_email_task_uses_celery_delay_when_configured(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "EMAIL_DELIVERY_MODE", "celery")
     task = Mock()

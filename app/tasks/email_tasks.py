@@ -6,6 +6,7 @@ Handles async email sending within Celery's sync task context.
 
 import asyncio
 import logging
+from html import escape
 from typing import Any, NoReturn, Optional
 from urllib.parse import urlencode
 
@@ -74,6 +75,11 @@ def _frontend_url(path: str, query: dict[str, str] | None = None) -> str:
     if query:
         return f"{base_url}{normalized_path}?{urlencode(query)}"
     return f"{base_url}{normalized_path}"
+
+
+def _display_value(value: str | None, fallback: str = "Not provided") -> str:
+    value = (value or "").strip()
+    return value if value else fallback
 
 
 def dispatch_email_task(task: Any, *args: Any, **kwargs: Any) -> None:
@@ -388,6 +394,182 @@ def send_join_request_status_email(
         _retry_or_raise(self, exc, to_email=to_email, task_name="join request status")
 
 
+@celery_app.task(
+    name="app.tasks.email_tasks.send_inquiry_received_email",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+)
+def send_inquiry_received_email(
+    self,
+    to_email: str,
+    property_title: str,
+    seeker_name: str,
+    seeker_email: str,
+    seeker_phone: Optional[str],
+    message: str,
+    property_id: int,
+) -> str:
+    """Notify a listing owner that a seeker sent a property inquiry."""
+    dashboard_url = _frontend_url("/account/inquiries")
+    property_url = _frontend_url(f"/properties/{property_id}")
+    subject = f"New inquiry on {property_title}"
+    seeker_phone_text = _display_value(seeker_phone)
+    text_body = (
+        f"You have a new inquiry on {property_title}.\n\n"
+        f"Seeker: {seeker_name}\n"
+        f"Email: {seeker_email}\n"
+        f"Phone: {seeker_phone_text}\n\n"
+        f"Message:\n{message}\n\n"
+        f"View inquiries: {dashboard_url}\n"
+        f"View listing: {property_url}"
+    )
+    html_body = f"""
+    <html>
+        <body>
+            <h2>New inquiry on {escape(property_title)}</h2>
+            <p>You have a new lead for <strong>{escape(property_title)}</strong>.</p>
+            <p><strong>Seeker:</strong> {escape(seeker_name)}</p>
+            <p><strong>Email:</strong> {escape(seeker_email)}</p>
+            <p><strong>Phone:</strong> {escape(seeker_phone_text)}</p>
+            <p><strong>Message:</strong></p>
+            <p>{escape(message)}</p>
+            <p><a href="{dashboard_url}">View inquiries</a></p>
+            <p><a href="{property_url}">View listing</a></p>
+        </body>
+    </html>
+    """
+    try:
+        return _run_send_email(
+            task_name="Inquiry received",
+            to_email=to_email,
+            subject=subject,
+            text=text_body,
+            html=html_body,
+        )
+    except Exception as exc:
+        _retry_or_raise(self, exc, to_email=to_email, task_name="inquiry received")
+
+
+@celery_app.task(
+    name="app.tasks.email_tasks.send_property_moderation_email",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+)
+def send_property_moderation_email(
+    self,
+    to_email: str,
+    property_title: str,
+    moderation_status: str,
+    property_id: int,
+    reason: Optional[str] = None,
+) -> str:
+    """Notify a listing owner about a moderation outcome."""
+    normalized_status = moderation_status.lower()
+    status_labels = {
+        "verified": "Your listing is live",
+        "rejected": "Listing update",
+        "revoked": "Listing access change",
+        "pending_review": "Listing returned to review",
+    }
+    subject = f"{status_labels.get(normalized_status, 'Listing moderation update')} - {property_title}"
+    property_url = _frontend_url(f"/properties/{property_id}")
+    dashboard_url = _frontend_url("/account/listings")
+    reason_text = f"\n\nReason: {reason}" if reason else ""
+    reason_html = f"<p><strong>Reason:</strong> {escape(reason)}</p>" if reason else ""
+    if normalized_status == "verified":
+        next_step = f"Your listing is now visible publicly: {property_url}"
+        next_step_html = f'<p>Your listing is now visible publicly: <a href="{property_url}">View listing</a></p>'
+    elif normalized_status == "rejected":
+        next_step = "Please review the moderation note and update the listing before resubmitting."
+        next_step_html = "<p>Please review the moderation note and update the listing before resubmitting.</p>"
+    elif normalized_status == "revoked":
+        next_step = "This listing is no longer publicly available. Contact support if you need a review."
+        next_step_html = "<p>This listing is no longer publicly available. Contact support if you need a review.</p>"
+    else:
+        next_step = "Your listing is no longer public and is waiting for review."
+        next_step_html = "<p>Your listing is no longer public and is waiting for review.</p>"
+
+    text_body = (
+        f"{status_labels.get(normalized_status, 'Listing moderation update')}: {property_title}."
+        f"{reason_text}\n\n{next_step}\n\nManage listings: {dashboard_url}"
+    )
+    html_body = f"""
+    <html>
+        <body>
+            <h2>{escape(status_labels.get(normalized_status, 'Listing moderation update'))}</h2>
+            <p><strong>{escape(property_title)}</strong></p>
+            {reason_html}
+            {next_step_html}
+            <p><a href="{dashboard_url}">Manage listings</a></p>
+        </body>
+    </html>
+    """
+    try:
+        return _run_send_email(
+            task_name="Property moderation",
+            to_email=to_email,
+            subject=subject,
+            text=text_body,
+            html=html_body,
+        )
+    except Exception as exc:
+        _retry_or_raise(self, exc, to_email=to_email, task_name="property moderation")
+
+
+@celery_app.task(
+    name="app.tasks.email_tasks.send_role_change_email",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+)
+def send_role_change_email(
+    self,
+    to_email: str,
+    user_name: str,
+    prior_role: str,
+    new_role: str,
+    reason: Optional[str] = None,
+) -> str:
+    """Notify a user that their account role or access state changed."""
+    account_url = _frontend_url("/account")
+    subject = "Your account role has been updated"
+    reason_text = f"\n\nReason: {reason}" if reason else ""
+    reason_html = f"<p><strong>Reason:</strong> {escape(reason)}</p>" if reason else ""
+    text_body = (
+        f"Hello {user_name},\n\n"
+        f"Your RealtorNet account access was updated.\n\n"
+        f"Previous role: {prior_role}\n"
+        f"New role: {new_role}"
+        f"{reason_text}\n\n"
+        f"Review your account: {account_url}"
+    )
+    html_body = f"""
+    <html>
+        <body>
+            <h2>Your account role has been updated</h2>
+            <p>Hello {escape(user_name)},</p>
+            <p>Your RealtorNet account access was updated.</p>
+            <p><strong>Previous role:</strong> {escape(prior_role)}</p>
+            <p><strong>New role:</strong> {escape(new_role)}</p>
+            {reason_html}
+            <p><a href="{account_url}">Review your account</a></p>
+        </body>
+    </html>
+    """
+    try:
+        return _run_send_email(
+            task_name="Role change",
+            to_email=to_email,
+            subject=subject,
+            text=text_body,
+            html=html_body,
+        )
+    except Exception as exc:
+        _retry_or_raise(self, exc, to_email=to_email, task_name="role change")
+
+
 # Export task functions
 __all__ = [
     "dispatch_email_task",
@@ -397,4 +579,7 @@ __all__ = [
     "send_agency_rejection_email",
     "send_agent_invitation_email",
     "send_join_request_status_email",
+    "send_inquiry_received_email",
+    "send_property_moderation_email",
+    "send_role_change_email",
 ]

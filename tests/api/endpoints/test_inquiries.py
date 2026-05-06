@@ -6,6 +6,7 @@ Covers permission branches, error paths, and happy paths.
 
 import pytest
 import uuid
+from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from app.core.security import generate_access_token, get_password_hash
@@ -57,6 +58,28 @@ class TestCreateInquiry:
         assert data["property_id"] == sample_property.property_id
         assert data["message"] == inquiry_data["message"]
         assert data["inquiry_status"] == "new"
+
+    def test_create_inquiry_dispatches_agent_email(
+        self, client: TestClient, normal_user_token_headers, normal_user, sample_property
+    ):
+        with patch("app.api.endpoints.inquiries.dispatch_email_task") as mock_email:
+            response = client.post(
+                "/api/v1/inquiries/",
+                json={
+                    "property_id": sample_property.property_id,
+                    "message": "Can I inspect tomorrow?",
+                },
+                headers=normal_user_token_headers,
+            )
+
+        assert response.status_code == 201
+        mock_email.assert_called_once()
+        args = mock_email.call_args.args
+        assert args[1] == normal_user.email
+        assert args[2] == sample_property.title
+        assert args[3] == "Test User"
+        assert args[4] == normal_user.email
+        assert args[6] == "Can I inspect tomorrow?"
 
 
 class TestReadUserInquiries:
