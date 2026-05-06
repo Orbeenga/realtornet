@@ -1,16 +1,14 @@
 # app/utils/email_utils.py
-from email.utils import parseaddr
 import logging
 from typing import Optional
 
-import httpx
+import resend
+from resend.emails._emails import Emails
+from resend.exceptions import ResendError
 
 from app.core.config import settings
 
 
-SENDGRID_MAIL_SEND_URL = "https://api.sendgrid.com/v3/mail/send"
-SENDGRID_SUCCESS_CODES = {200, 202}
-SENDGRID_LOG_BODY_LIMIT = 1000
 PLACEHOLDER_SENDER_VALUES = {
     "RealtorNet <no-reply@your-domain.com>",
     "RealtorNet <noreply@yourdomain.com>",
@@ -26,26 +24,18 @@ def is_email_dry_run_enabled() -> bool:
     return settings.EMAIL_DRY_RUN or settings.TESTING or settings.ENV == "test"
 
 
-def _sender_payload() -> dict[str, str] | None:
+def _sender_address() -> str | None:
     sender = (settings.MAIL_FROM or settings.EMAIL_FROM).strip()
     if not sender or sender in PLACEHOLDER_SENDER_VALUES:
         return None
-
-    name, email = parseaddr(sender)
-    if not email:
-        return None
-
-    payload = {"email": email}
-    if name:
-        payload["name"] = name
-    return payload
+    return sender
 
 
-def _missing_sendgrid_settings() -> list[str]:
+def _missing_resend_settings() -> list[str]:
     missing = []
-    if not settings.SENDGRID_API_KEY.strip():
-        missing.append("SENDGRID_API_KEY")
-    if _sender_payload() is None:
+    if not settings.RESEND_API_KEY.strip():
+        missing.append("RESEND_API_KEY")
+    if _sender_address() is None:
         missing.append("MAIL_FROM or EMAIL_FROM")
     return missing
 
@@ -57,60 +47,57 @@ async def send_email(
     html: Optional[str] = None,
 ) -> bool:
     """
-    Send an email using SendGrid's Mail Send API.
+    Send an email using Resend.
 
     Test and explicit dry-run environments return success without performing an
-    HTTP request so automated suites can exercise email flows safely.
+    SDK call so automated suites can exercise email flows safely.
     """
     if is_email_dry_run_enabled():
         return True
 
-    sendgrid_api_key = settings.SENDGRID_API_KEY
-    sender = _sender_payload()
+    resend.api_key = settings.RESEND_API_KEY
+    sender = _sender_address()
 
-    missing_settings = _missing_sendgrid_settings()
+    missing_settings = _missing_resend_settings()
     if missing_settings:
         raise ValueError(
-            "SendGrid settings are not properly configured: "
+            "Resend settings are not properly configured: "
             + ", ".join(missing_settings)
         )
     assert sender is not None
 
-    content = []
-    if text:
-        content.append({"type": "text/plain", "value": text})
-    if html:
-        content.append({"type": "text/html", "value": html})
-    if not content:
-        content.append({"type": "text/plain", "value": ""})
-
-    payload = {
-        "personalizations": [{"to": [{"email": to_email}]}],
+    payload: Emails.SendParams = {
         "from": sender,
+        "to": [to_email],
         "subject": subject,
-        "content": content,
     }
+    if html:
+        payload["html"] = html
+    if text:
+        payload["text"] = text
+    if not html and not text:
+        payload["text"] = ""
 
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                SENDGRID_MAIL_SEND_URL,
-                headers={
-                    "Authorization": f"Bearer {sendgrid_api_key}",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-                timeout=10,
-            )
-        if response.status_code in SENDGRID_SUCCESS_CODES:
+        response = resend.Emails.send(payload)
+        if isinstance(response, dict) and response.get("id"):
             return True
         logger.warning(
-            "SendGrid email send rejected",
+            "Resend email send returned an unexpected response",
             extra={
-                "status_code": response.status_code,
-                "response_body": response.text[:SENDGRID_LOG_BODY_LIMIT],
+                "response": response,
                 "recipient": to_email,
                 "subject": subject,
+            },
+        )
+        return False
+    except ResendError as exc:
+        logger.warning(
+            "Resend email send rejected",
+            extra={
+                "recipient": to_email,
+                "subject": subject,
+                "error": str(exc),
             },
         )
         return False

@@ -1,65 +1,61 @@
 import asyncio
 
-import httpx
 import pytest
+import resend
 
 from app.core.config import settings
 from app.utils.email_utils import is_email_dry_run_enabled, send_email
 
 
-def _set_live_sendgrid(monkeypatch: pytest.MonkeyPatch) -> None:
+def _set_live_resend(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "ENV", "production")
     monkeypatch.setattr(settings, "TESTING", False)
     monkeypatch.setattr(settings, "EMAIL_DRY_RUN", False)
-    monkeypatch.setattr(settings, "SENDGRID_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "RESEND_API_KEY", "test-key")
     monkeypatch.setattr(settings, "MAIL_FROM", "no-reply@example.com")
 
 
-def test_send_email_dry_run_skips_sendgrid(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_send_email_dry_run_skips_resend(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "EMAIL_DRY_RUN", True)
     monkeypatch.setattr(settings, "ENV", "production")
     monkeypatch.setattr(settings, "TESTING", False)
+    calls = []
+    monkeypatch.setattr(resend.Emails, "send", lambda params: calls.append(params))
 
     assert is_email_dry_run_enabled() is True
     assert asyncio.run(send_email("agent@example.com", "Subject", text="Body")) is True
+    assert calls == []
 
 
-def test_send_email_requires_sendgrid_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_send_email_requires_resend_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "ENV", "production")
     monkeypatch.setattr(settings, "TESTING", False)
     monkeypatch.setattr(settings, "EMAIL_DRY_RUN", False)
-    monkeypatch.setattr(settings, "SENDGRID_API_KEY", "")
+    monkeypatch.setattr(settings, "RESEND_API_KEY", "")
     monkeypatch.setattr(settings, "MAIL_FROM", "")
 
-    with pytest.raises(ValueError, match="SENDGRID_API_KEY"):
+    with pytest.raises(ValueError, match="RESEND_API_KEY"):
         asyncio.run(send_email("agent@example.com", "Subject", text="Body"))
 
 
 def test_send_email_falls_back_to_email_from_sender(monkeypatch: pytest.MonkeyPatch) -> None:
-    _set_live_sendgrid(monkeypatch)
+    _set_live_resend(monkeypatch)
     monkeypatch.setattr(settings, "MAIL_FROM", "")
     monkeypatch.setattr(settings, "EMAIL_FROM", "RealtorNet <sender@example.com>")
     calls = []
 
-    class FakeAsyncClient:
-        async def __aenter__(self):
-            return self
+    def fake_send(params):
+        calls.append(params)
+        return {"id": "email-id"}
 
-        async def __aexit__(self, exc_type, exc, tb):
-            return None
-
-        async def post(self, url, *, headers, json, timeout):
-            calls.append(json)
-            return httpx.Response(202)
-
-    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(resend.Emails, "send", fake_send)
 
     assert asyncio.run(send_email("agent@example.com", "Subject", text="Body")) is True
-    assert calls[0]["from"] == {"email": "sender@example.com", "name": "RealtorNet"}
+    assert calls[0]["from"] == "RealtorNet <sender@example.com>"
 
 
 def test_send_email_rejects_placeholder_sender(monkeypatch: pytest.MonkeyPatch) -> None:
-    _set_live_sendgrid(monkeypatch)
+    _set_live_resend(monkeypatch)
     monkeypatch.setattr(settings, "MAIL_FROM", "RealtorNet <no-reply@your-domain.com>")
     monkeypatch.setattr(settings, "EMAIL_FROM", "")
 
@@ -67,82 +63,65 @@ def test_send_email_rejects_placeholder_sender(monkeypatch: pytest.MonkeyPatch) 
         asyncio.run(send_email("agent@example.com", "Subject", text="Body"))
 
 
-def test_send_email_posts_to_sendgrid(monkeypatch: pytest.MonkeyPatch) -> None:
-    _set_live_sendgrid(monkeypatch)
+def test_send_email_sends_with_resend(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_live_resend(monkeypatch)
     calls = []
 
-    class FakeAsyncClient:
-        async def __aenter__(self):
-            return self
+    def fake_send(params):
+        calls.append(params)
+        return {"id": "email-id"}
 
-        async def __aexit__(self, exc_type, exc, tb):
-            return None
-
-        async def post(self, url, *, headers, json, timeout):
-            calls.append({"url": url, "headers": headers, "json": json, "timeout": timeout})
-            return httpx.Response(202)
-
-    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(resend.Emails, "send", fake_send)
 
     assert asyncio.run(send_email("agent@example.com", "Subject", text="Text", html="<p>HTML</p>")) is True
     assert calls == [
         {
-            "url": "https://api.sendgrid.com/v3/mail/send",
-            "headers": {
-                "Authorization": "Bearer test-key",
-                "Content-Type": "application/json",
-            },
-            "json": {
-                "personalizations": [{"to": [{"email": "agent@example.com"}]}],
-                "from": {"email": "no-reply@example.com"},
-                "subject": "Subject",
-                "content": [
-                    {"type": "text/plain", "value": "Text"},
-                    {"type": "text/html", "value": "<p>HTML</p>"},
-                ],
-            },
-            "timeout": 10,
+            "from": "no-reply@example.com",
+            "to": ["agent@example.com"],
+            "subject": "Subject",
+            "html": "<p>HTML</p>",
+            "text": "Text",
         }
     ]
 
 
-def test_send_email_logs_warning_for_sendgrid_failure(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
-    _set_live_sendgrid(monkeypatch)
+def test_send_email_logs_warning_for_resend_failure(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+    _set_live_resend(monkeypatch)
 
-    class FakeAsyncClient:
-        async def __aenter__(self):
-            return self
+    def fake_send(params):
+        raise resend.exceptions.ValidationError(
+            "sender identity is not verified",
+            "validation_error",
+            422,
+        )
 
-        async def __aexit__(self, exc_type, exc, tb):
-            return None
-
-        async def post(self, url, *, headers, json, timeout):
-            return httpx.Response(403, text="sender identity is not verified")
-
-    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(resend.Emails, "send", fake_send)
 
     caplog.set_level("WARNING", logger="app.utils.email_utils")
 
     assert asyncio.run(send_email("agent@example.com", "Subject", text="Body")) is False
-    assert "SendGrid email send rejected" in caplog.text
-    assert caplog.records[0].response_body == "sender identity is not verified"
+    assert "Resend email send rejected" in caplog.text
+    assert caplog.records[0].error == "sender identity is not verified"
     assert caplog.records[0].levelname == "WARNING"
 
 
-def test_send_email_wraps_http_errors(monkeypatch: pytest.MonkeyPatch) -> None:
-    _set_live_sendgrid(monkeypatch)
+def test_send_email_returns_false_for_unexpected_resend_response(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+    _set_live_resend(monkeypatch)
+    monkeypatch.setattr(resend.Emails, "send", lambda params: {"message": "queued"})
 
-    class FakeAsyncClient:
-        async def __aenter__(self):
-            return self
+    caplog.set_level("WARNING", logger="app.utils.email_utils")
 
-        async def __aexit__(self, exc_type, exc, tb):
-            return None
+    assert asyncio.run(send_email("agent@example.com", "Subject", text="Body")) is False
+    assert "Resend email send returned an unexpected response" in caplog.text
 
-        async def post(self, url, *, headers, json, timeout):
-            raise httpx.ConnectError("network down")
 
-    monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
+def test_send_email_wraps_unexpected_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_live_resend(monkeypatch)
+
+    def fake_send(params):
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(resend.Emails, "send", fake_send)
 
     with pytest.raises(RuntimeError, match="Email sending failed"):
         asyncio.run(send_email("agent@example.com", "Subject", text="Body"))
