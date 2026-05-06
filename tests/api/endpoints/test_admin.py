@@ -467,7 +467,7 @@ class TestAdminAgencyApplications:
         """
         with patch(
             "app.api.endpoints.admin.sync_supabase_auth_user_metadata"
-        ) as mock_sync:
+        ) as mock_sync, patch("app.api.endpoints.admin.dispatch_email_task") as mock_email:
             response = client.put(
                 f"/api/v1/admin/users/{normal_user.user_id}",
                 headers=admin_token_headers,
@@ -480,6 +480,10 @@ class TestAdminAgencyApplications:
         mock_sync.assert_called_once()
         synced_user = mock_sync.call_args.args[0]
         assert synced_user.user_id == normal_user.user_id
+        mock_email.assert_called_once()
+        assert mock_email.call_args.args[1] == normal_user.email
+        assert mock_email.call_args.args[3] == "seeker"
+        assert mock_email.call_args.args[4] == "agent"
 
     def test_admin_role_demotion_requires_reason(
         self, client: TestClient, admin_token_headers, agent_user
@@ -498,7 +502,7 @@ class TestAdminAgencyApplications:
     ):
         with patch(
             "app.api.endpoints.admin.sync_supabase_auth_user_metadata"
-        ) as mock_sync:
+        ) as mock_sync, patch("app.api.endpoints.admin.dispatch_email_task") as mock_email:
             response = client.put(
                 f"/api/v1/admin/users/{agent_user.user_id}",
                 headers=admin_token_headers,
@@ -515,6 +519,11 @@ class TestAdminAgencyApplications:
         assert getattr(agent_user.user_role, "value", agent_user.user_role) == "seeker"
         assert agent_user.role_change_reason == "License expired"
         mock_sync.assert_called_once()
+        mock_email.assert_called_once()
+        assert mock_email.call_args.args[1] == agent_user.email
+        assert mock_email.call_args.args[3] == "agent"
+        assert mock_email.call_args.args[4] == "seeker"
+        assert mock_email.call_args.args[5] == "License expired"
 
     def test_admin_role_promotion_rolls_back_when_supabase_sync_fails(
         self, client: TestClient, admin_token_headers, normal_user
@@ -682,11 +691,12 @@ class TestAdminDeactivateUser:
 
         This ensures deactivation is traceable and persisted.
         """
-        response = client.post(
-            f"/api/v1/admin/users/{normal_user.user_id}/deactivate",
-            headers=admin_token_headers,
-            json={"reason": "Fraud review"},
-        )
+        with patch("app.api.endpoints.admin.dispatch_email_task") as mock_email:
+            response = client.post(
+                f"/api/v1/admin/users/{normal_user.user_id}/deactivate",
+                headers=admin_token_headers,
+                json={"reason": "Fraud review"},
+            )
         assert response.status_code == 200
         data = response.json()
         assert data["deleted_at"] is not None
@@ -695,6 +705,10 @@ class TestAdminDeactivateUser:
         db.refresh(normal_user)
         assert normal_user.deleted_at is not None
         assert normal_user.deactivation_reason == "Fraud review"
+        mock_email.assert_called_once()
+        assert mock_email.call_args.args[1] == normal_user.email
+        assert mock_email.call_args.args[4] == "deactivated"
+        assert mock_email.call_args.args[5] == "Fraud review"
 
     def test_admin_deactivate_requires_reason(
         self, client: TestClient, admin_token_headers, normal_user

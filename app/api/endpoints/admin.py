@@ -36,6 +36,8 @@ from app.tasks.email_tasks import (
     dispatch_email_task,
     send_agency_approval_email,
     send_agency_rejection_email,
+    send_property_moderation_email,
+    send_role_change_email,
 )
 
 # --- DIRECT SCHEMA IMPORTS ---
@@ -61,6 +63,14 @@ router = APIRouter()
 
 
 PROPERTY_RESPONSE_FIELD_NAMES = tuple(PropertyResponse.model_fields.keys())
+
+
+def _role_value(role: Any) -> str:
+    return str(getattr(role, "value", role))
+
+
+def _user_display_name(user: User) -> str:
+    return f"{user.first_name} {user.last_name}".strip()
 
 
 def _serialize_property_item(property_obj: Any) -> dict[str, Any]:
@@ -426,8 +436,9 @@ def update_user(
     update_data = user_in.dict(exclude_unset=True)
     should_sync_supabase_auth = "user_role" in update_data
     next_role = update_data.get("user_role")
-    current_role = getattr(db_user.user_role, "value", db_user.user_role)
-    next_role_value = getattr(next_role, "value", next_role)
+    current_role = _role_value(db_user.user_role)
+    next_role_value = _role_value(next_role)
+    role_changed = should_sync_supabase_auth and current_role != next_role_value
     is_access_reducing_role_change = (
         current_role in {UserRole.AGENT.value, UserRole.AGENCY_OWNER.value}
         and next_role_value == UserRole.SEEKER.value
@@ -459,6 +470,16 @@ def update_user(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
         ) from exc
+
+    if role_changed:
+        dispatch_email_task(
+            send_role_change_email,
+            str(db_user.email),
+            _user_display_name(db_user),
+            current_role,
+            _role_value(db_user.user_role),
+            typing_cast(str | None, db_user.role_change_reason),
+        )
     
     logger.info(f"User updated: {user_id} by admin {current_user.user_id}")
     return db_user
@@ -586,6 +607,20 @@ def deactivate_user(
         updated_by=str(current_user.supabase_id),  # Normalize the admin Supabase UUID to the CRUD audit string type at the call site.
         reason=deactivation_in.reason,
     )
+    if db_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found during deactivation",
+        )
+
+    dispatch_email_task(
+        send_role_change_email,
+        str(db_user.email),
+        _user_display_name(db_user),
+        _role_value(db_user.user_role),
+        "deactivated",
+        deactivation_in.reason,
+    )
     
     logger.info(f"User deactivated: {user_id} by admin {current_user.user_id}")
     return db_user
@@ -692,6 +727,21 @@ def verify_property(
         moderation_reason=moderation_update.moderation_reason,
         updated_by=str(current_user.supabase_id)  # Normalize the admin Supabase UUID to the CRUD audit string type at the call site.
     )
+
+    if prop is not None:
+        owner_user_id = typing_cast(int | None, prop.user_id)
+        if owner_user_id is not None:
+            owner = user_crud.get(db, user_id=owner_user_id)
+            owner_email = str(getattr(owner, "email", "") or "").strip() if owner is not None else ""
+            if owner_email:
+                dispatch_email_task(
+                    send_property_moderation_email,
+                    owner_email,
+                    str(prop.title),
+                    requested_status.value,
+                    typing_cast(int, prop.property_id),
+                    moderation_update.moderation_reason,
+                )
     
     logger.info(f"Property verified: {property_id} by admin {current_user.user_id}")
     return prop

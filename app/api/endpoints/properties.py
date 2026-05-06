@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 # --- DIRECT CRUD IMPORTS ---
 from app.crud.properties import property as property_crud
 from app.crud.users import user as user_crud
+from app.tasks.email_tasks import dispatch_email_task, send_property_moderation_email
 
 # --- DIRECT DEPENDENCY IMPORTS ---
 from app.api.dependencies import (
@@ -394,6 +395,22 @@ def verify_property(
         moderation_reason=verification_in.moderation_reason,
         updated_by=updated_by_supabase_id
     )
+
+    if property is not None:
+        owner_user_id: int | None = typing_cast(int | None, property.user_id)
+        property_id_value: int = typing_cast(int, property.property_id)
+        if owner_user_id is not None:
+            owner = user_crud.get(db, user_id=owner_user_id)
+            owner_email = str(getattr(owner, "email", "") or "").strip() if owner is not None else ""
+            if owner_email:
+                dispatch_email_task(
+                    send_property_moderation_email,
+                    owner_email,
+                    str(property.title),
+                    requested_status.value,
+                    property_id_value,
+                    verification_in.moderation_reason,
+                )
 
     return property
 

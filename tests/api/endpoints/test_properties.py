@@ -556,17 +556,21 @@ class TestVerifyProperty:
         self, client: TestClient, admin_token_headers, unverified_property
     ):
         """Admins can still publish listings from the review flow."""
-        response = client.patch(
-            f"/api/v1/properties/{unverified_property.property_id}/verify",
-            json={"is_verified": True},
-            headers=admin_token_headers
-        )
+        with patch("app.api.endpoints.properties.dispatch_email_task") as mock_email:
+            response = client.patch(
+                f"/api/v1/properties/{unverified_property.property_id}/verify",
+                json={"is_verified": True},
+                headers=admin_token_headers
+            )
 
         assert response.status_code == 200
         data = response.json()
         assert data["is_verified"] is True
         assert data["moderation_status"] == "verified"
         assert data["verification_date"] is not None
+        mock_email.assert_called_once()
+        assert mock_email.call_args.args[1] == "agent@example.com"
+        assert mock_email.call_args.args[3] == "verified"
 
     @pytest.mark.parametrize(
         ("moderation_status", "expected_verified"),
@@ -634,6 +638,27 @@ class TestVerifyProperty:
 
         assert response.status_code == 403
         assert response.json()["detail"] == "Only admins can reject or revoke property moderation"
+
+    def test_admin_rejection_dispatches_moderation_email(
+        self, client: TestClient, admin_token_headers, unverified_property
+    ):
+        with patch("app.api.endpoints.properties.dispatch_email_task") as mock_email:
+            response = client.patch(
+                f"/api/v1/properties/{unverified_property.property_id}/verify",
+                json={
+                    "moderation_status": "rejected",
+                    "moderation_reason": "Photos are unclear",
+                },
+                headers=admin_token_headers,
+            )
+
+        assert response.status_code == 200
+        mock_email.assert_called_once()
+        args = mock_email.call_args.args
+        assert args[1] == "agent@example.com"
+        assert args[2] == unverified_property.title
+        assert args[3] == "rejected"
+        assert args[5] == "Photos are unclear"
 
     def test_admin_verified_property_becomes_publicly_visible(
         self, client: TestClient, admin_token_headers, unverified_property

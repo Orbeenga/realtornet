@@ -12,6 +12,7 @@ from app.crud.inquiries import inquiry as inquiry_crud
 from app.crud.properties import property as property_crud
 from app.crud.users import user as user_crud
 from app.models.users import User  # Narrow endpoint-local user values back to the ORM shape expected by CRUD permission helpers.
+from app.tasks.email_tasks import dispatch_email_task, send_inquiry_received_email
 
 # --- DIRECT DEPENDENCY IMPORTS ---
 from app.api.dependencies import (
@@ -101,9 +102,23 @@ def create_inquiry(
         obj_in=inquiry_in,
         user_id=current_user.user_id  # Pass user_id explicitly
     )
-    
-    # Optional: Trigger notification to property owner
-    # background_tasks.add_task(notify_property_owner, property.user_id, inquiry)
+
+    property_owner_id: int | None = typing_cast(int | None, property.user_id)
+    if property_owner_id is not None:
+        property_owner = user_crud.get(db, user_id=property_owner_id)
+        owner_email = str(getattr(property_owner, "email", "") or "").strip() if property_owner is not None else ""
+        if owner_email:
+            seeker_name = f"{current_user.first_name} {current_user.last_name}".strip()
+            dispatch_email_task(
+                send_inquiry_received_email,
+                owner_email,
+                str(property.title),
+                seeker_name,
+                str(current_user.email),
+                typing_cast(str | None, current_user.phone_number),
+                str(inquiry.message or inquiry_in.message),
+                typing_cast(int, property.property_id),
+            )
     
     return inquiry
 
