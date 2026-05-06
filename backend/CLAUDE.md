@@ -20,7 +20,7 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 - Auth source of truth: Supabase Auth
 - Production Supabase project ref: `avkhpachzsbgmbnkfnhu`
 - Dev Supabase project ref: `umhtnqxdvffpifqbdtjs`
-- Production migration head: `a6b2d9f4c801`
+- Production migration head: `b1f4a9c7e2d3`
 - Current quality gate: pyright 0 errors; pytest 1856 passed; total coverage 94.54%
 - Public registration creates a Supabase Auth identity first, then mirrors that UUID into the local `users` row
 - Registration rollback deletes the Supabase Auth user if the local DB write fails
@@ -106,7 +106,9 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 
 - `GET /api/v1/saved-searches/{search_id}` returns the authenticated user's own saved search; admins may access any saved search.
 - `PUT /api/v1/saved-searches/{search_id}` updates the authenticated user's own saved search; admins may update any saved search.
+- `GET /api/v1/saved-searches/unsubscribe/{token}/` is public and soft-deletes the matching saved search by `unsubscribe_token`.
 - Saved search criteria remain JSONB and execution reuses the canonical property filter path.
+- Saved-search match emails are sent when a property first transitions to `verified`; match detection batches saved-search/user loading and does not query per seeker.
 
 ## Phase G Close State
 
@@ -133,6 +135,13 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 - Current temporary sender is `onboarding@resend.dev` until a custom RealtorNet sender domain is registered and verified
 - Transactional email dispatch is fail-open: provider failures are logged and must not block the triggering API request
 - Railway backend now runs with `ENV=production`; do not allow production deploys to fall back to the development default.
+
+## Phase I I.2 Saved Search Notifications
+
+- Current migration head is `b1f4a9c7e2d3`
+- `saved_searches.unsubscribe_token` is a non-null UUID with a unique index.
+- Saved-search unsubscribe uses the existing soft-delete lifecycle because there is no `is_active` column on `saved_searches`.
+- Notification frequency preferences are deferred as `DEF-I-SEARCH-FREQ-001`; until that preference exists, saved-search match notifications send immediately.
 
 ## Locked Invariants
 

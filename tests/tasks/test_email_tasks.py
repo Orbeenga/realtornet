@@ -12,6 +12,7 @@ def sync_email_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "EMAIL_DELIVERY_MODE", "sync")
     monkeypatch.setattr(settings, "EMAIL_DRY_RUN", True)
     monkeypatch.setattr(settings, "FRONTEND_BASE_URL", "https://realtornet-web.test")
+    monkeypatch.setattr(settings, "BACKEND_BASE_URL", "https://api.realtornet.test")
 
 
 def _patch_send_email(monkeypatch: pytest.MonkeyPatch, return_value: bool = True) -> AsyncMock:
@@ -157,6 +158,30 @@ def test_property_moderation_email_includes_outcome_reason(monkeypatch: pytest.M
     assert payload["subject"] == "Listing update - Lekki Apartment"
     assert "Photos are unclear" in payload["text"]
     assert "/account/listings" in payload["html"]
+
+
+def test_saved_search_match_email_includes_listing_and_unsubscribe(monkeypatch: pytest.MonkeyPatch) -> None:
+    mock_send = _patch_send_email(monkeypatch)
+
+    task = cast(Any, email_tasks.send_saved_search_match_email)
+    result = task.apply(
+        args=(
+            "seeker@example.com",
+            "Lekki 2BR",
+            "Lekki Apartment",
+            "NGN 45,000,000.00",
+            42,
+            "00000000-0000-0000-0000-000000000001",
+            "https://cdn.example.com/thumb.jpg",
+        )
+    ).get()
+
+    assert result == "Saved search match email sent to seeker@example.com"
+    payload = _sent_payload(mock_send)
+    assert payload["subject"] == "New listing match: Lekki Apartment"
+    assert "/properties/42" in payload["html"]
+    assert "https://api.realtornet.test/api/v1/saved-searches/unsubscribe/00000000-0000-0000-0000-000000000001/" in payload["text"]
+    assert "https://cdn.example.com/thumb.jpg" in payload["html"]
 
 
 def test_role_change_email_includes_prior_and_new_role(monkeypatch: pytest.MonkeyPatch) -> None:

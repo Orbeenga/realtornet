@@ -28,6 +28,7 @@
 - Frontend G.7 closed in commit `d74806f`: tsc 0 errors, production build clean, Lighthouse mobile LCP 1.5s, accessibility 1.00, production routes 200
 - Backend Phase H B1/B2/B3 completed in May 2026: membership alias clarified, `property_type_id` property filter live, storage service tests raised, endpoint maps documented, agency-owner profile edit live, public agent directory filters live, location hierarchy documented, and saved-search owner detail/update confirmed
 - Phase H close gate: Resend email delivery confirmed, production smoke passed, backend pyright 0 errors, pytest 1856 passed, total coverage 94.54%
+- Backend Phase I I.2 completed May 6 2026: saved-search match emails fire on first transition to `verified`, `saved_searches.unsubscribe_token` is live, and public unsubscribe is available at `GET /api/v1/saved-searches/unsubscribe/{token}/`
 
 ## Locked environment decisions
 - Production Supabase project ref: `avkhpachzsbgmbnkfnhu`
@@ -63,7 +64,7 @@
 - `DEF-002` - audit log retention
 - `DEF-007` - psycopg3 dev restart
 - Advanced map (Mapbox)
-- Saved search notifications
+- Saved search notification frequency preferences (`DEF-I-SEARCH-FREQ-001`)
 - Custom domain
 
 ## Review priorities

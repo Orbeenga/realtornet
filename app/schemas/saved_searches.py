@@ -69,12 +69,20 @@ class SavedSearchResponse(SavedSearchBase):
     """Schema for saved search responses (includes DB-generated fields)"""
     search_id: int  # Matches DB column name exactly
     user_id: int
+    unsubscribe_token: UUID
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime] = None
     deleted_by: Optional[UUID] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class SavedSearchUnsubscribeResponse(BaseModel):
+    """Response for public one-click saved-search unsubscribe links."""
+    status: str
+    search_id: int
+    message: str
 
 
 # Extended Response (with nested user data)

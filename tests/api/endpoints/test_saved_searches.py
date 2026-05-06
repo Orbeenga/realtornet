@@ -33,6 +33,7 @@ class TestCreateSavedSearch:
         data = response.json()
         assert data["user_id"] == normal_user.user_id
         assert data["search_params"]["min_price"] == 1000
+        assert uuid.UUID(data["unsubscribe_token"])
 
 
 class TestReadUserSavedSearches:
@@ -143,6 +144,36 @@ class TestReadSavedSearch:
         assert response.status_code == 200
         data = response.json()
         assert data["search_id"] == saved.search_id
+
+
+class TestUnsubscribeSavedSearch:
+
+    def test_unsubscribe_public_success(self, client: TestClient, db, normal_user):
+        saved = SavedSearch(
+            user_id=normal_user.user_id,
+            search_params={"min_price": 4500},
+            name="Email Me"
+        )
+        db.add(saved)
+        db.flush()
+        db.refresh(saved)
+
+        response = client.get(
+            f"/api/v1/saved-searches/unsubscribe/{saved.unsubscribe_token}/"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "unsubscribed"
+        assert data["search_id"] == saved.search_id
+        db.refresh(saved)
+        assert saved.deleted_at is not None
+
+    def test_unsubscribe_invalid_token_returns_404(self, client: TestClient):
+        response = client.get(
+            f"/api/v1/saved-searches/unsubscribe/{uuid.uuid4()}/"
+        )
+        assert response.status_code == 404
 
 
 class TestUpdateSavedSearch:

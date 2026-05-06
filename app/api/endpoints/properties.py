@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 # --- DIRECT CRUD IMPORTS ---
 from app.crud.properties import property as property_crud
 from app.crud.users import user as user_crud
+from app.services.saved_search_notification_service import notify_saved_search_matches_for_property
 from app.tasks.email_tasks import dispatch_email_task, send_property_moderation_email
 
 # --- DIRECT DEPENDENCY IMPORTS ---
@@ -386,6 +387,7 @@ def verify_property(
             detail="Only admins can reject or revoke property moderation",
         )
 
+    previous_status = str(getattr(property.moderation_status, "value", property.moderation_status))
     updated_by_supabase_id: str = str(current_user.supabase_id)  # Normalize the authenticated UUID to the string audit format expected by the CRUD layer.
     property = property_crud.verify_property(
         db=db,
@@ -411,6 +413,9 @@ def verify_property(
                     property_id_value,
                     verification_in.moderation_reason,
                 )
+
+        if previous_status != ModerationStatus.verified.value and requested_status == ModerationStatus.verified:
+            notify_saved_search_matches_for_property(db, property_obj=property)
 
     return property
 
