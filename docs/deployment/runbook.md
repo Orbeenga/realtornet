@@ -19,7 +19,7 @@ Accounts required:
 - Supabase project (production DB + storage + auth)
 - GitHub repository access
 - (Optional) Sentry DSN for error monitoring
-- (Optional) SendGrid account for transactional email
+- (Optional) Resend account for transactional email
 
 ---
 
@@ -137,8 +137,8 @@ Optional but recommended:
 | `SMTP_PORT` | SMTP port |
 | `SMTP_USER` | SMTP username |
 | `SMTP_PASSWORD` | SMTP password |
-| `SENDGRID_API_KEY` | SendGrid API key |
-| `MAIL_FROM` | Verified sender address |
+| `RESEND_API_KEY` | Resend API key |
+| `MAIL_FROM` | Verified sender address; use `onboarding@resend.dev` until a custom domain is registered |
 | `EMAIL_DELIVERY_MODE` | `sync` for single-process Railway deploys; `celery` only when a worker is deployed |
 | `EMAIL_DRY_RUN` | `false` in production, `true` for non-delivery dry runs |
 | `FRONTEND_BASE_URL` | Frontend URL used in email CTA links |

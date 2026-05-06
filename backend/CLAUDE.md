@@ -125,7 +125,8 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 - Backend B1/B2/B3 contracts are closed: membership alias removed, property type property-list filter live, storage service coverage raised, canonical endpoint maps documented, agency-owner profile edit live, agent directory `agency_id`/`location_id` filters live, location hierarchy contract documented, and saved-search detail/update reconfirmed.
 - Agency and user decision reasons are live: `agencies.status_reason`, `users.deactivation_reason`, and `users.role_change_reason`
 - First-time agency owner approval flow is live: approved applicants can register with the approved owner email and receive `agency_owner` plus the approved `agency_id`
-- Email provider is SendGrid via `SENDGRID_API_KEY` and `MAIL_FROM`/`EMAIL_FROM`
+- Email provider is Resend via `RESEND_API_KEY` and `MAIL_FROM`/`EMAIL_FROM`
+- Current temporary sender is `onboarding@resend.dev` until a custom RealtorNet sender domain is registered and verified
 - Transactional email dispatch is fail-open: provider failures are logged and must not block the triggering API request
 
 ## Locked Invariants

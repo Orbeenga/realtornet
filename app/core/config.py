@@ -115,15 +115,16 @@ class Settings(BaseSettings):
     DB_POOL_RECYCLE: int = 3600
     
     # Email configuration (matches .env structure)
-    SMTP_HOST: str = "smtp.sendgrid.net"
+    SMTP_HOST: str = ""
     SMTP_PORT: int = 587
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
     EMAIL_FROM: str = "RealtorNet <noreply@yourdomain.com>"
     
-    # SendGrid configuration
-    SENDGRID_API_KEY: str = ""
-    MAIL_FROM: str = "RealtorNet <no-reply@your-domain.com>"
+    # Resend configuration. Use onboarding@resend.dev until a custom sender
+    # domain is registered and verified.
+    RESEND_API_KEY: str = ""
+    MAIL_FROM: str = "onboarding@resend.dev"
     EMAIL_DRY_RUN: bool = False
     EMAIL_DELIVERY_MODE: str = "sync"  # sync is reliable on single-process Railway deploys; celery remains available.
     FRONTEND_BASE_URL: str = "https://realtornet-web.vercel.app"

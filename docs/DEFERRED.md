@@ -41,7 +41,7 @@ Remaining Phase H/backlog items after B1-B3:
 - Audit log retention remains deferred until enough production traffic exists to size policy.
 - psycopg3 dev prepared-statement investigation remains a dev-environment follow-up.
 - Advanced map view, saved search notifications, Nominatim/OSM geocoding, custom domain setup, and external storage bucket policy automation remain open.
-- Email notification service is code-complete for SendGrid but still depends on live provider/sender verification confirmation.
+- Email notification service is code-complete for Resend and uses the temporary verified `onboarding@resend.dev` sender until a custom domain is registered; live delivery confirmation remains the H.1 close gate.
 
 ## DEF-006: Supabase storage bucket provisioning and policy verification
 
