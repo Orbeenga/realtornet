@@ -7,12 +7,22 @@ from datetime import UTC, datetime, timedelta, timezone
 import uuid
 from unittest.mock import patch
 from app.api.endpoints import agencies as agencies_api
+from app.main import app
 from app.models.users import User, UserRole
 from app.models.agent_membership_audit import AgentMembershipAudit
 from app.core.security import decode_token, generate_access_token
 
 
 class TestReadAgencies:
+
+    def test_openapi_exposes_generic_review_request_contracts(self, client: TestClient):
+        paths = app.openapi()["paths"]
+
+        assert "/api/v1/agencies/{agency_id}/review-requests/" in paths
+        assert "post" in paths["/api/v1/agencies/{agency_id}/review-requests/"]
+        assert "get" in paths["/api/v1/agencies/{agency_id}/review-requests/"]
+        assert "/api/v1/agencies/{agency_id}/review-requests/{request_id}/accept/" in paths
+        assert "/api/v1/agencies/{agency_id}/review-requests/{request_id}/decline/" in paths
 
     def test_read_agencies_public_no_auth_required(self, client: TestClient):
         response = client.get("/api/v1/agencies/")
@@ -1382,6 +1392,139 @@ class TestAgencyAgentMembershipManagement:
         assert owner_response.status_code == 200
         assert user_response.json()[0]["reason"] == "Prior compliance decision"
         assert owner_response.json()[0]["action"] == "revoked"
+
+    def test_generic_review_request_create_rejects_duplicate_pending(
+        self, client: TestClient, db, agency, normal_user, normal_user_token_headers
+    ):
+        response = client.post(
+            f"/api/v1/agencies/{agency.agency_id}/review-requests/",
+            json={"message": "Please review my prior membership."},
+            headers=normal_user_token_headers,
+        )
+        duplicate_response = client.post(
+            f"/api/v1/agencies/{agency.agency_id}/review-requests/",
+            json={"message": "Second request"},
+            headers=normal_user_token_headers,
+        )
+
+        assert response.status_code == 201
+        assert response.json()["status"] == "pending"
+        assert response.json()["message"] == "Please review my prior membership."
+        assert duplicate_response.status_code == 409
+
+    def test_owner_lists_generic_review_requests_with_membership_history(
+        self, client: TestClient, db, agency, normal_user, normal_user_token_headers, agency_owner_token_headers
+    ):
+        from app.models.review_requests import ReviewRequest
+
+        db.add(
+            AgentMembershipAudit(
+                user_id=normal_user.user_id,
+                agency_id=agency.agency_id,
+                action="revoked",
+                actor_id=None,
+                reason="Prior compliance decision",
+                prior_role=UserRole.AGENT,
+                post_role=UserRole.SEEKER,
+            )
+        )
+        db.add(
+            ReviewRequest(
+                user_id=normal_user.user_id,
+                agency_id=agency.agency_id,
+                status="pending",
+                message="I would like to rejoin.",
+            )
+        )
+        db.flush()
+
+        response = client.get(
+            f"/api/v1/agencies/{agency.agency_id}/review-requests/",
+            headers=agency_owner_token_headers,
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["requester_email"] == normal_user.email
+        assert data[0]["membership_history"][0]["action"] == "revoked"
+        assert data[0]["membership_history"][0]["reason"] == "Prior compliance decision"
+
+    def test_accept_generic_review_request_reinstates_membership_and_sends_role_email(
+        self, client: TestClient, db, agency, normal_user, agency_owner_token_headers
+    ):
+        from app.models.agency_join_requests import AgencyAgentMembership
+        from app.models.review_requests import ReviewRequest
+
+        membership = AgencyAgentMembership(
+            agency_id=agency.agency_id,
+            user_id=normal_user.user_id,
+            status="inactive",
+            status_reason="Contract ended",
+        )
+        review_request = ReviewRequest(
+            user_id=normal_user.user_id,
+            agency_id=agency.agency_id,
+            status="pending",
+            message="I have completed the remediation.",
+        )
+        db.add_all([membership, review_request])
+        db.flush()
+        db.refresh(review_request)
+
+        with patch("app.api.endpoints.agencies.sync_supabase_auth_user_metadata") as sync_mock, patch(
+            "app.api.endpoints.agencies.dispatch_email_task"
+        ) as dispatch_mock:
+            response = client.patch(
+                f"/api/v1/agencies/{agency.agency_id}/review-requests/{review_request.id}/accept/",
+                json={"reason": "Review approved"},
+                headers=agency_owner_token_headers,
+            )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "accepted"
+        db.refresh(membership)
+        db.refresh(normal_user)
+        assert membership.status == "active"
+        assert normal_user.user_role == UserRole.AGENT
+        assert normal_user.agency_id == agency.agency_id
+        assert normal_user.role_version == 2
+        sync_mock.assert_called_once()
+        assert dispatch_mock.call_args.args[0] is agencies_api.send_role_change_email
+        audit = db.query(AgentMembershipAudit).filter(
+            AgentMembershipAudit.user_id == normal_user.user_id,
+            AgentMembershipAudit.agency_id == agency.agency_id,
+            AgentMembershipAudit.action == "reinstated",
+        ).one()
+        assert audit.reason == "Review approved"
+
+    def test_decline_generic_review_request_notifies_user(
+        self, client: TestClient, db, agency, normal_user, agency_owner_token_headers
+    ):
+        from app.models.review_requests import ReviewRequest
+
+        review_request = ReviewRequest(
+            user_id=normal_user.user_id,
+            agency_id=agency.agency_id,
+            status="pending",
+            message="Please reconsider.",
+        )
+        db.add(review_request)
+        db.flush()
+        db.refresh(review_request)
+
+        with patch("app.api.endpoints.agencies.dispatch_email_task") as dispatch_mock:
+            response = client.patch(
+                f"/api/v1/agencies/{agency.agency_id}/review-requests/{review_request.id}/decline/",
+                json={"reason": "Still missing documents"},
+                headers=agency_owner_token_headers,
+            )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "declined"
+        assert response.json()["reason"] == "Still missing documents"
+        dispatch_mock.assert_called_once()
+        assert dispatch_mock.call_args.args[0] is agencies_api.send_review_request_status_email
 
     def test_restore_membership_promotes_seeker_back_to_agent(
         self, client: TestClient, db, agency, normal_user, agency_owner_token_headers

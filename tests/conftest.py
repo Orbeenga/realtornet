@@ -24,6 +24,7 @@ from app.models.locations import Location
 from app.models.agencies import Agency
 from app.models.agency_join_requests import AgencyAgentMembership, AgencyJoinRequest, AgencyMembershipReviewRequest
 from app.models.agent_membership_audit import AgentMembershipAudit
+from app.models.review_requests import ReviewRequest
 from app.crud.properties import property as property_crud
 from app.schemas.properties import PropertyCreate
 

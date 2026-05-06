@@ -11,6 +11,8 @@ from datetime import datetime
 from uuid import UUID
 from enum import Enum
 
+from app.schemas.membership_audit import AgentMembershipAuditResponse
+
 
 class AgencyStatus(str, Enum):
     PENDING = "pending"
@@ -37,6 +39,12 @@ class AgencyMembershipReviewRequestStatus(str, Enum):
     REVIEWED = "reviewed"
     APPROVED = "approved"
     REJECTED = "rejected"
+
+
+class AgencyReviewRequestStatus(str, Enum):
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    DECLINED = "declined"
 
 
 class AgentMembershipRestrictionStatus(str, Enum):
@@ -153,6 +161,22 @@ class AgencyMembershipReviewDecisionRequest(AgencyDecisionRequest):
     pass
 
 
+class AgencyReviewRequestCreate(BaseModel):
+    message: Optional[str] = None
+
+
+class AgencyReviewRequestDecisionRequest(BaseModel):
+    reason: Optional[str] = None
+
+    @field_validator("reason")
+    @classmethod
+    def optional_reason_must_not_be_blank(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        reason = value.strip()
+        return reason or None
+
+
 class AgencyJoinRequestResponse(BaseModel):
     join_request_id: int
     agency_id: int
@@ -233,6 +257,23 @@ class AgencyMembershipReviewRequestResponse(BaseModel):
     response_reason: Optional[str] = None
     decided_at: Optional[datetime] = None
     decided_by: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AgencyReviewRequestResponse(BaseModel):
+    id: int
+    user_id: int
+    agency_id: int
+    status: AgencyReviewRequestStatus
+    message: Optional[str] = None
+    reason: Optional[str] = None
+    actor_id: Optional[int] = None
+    requester_email: Optional[EmailStr] = None
+    requester_name: Optional[str] = None
+    membership_history: list[AgentMembershipAuditResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 

@@ -634,6 +634,55 @@ def send_role_change_email(
         _retry_or_raise(self, exc, to_email=to_email, task_name="role change")
 
 
+@celery_app.task(
+    name="app.tasks.email_tasks.send_review_request_status_email",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+)
+def send_review_request_status_email(
+    self,
+    to_email: str,
+    user_name: str,
+    agency_name: str,
+    status: str,
+    reason: Optional[str] = None,
+) -> str:
+    """Notify a user that an agency reviewed their rejoin/review request."""
+    agency_url = _frontend_url("/agencies")
+    status_label = status.lower()
+    subject = f"Your {agency_name} review request was {status_label}"
+    reason_text = f"\n\nReason: {reason}" if reason else ""
+    reason_html = f"<p><strong>Reason:</strong> {escape(reason)}</p>" if reason else ""
+    text_body = (
+        f"Hello {user_name},\n\n"
+        f"{agency_name} has {status_label} your review request."
+        f"{reason_text}\n\n"
+        f"Browse agencies: {agency_url}"
+    )
+    html_body = f"""
+    <html>
+        <body>
+            <h2>Review request {escape(status_label)}</h2>
+            <p>Hello {escape(user_name)},</p>
+            <p>{escape(agency_name)} has {escape(status_label)} your review request.</p>
+            {reason_html}
+            <p><a href="{agency_url}">Browse agencies</a></p>
+        </body>
+    </html>
+    """
+    try:
+        return _run_send_email(
+            task_name="Review request status",
+            to_email=to_email,
+            subject=subject,
+            text=text_body,
+            html=html_body,
+        )
+    except Exception as exc:
+        _retry_or_raise(self, exc, to_email=to_email, task_name="review request status")
+
+
 # Export task functions
 __all__ = [
     "dispatch_email_task",
@@ -647,4 +696,5 @@ __all__ = [
     "send_property_moderation_email",
     "send_saved_search_match_email",
     "send_role_change_email",
+    "send_review_request_status_email",
 ]

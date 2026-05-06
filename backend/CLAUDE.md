@@ -20,8 +20,8 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 - Auth source of truth: Supabase Auth
 - Production Supabase project ref: `avkhpachzsbgmbnkfnhu`
 - Dev Supabase project ref: `umhtnqxdvffpifqbdtjs`
-- Production migration head: `d3e7c5a1b9f2`
-- Current quality gate: pyright 0 errors; pytest 1866 passed; total coverage 94.15%
+- Production migration head: `f4a8c2d9e5b1`
+- Current quality gate: pyright 0 errors; pytest passed; total coverage 93.97%
 - Public registration creates a Supabase Auth identity first, then mirrors that UUID into the local `users` row
 - Registration rollback deletes the Supabase Auth user if the local DB write fails
 - Runtime auth is still based on backend-issued JWTs after login, not direct validation of raw Supabase access tokens
@@ -30,7 +30,7 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 
 ## RLS State
 
-- RLS is enabled on all 14 public tables
+- RLS is enabled on all exposed public tables, including Phase I `agent_membership_audit` and `review_requests`
 - RLS was confirmed across all 14 Phase G tables at close
 - `scripts/check_rls.sql` is the canonical verification query for future restores, clones, and manual dashboard edits
 
@@ -59,6 +59,10 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 - `GET /api/v1/users/me/membership-history/` returns the authenticated user's membership audit history.
 - `GET /api/v1/agencies/{agency_id}/member-history/{user_id}/` returns agency-owner/admin scoped membership audit history for a specific user in that agency.
 - `PATCH /api/v1/agency-memberships/{membership_id}/leave/` lets the authenticated member voluntarily leave an active membership and records audit action `left`.
+- `POST /api/v1/agencies/{agency_id}/review-requests/` creates a generic agency review/rejoin request for the authenticated user and returns 409 when a pending request already exists for the user+agency pair.
+- `GET /api/v1/agencies/{agency_id}/review-requests/` returns pending review requests with membership audit history for agency owners/admins.
+- `PATCH /api/v1/agencies/{agency_id}/review-requests/{request_id}/accept/` accepts a pending request, reinstates membership, records audit action `reinstated`, increments `role_version` if seeker access is restored to agent, syncs Supabase Auth metadata, and sends role-change email when the role changes.
+- `PATCH /api/v1/agencies/{agency_id}/review-requests/{request_id}/decline/` declines a pending request and sends the requester a review-request decision email.
 - Property creation currently enforces agency membership via `users.agency_id`
 - Agent promotion must atomically create an `agent_profiles` row in the same transaction
 - Pagination and visibility assumptions should always be pulled from actual endpoint code, not memory
@@ -156,6 +160,16 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 - Revoking one membership while another active membership remains does not demote the user; it switches `users.agency_id` to the remaining active membership if needed.
 - Agency invitation, invite acceptance, join approval, suspension, revocation/block, restore, review approval, and voluntary leave now write audit rows.
 - Final local backend gate: pyright 0 errors; pytest 1866 passed; coverage 94.15%.
+
+## Phase I I.5 Generic Review Requests
+
+- Current migration head is `f4a8c2d9e5b1`
+- `review_requests` is the agency-level review/rejoin queue used by the contextual post-revocation frontend flow.
+- Production migration verification passed on Supabase project `avkhpachzsbgmbnkfnhu`: Alembic head `f4a8c2d9e5b1`, `review_requests` present, RLS enabled, three RLS policies present, pending user+agency unique index present, and columns match the I.5 schema.
+- Duplicate pending review requests for the same user+agency pair return 409.
+- Accepting a review request reinstates or creates the agency membership, writes `agent_membership_audit.action = 'reinstated'`, increments `users.role_version` when `seeker` is restored to `agent`, syncs Supabase Auth app metadata, and dispatches `send_role_change_email` when the role changes.
+- Declining a review request records status `declined`, stores the decision reason, and dispatches `send_review_request_status_email`.
+- Final local backend gate: pyright 0 errors; `pytest -q` passed; coverage 93.97%.
 
 ## Locked Invariants
 

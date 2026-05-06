@@ -9,6 +9,7 @@ import hashlib
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from jose import JWTError, jwt
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 import logging
 
@@ -52,6 +53,9 @@ from app.schemas.agencies import (
     AgencyMembershipReviewRequestCreate,
     AgencyMembershipReviewDecisionRequest,
     AgencyMembershipReviewRequestResponse,
+    AgencyReviewRequestCreate,
+    AgencyReviewRequestDecisionRequest,
+    AgencyReviewRequestResponse,
     AgencyUpdate
 )
 from app.schemas.properties import PropertyResponse
@@ -59,6 +63,7 @@ from app.schemas.inquiries import InquiryExtendedResponse
 from app.schemas.membership_audit import AgentMembershipAuditResponse
 from app.core.config import settings
 from app.models.agency_join_requests import AgencyAgentMembership, AgencyInvitation, AgencyJoinRequest, AgencyMembershipReviewRequest
+from app.models.review_requests import ReviewRequest
 from app.models.users import UserRole
 from app.api.endpoints.inquiries import _build_inquiry_extended_response
 from app.services.agency_inquiry_service import get_agency_inquiries
@@ -72,6 +77,8 @@ from app.tasks.email_tasks import (
     dispatch_email_task,
     send_agent_invitation_email,
     send_join_request_status_email,
+    send_review_request_status_email,
+    send_role_change_email,
 )
 
 router = APIRouter()
@@ -178,6 +185,37 @@ def _attach_pending_review_payload(
     payload["pending_review_reason"] = review_request.reason
     payload["pending_review_submitted_at"] = review_request.created_at
     return payload
+
+
+def _user_display_name(user: User) -> str:
+    return " ".join(part for part in [getattr(user, "first_name", None), getattr(user, "last_name", None)] if part) or str(user.email)
+
+
+def _review_request_payload(*, db: Session, review_request: ReviewRequest) -> dict[str, Any]:
+    requester = review_request.__dict__.get("user")
+    if requester is None:
+        requester = user_crud.get(db, user_id=cast(int, review_request.user_id))
+    requester_model = cast(User | None, requester)
+    return {
+        "id": review_request.id,
+        "user_id": review_request.user_id,
+        "agency_id": review_request.agency_id,
+        "status": review_request.status,
+        "message": review_request.message,
+        "reason": review_request.reason,
+        "actor_id": review_request.actor_id,
+        "requester_email": getattr(requester_model, "email", None),
+        "requester_name": _user_display_name(requester_model) if requester_model is not None else None,
+        "membership_history": get_agency_member_history(
+            db=db,
+            agency_id=cast(int, review_request.agency_id),
+            user_id=cast(int, review_request.user_id),
+            skip=0,
+            limit=100,
+        ),
+        "created_at": review_request.created_at,
+        "updated_at": review_request.updated_at,
+    }
 
 
 def _ensure_active_agency_membership(
@@ -316,6 +354,7 @@ def _apply_membership_role_after_status_change(
     if new_status == "active":
         if member_role == UserRole.SEEKER:
             update_payload["user_role"] = UserRole.AGENT
+            update_payload["role_version"] = cast(int, member.role_version) + 1
         if cast(int | None, member.agency_id) is None:
             update_payload["agency_id"] = membership.agency_id
     elif new_status == "inactive":
@@ -1260,6 +1299,289 @@ def reject_agency_membership_review_request(
     db.flush()
     db.refresh(review_request)
     return review_request
+
+
+@router.post(
+    "/{agency_id}/review-requests/",
+    response_model=AgencyReviewRequestResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_agency_review_request(
+    *,
+    db: Session = Depends(get_db),
+    agency_id: int,
+    review_in: AgencyReviewRequestCreate,
+    current_user: UserResponse = Depends(get_current_active_user),
+    _: None = Depends(validate_request_size),
+) -> Any:
+    """Create a generic agency review/rejoin request for the current user."""
+    current_user_model = cast(User, current_user)
+    agency = agency_crud.get(db, agency_id=agency_id)
+    if agency is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agency not found",
+        )
+
+    existing_pending = db.execute(
+        select(ReviewRequest).where(
+            ReviewRequest.user_id == current_user_model.user_id,
+            ReviewRequest.agency_id == agency_id,
+            ReviewRequest.status == "pending",
+        )
+    ).scalar_one_or_none()
+    if existing_pending is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Pending review request already exists",
+        )
+
+    review_request = ReviewRequest(
+        user_id=current_user_model.user_id,
+        agency_id=agency_id,
+        status="pending",
+        message=review_in.message,
+    )
+    db.add(review_request)
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Pending review request already exists",
+        ) from exc
+    db.refresh(review_request)
+    return _review_request_payload(db=db, review_request=review_request)
+
+
+def _get_owned_review_request(
+    *,
+    db: Session,
+    agency_id: int,
+    request_id: int,
+    current_user: User,
+) -> ReviewRequest:
+    if not _is_agency_owner_for(user=current_user, agency_id=agency_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Agency owners can only manage their own agency",
+        )
+
+    review_request = db.execute(
+        select(ReviewRequest)
+        .options(joinedload(ReviewRequest.user), joinedload(ReviewRequest.agency))
+        .where(
+            ReviewRequest.id == request_id,
+            ReviewRequest.agency_id == agency_id,
+        )
+    ).scalar_one_or_none()
+    if review_request is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Review request not found",
+        )
+    if str(review_request.status) != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Review request has already been decided",
+        )
+    return review_request
+
+
+@router.get(
+    "/{agency_id}/review-requests/",
+    response_model=list[AgencyReviewRequestResponse],
+)
+def list_agency_review_requests(
+    *,
+    db: Session = Depends(get_db),
+    agency_id: int,
+    current_user: UserResponse = Depends(get_current_active_user),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=200),
+) -> Any:
+    """List pending agency-level review requests with prior membership history."""
+    current_user_model = cast(User, current_user)
+    if not _is_agency_owner_for(user=current_user_model, agency_id=agency_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Agency owners can only view their own agency review requests",
+        )
+
+    agency = agency_crud.get(db, agency_id=agency_id)
+    if agency is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agency not found",
+        )
+
+    review_requests = db.execute(
+        select(ReviewRequest)
+        .options(joinedload(ReviewRequest.user))
+        .where(
+            ReviewRequest.agency_id == agency_id,
+            ReviewRequest.status == "pending",
+        )
+        .order_by(ReviewRequest.created_at.asc(), ReviewRequest.id.asc())
+        .offset(skip)
+        .limit(limit)
+    ).scalars().all()
+    return [_review_request_payload(db=db, review_request=review_request) for review_request in review_requests]
+
+
+@router.patch(
+    "/{agency_id}/review-requests/{request_id}/accept/",
+    response_model=AgencyReviewRequestResponse,
+)
+def accept_agency_review_request(
+    *,
+    db: Session = Depends(get_db),
+    agency_id: int,
+    request_id: int,
+    decision_in: AgencyReviewRequestDecisionRequest,
+    current_user: UserResponse = Depends(get_current_active_user),
+    _: None = Depends(validate_request_size),
+) -> Any:
+    """Accept a review request and reinstate the user's agency membership."""
+    current_user_model = cast(User, current_user)
+    review_request = _get_owned_review_request(
+        db=db,
+        agency_id=agency_id,
+        request_id=request_id,
+        current_user=current_user_model,
+    )
+    requester = user_crud.get(db, user_id=cast(int, review_request.user_id))
+    if requester is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Review request user not found",
+        )
+
+    membership = db.execute(
+        select(AgencyAgentMembership).where(
+            AgencyAgentMembership.agency_id == agency_id,
+            AgencyAgentMembership.user_id == review_request.user_id,
+            AgencyAgentMembership.deleted_at.is_(None),
+        )
+    ).scalar_one_or_none()
+    if membership is not None and str(membership.status) == "active":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User already has an active membership with this agency",
+        )
+
+    prior_role = cast(UserRole, requester.user_role)
+    try:
+        if membership is None:
+            membership = _ensure_active_agency_membership(
+                db=db,
+                agency_id=agency_id,
+                user=requester,
+                actor=current_user_model,
+            )
+            requester, user_changed = _apply_membership_role_after_status_change(
+                db=db,
+                membership=membership,
+                actor=current_user_model,
+                new_status="active",
+            )
+            write_membership_audit(
+                db=db,
+                user_id=cast(int, review_request.user_id),
+                agency_id=agency_id,
+                action="reinstated",
+                actor_id=cast(int, current_user_model.user_id),
+                reason=decision_in.reason,
+                prior_role=prior_role,
+                post_role=cast(UserRole, requester.user_role),
+            )
+            if user_changed:
+                sync_supabase_auth_user_metadata(requester)
+        else:
+            _set_membership_status_and_sync_user(
+                db=db,
+                membership=membership,
+                current_user=current_user_model,
+                status_value="active",
+                reason=decision_in.reason,
+                audit_action="reinstated",
+            )
+            requester = cast(User, user_crud.get(db, user_id=cast(int, review_request.user_id)))
+    except SupabaseUserSyncError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+    cast(Any, review_request).status = "accepted"
+    cast(Any, review_request).reason = decision_in.reason
+    review_request.actor_id = current_user_model.user_id
+    cast(Any, review_request).updated_at = datetime.now(timezone.utc)
+    db.add(review_request)
+    db.flush()
+    db.refresh(review_request)
+
+    if prior_role == UserRole.SEEKER and cast(UserRole, requester.user_role) == UserRole.AGENT:
+        dispatch_email_task(
+            send_role_change_email,
+            str(requester.email),
+            _user_display_name(requester),
+            prior_role.value,
+            UserRole.AGENT.value,
+            decision_in.reason,
+        )
+
+    return _review_request_payload(db=db, review_request=review_request)
+
+
+@router.patch(
+    "/{agency_id}/review-requests/{request_id}/decline/",
+    response_model=AgencyReviewRequestResponse,
+)
+def decline_agency_review_request(
+    *,
+    db: Session = Depends(get_db),
+    agency_id: int,
+    request_id: int,
+    decision_in: AgencyReviewRequestDecisionRequest,
+    current_user: UserResponse = Depends(get_current_active_user),
+    _: None = Depends(validate_request_size),
+) -> Any:
+    """Decline a review request and notify the requester."""
+    current_user_model = cast(User, current_user)
+    review_request = _get_owned_review_request(
+        db=db,
+        agency_id=agency_id,
+        request_id=request_id,
+        current_user=current_user_model,
+    )
+    requester = user_crud.get(db, user_id=cast(int, review_request.user_id))
+    agency = agency_crud.get(db, agency_id=agency_id)
+    if requester is None or agency is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Review request context not found",
+        )
+
+    cast(Any, review_request).status = "declined"
+    cast(Any, review_request).reason = decision_in.reason
+    review_request.actor_id = current_user_model.user_id
+    cast(Any, review_request).updated_at = datetime.now(timezone.utc)
+    db.add(review_request)
+    db.flush()
+    db.refresh(review_request)
+
+    dispatch_email_task(
+        send_review_request_status_email,
+        str(requester.email),
+        _user_display_name(requester),
+        str(agency.name),
+        "declined",
+        decision_in.reason,
+    )
+    return _review_request_payload(db=db, review_request=review_request)
 
 
 @router.get("/{agency_id}/properties", response_model=List[PropertyResponse])
