@@ -60,6 +60,12 @@ Implemented in I.2:
 Deferred to Phase J:
 - `DEF-I-SEARCH-FREQ-001`: Add saved-search notification frequency preferences and UI. Until that preference exists, Phase I sends immediately and records this default in backend behavior/tests.
 
+## DEF-J-EMAIL-DOMAIN-001: Verify RealtorNet transactional sender domain
+
+Current production sender remains `MAIL_FROM=onboarding@resend.dev`, which is Resend's temporary sender and is acceptable only while the custom sender domain is being prepared.
+
+Before broader production email use, verify a RealtorNet-controlled sender domain in Resend and update Railway `MAIL_FROM` to that verified sender, for example `noreply@realtornet.com` after the domain is confirmed in the Resend dashboard. Keep this as an environment variable; do not hardcode the sender in application code.
+
 ## DEF-006: Supabase storage bucket provisioning and policy verification
 
 Phase D fixed backend storage writes by switching all upload/delete operations to the admin client, but bucket existence, public exposure, and environment-side policy verification still live outside this repo.

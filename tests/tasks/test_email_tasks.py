@@ -225,6 +225,19 @@ def test_dispatch_email_task_uses_celery_delay_when_configured(monkeypatch: pyte
     task.apply.assert_not_called()
 
 
+def test_dispatch_email_task_uses_local_apply_in_sync_mode() -> None:
+    task = Mock()
+    result = Mock()
+    result.get.return_value = "sent"
+    task.apply.return_value = result
+
+    email_tasks.dispatch_email_task(task, "one", named="two")
+
+    task.apply.assert_called_once_with(args=("one",), kwargs={"named": "two"})
+    result.get.assert_called_once_with(propagate=True)
+    task.delay.assert_not_called()
+
+
 def test_dispatch_email_task_fail_open_for_sync_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     task = Mock()
     result = Mock()
