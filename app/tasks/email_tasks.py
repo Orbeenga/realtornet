@@ -95,19 +95,29 @@ def dispatch_email_task(task: Any, *args: Any, **kwargs: Any) -> None:
     Dispatch a transactional email without making endpoint success depend on it.
 
     Railway currently runs this backend as a single web process. The default
-    synchronous path gives us real delivery without requiring a separate Celery
-    worker; setting EMAIL_DELIVERY_MODE=celery preserves the async path.
+    synchronous path executes the Celery task locally via ``apply`` so no Redis
+    queue or worker is involved. Setting EMAIL_DELIVERY_MODE=celery preserves
+    the async path for deployments that run a worker.
     """
+    task_name = getattr(task, "name", repr(task))
     try:
         if settings.EMAIL_DELIVERY_MODE.lower() == "celery":
             task.delay(*args, **kwargs)
+            logger.info(
+                "Transactional email task queued for Celery worker",
+                extra={"task": task_name},
+            )
             return
         result = task.apply(args=args, kwargs=kwargs)
-        result.get(propagate=True)
+        task_result = result.get(propagate=True)
+        logger.info(
+            "Transactional email task executed synchronously",
+            extra={"task": task_name, "result": task_result},
+        )
     except Exception:
         logger.warning(
             "Transactional email dispatch failed; continuing without blocking request",
-            extra={"task": getattr(task, "name", repr(task))},
+            extra={"task": task_name},
             exc_info=True,
         )
 
