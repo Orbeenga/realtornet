@@ -5,17 +5,14 @@ Handles async email sending within Celery's sync task context.
 """
 
 import asyncio
-import logging
 from html import escape
 from typing import Any, NoReturn, Optional
 from urllib.parse import urlencode
 
 from app.core.celery_config import celery_app
 from app.core.config import settings
+from app.core.logging import logger
 from app.utils.email_utils import send_email
-
-
-logger = logging.getLogger(__name__)
 
 
 def _run_send_email(
@@ -104,20 +101,17 @@ def dispatch_email_task(task: Any, *args: Any, **kwargs: Any) -> None:
         if settings.EMAIL_DELIVERY_MODE.lower() == "celery":
             task.delay(*args, **kwargs)
             logger.info(
-                "Transactional email task queued for Celery worker",
-                extra={"task": task_name},
+                f"Transactional email task queued for Celery worker: {task_name}",
             )
             return
         result = task.apply(args=args, kwargs=kwargs)
         task_result = result.get(propagate=True)
         logger.info(
-            "Transactional email task executed synchronously",
-            extra={"task": task_name, "result": task_result},
+            f"Transactional email task executed synchronously: {task_name} -> {task_result}",
         )
     except Exception:
         logger.warning(
-            "Transactional email dispatch failed; continuing without blocking request",
-            extra={"task": task_name},
+            f"Transactional email dispatch failed for {task_name}; continuing without blocking request",
             exc_info=True,
         )
 
