@@ -139,7 +139,7 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 - Agency and user decision reasons are live: `agencies.status_reason`, `users.deactivation_reason`, and `users.role_change_reason`
 - First-time agency owner approval flow is live: approved applicants can register with the approved owner email and receive `agency_owner` plus the approved `agency_id`
 - Email provider is Resend via `RESEND_API_KEY` and `MAIL_FROM`/`EMAIL_FROM`; `RESEND_API_KEY` must be set in Railway service `imaginative-peace` Variables
-- Current temporary sender is `onboarding@resend.dev` until a custom RealtorNet sender domain is registered and verified
+- Current sender is `onboarding@resend.dev`, which is test-only for real-recipient delivery restrictions. Real user email delivery is blocked until a custom RealtorNet sender domain is registered, verified in Resend, and set in Railway `MAIL_FROM`.
 - Transactional email dispatch is fail-open: provider failures are logged and must not block the triggering API request
 - Railway backend now runs with `ENV=production`; do not allow production deploys to fall back to the development default.
 
