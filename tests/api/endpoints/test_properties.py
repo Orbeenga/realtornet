@@ -356,6 +356,49 @@ class TestCreateProperty:
         assert data["agency_id"] == agency.agency_id
         assert data["agency_name"] == agency.name
 
+    def test_agent_create_resolves_location_name(
+        self, client: TestClient, agent_token_headers, property_create_payload, location, agency
+    ):
+        """Free-text location creation resolves to a stored location_id."""
+        payload = {
+            **property_create_payload,
+            "location_id": None,
+            "location_name": "Victoria Island Lagos",
+        }
+        with patch("app.api.endpoints.properties.resolve_location_name_to_record", return_value=location):
+            response = client.post(
+                "/api/v1/properties/",
+                json=payload,
+                headers=agent_token_headers,
+            )
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["location_id"] == location.location_id
+        assert data["location_name"] == "Victoria Island Lagos"
+        assert data["agency_id"] == agency.agency_id
+
+    def test_agent_create_keeps_unresolved_location_name(
+        self, client: TestClient, agent_token_headers, property_create_payload
+    ):
+        """No Nominatim result must not block listing creation."""
+        payload = {
+            **property_create_payload,
+            "location_id": None,
+            "location_name": "Some New Place",
+        }
+        with patch("app.api.endpoints.properties.resolve_location_name_to_record", return_value=None):
+            response = client.post(
+                "/api/v1/properties/",
+                json=payload,
+                headers=agent_token_headers,
+            )
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["location_id"] is None
+        assert data["location_name"] == "Some New Place"
+
     def test_admin_creates_property_success(
         self, client: TestClient, admin_token_headers, property_create_payload
     ):

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 # --- DIRECT CRUD IMPORTS ---
 from app.crud.properties import property as property_crud
 from app.crud.users import user as user_crud
+from app.services.location_resolution_service import resolve_location_name_to_record
 from app.services.saved_search_notification_service import notify_saved_search_matches_for_property
 from app.tasks.email_tasks import dispatch_email_task, send_property_moderation_email
 
@@ -192,6 +193,11 @@ def create_property(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Longitude must be between -180 and 180"
             )
+
+    if property_in.location_name and property_in.location_id is None:
+        location_record = resolve_location_name_to_record(db, location_name=property_in.location_name)
+        if location_record is not None:
+            property_in.location_id = typing_cast(int, location_record.location_id)
     
     # Create property with owner tracking
     created_by_supabase_id: str = str(current_user.supabase_id)  # Normalize the authenticated UUID to the string audit format expected by the CRUD layer.
@@ -325,6 +331,11 @@ def update_property(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Longitude must be between -180 and 180"
             )
+
+    if property_in.location_name and property_in.location_id is None:
+        location_record = resolve_location_name_to_record(db, location_name=property_in.location_name)
+        if location_record is not None:
+            property_in.location_id = typing_cast(int, location_record.location_id)
     
     # Update with audit tracking
     updated_by_supabase_id: str = str(current_user.supabase_id)  # Normalize the authenticated UUID to the string audit format expected by the CRUD layer.

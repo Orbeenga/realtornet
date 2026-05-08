@@ -47,6 +47,7 @@ class Property(Base, AuditMixin, SoftDeleteMixin):
     agency_id = Column(BigInteger, ForeignKey("agencies.agency_id"), nullable=True, index=True)
     property_type_id = Column(BigInteger, ForeignKey("property_types.property_type_id"), nullable=True)
     location_id = Column(BigInteger, ForeignKey("locations.location_id"), nullable=True)
+    location_name = Column(String, nullable=True)
     geom = Column(Geography(geometry_type='POINT', srid=4326), nullable=True)
     price = Column(Numeric(precision=12, scale=2), nullable=False)
     price_currency = Column(String, nullable=True, server_default=text("'NGN'::character varying"))

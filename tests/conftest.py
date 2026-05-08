@@ -100,6 +100,10 @@ def db():
             ADD COLUMN IF NOT EXISTS moderation_reason TEXT;
         """))
         schema_conn.execute(text("""
+            ALTER TABLE properties
+            ADD COLUMN IF NOT EXISTS location_name VARCHAR;
+        """))
+        schema_conn.execute(text("""
             ALTER TABLE agency_join_requests
             ADD COLUMN IF NOT EXISTS decided_at TIMESTAMP WITH TIME ZONE;
         """))
