@@ -5,6 +5,8 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy import Column, BigInteger, String, text, Boolean, Index
 from sqlalchemy.orm import relationship
 from geoalchemy2 import Geography
+from geoalchemy2.shape import to_shape
+from typing import Any, cast
 
 from app.models.base import Base, TimestampMixin, SoftDeleteMixin
 
@@ -36,3 +38,22 @@ class Location(Base, TimestampMixin, SoftDeleteMixin):
 
     def __repr__(self):
         return f"<Location(location_id={self.location_id}, state={self.state}, city={self.city})>"
+
+    @property
+    def latitude(self) -> float | None:
+        point = self._geom_point()
+        return float(point.y) if point is not None else None
+
+    @property
+    def longitude(self) -> float | None:
+        point = self._geom_point()
+        return float(point.x) if point is not None else None
+
+    def _geom_point(self) -> Any | None:
+        geom = self.__dict__.get("geom")
+        if geom is None:
+            return None
+        try:
+            return to_shape(cast(Any, geom))
+        except Exception:
+            return None
