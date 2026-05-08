@@ -153,7 +153,13 @@ class TestReadLocationById:
         assert response.status_code == 404
 
     def test_read_location_success(self, client: TestClient, db):
-        loc = Location(state="Lagos", city="Ikeja")
+        from geoalchemy2.elements import WKTElement
+
+        loc = Location(
+            state="Lagos",
+            city="Ikeja",
+            geom=WKTElement("POINT(3.35 6.60)", srid=4326),
+        )
         db.add(loc)
         db.flush()
         db.refresh(loc)
@@ -162,6 +168,8 @@ class TestReadLocationById:
         assert response.status_code == 200
         data = response.json()
         assert data["location_id"] == loc.location_id
+        assert data["latitude"] == 6.6
+        assert data["longitude"] == 3.35
 
 
 class TestUpdateLocation:
