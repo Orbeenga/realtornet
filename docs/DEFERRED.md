@@ -62,9 +62,11 @@ Deferred to Phase J:
 
 ## DEF-J-EMAIL-DOMAIN-001: Verify RealtorNet transactional sender domain
 
-Current production sender remains `MAIL_FROM=onboarding@resend.dev`, which is Resend's temporary sender and is acceptable only while the custom sender domain is being prepared.
+Current production sender remains `MAIL_FROM=onboarding@resend.dev`, which is Resend's temporary sender. This is only suitable for Resend test/sink delivery and is not a production sender for real user inboxes.
 
-Before broader production email use, verify a RealtorNet-controlled sender domain in Resend and update Railway `MAIL_FROM` to that verified sender, for example `noreply@realtornet.com` after the domain is confirmed in the Resend dashboard. Keep this as an environment variable; do not hardcode the sender in application code.
+Email delivery to real inboxes is blocked pending a verified RealtorNet-controlled sender domain. Resend requires a verified custom domain to send reliably to recipients outside its allowed testing flow. Estimated cost: roughly $10-15/year for a basic `.com.ng` or `.com` domain, plus DNS verification time.
+
+Until resolved, platform email notifications must be treated as non-functional for real users even though the backend Resend integration and sync dispatch path are operational. After the domain is verified in Resend, update Railway `MAIL_FROM` to the verified sender, for example `noreply@realtornet.com.ng`. Keep this as an environment variable; do not hardcode the sender in application code.
 
 ## DEF-006: Supabase storage bucket provisioning and policy verification
 

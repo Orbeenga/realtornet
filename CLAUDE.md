@@ -54,7 +54,7 @@
 - Property-card agency branding stays deferred until the property list response includes agency branding fields; do not introduce N+1 card fetches
 - Agency-wide inquiry rollup is live; do not aggregate per-property inquiry calls in the frontend
 - Public signup remains seeker-only; admin and agent are backend-authoritative roles
-- Resend is the live transactional email provider; `onboarding@resend.dev` is the temporary sender until a custom sender domain is registered
+- Resend is the live transactional email provider, but `onboarding@resend.dev` is test-only for real-recipient delivery restrictions. Real user email delivery is blocked until a RealtorNet-controlled sender domain is verified and Railway `MAIL_FROM` is updated.
 - Public `/agents` directory is live
 - `/account/reviews` is live
 - Public frontend hooks should use the `authMode: omit` pattern for public API surfaces
