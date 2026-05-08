@@ -120,6 +120,32 @@ class TestReadStatesCitiesNeighborhoods:
         assert response.status_code == 200
 
 
+class TestSearchLocations:
+
+    def test_search_requires_query(self, client: TestClient):
+        response = client.get("/api/v1/locations/search")
+        assert response.status_code == 422
+
+    def test_search_uses_server_side_resolver(self, client: TestClient, monkeypatch, db):
+        loc = Location(state="lagos", city="lekki", neighborhood="phase 1")
+        db.add(loc)
+        db.flush()
+        db.refresh(loc)
+
+        def _fake_search_locations(*args, **kwargs):
+            assert kwargs["query"] == "lekki"
+            assert kwargs["limit"] == 5
+            return [loc]
+
+        monkeypatch.setattr(locations_api, "search_locations_via_nominatim", _fake_search_locations)
+        response = client.get("/api/v1/locations/search", params={"q": "lekki"})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data[0]["location_id"] == loc.location_id
+        assert data[0]["city"] == "lekki"
+
+
 class TestReadLocationById:
 
     def test_location_not_found_returns_404(self, client: TestClient):

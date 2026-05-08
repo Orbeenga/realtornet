@@ -129,6 +129,13 @@ class Settings(BaseSettings):
     EMAIL_DELIVERY_MODE: str = "sync"  # sync is reliable on single-process Railway deploys; celery remains available.
     FRONTEND_BASE_URL: str = "https://realtornet-web.vercel.app"
     BACKEND_BASE_URL: str = "https://realtornet-production.up.railway.app"
+
+    # Server-side Nominatim integration for dynamic location resolution.
+    NOMINATIM_BASE_URL: str = "https://nominatim.openstreetmap.org"
+    NOMINATIM_USER_AGENT: str = "RealtorNet/1.0 contact@yourdomain.com"
+    NOMINATIM_CACHE_TTL_SECONDS: int = 300
+    NOMINATIM_REQUEST_INTERVAL_SECONDS: float = 1.0
+    NOMINATIM_TIMEOUT_SECONDS: float = 8.0
     
     model_config = SettingsConfigDict(
         env_file=".env",

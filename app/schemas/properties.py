@@ -44,6 +44,7 @@ class PropertyBase(BaseModel):
     description: str
     property_type_id: Optional[int] = None
     location_id: Optional[int] = None
+    location_name: Optional[str] = None
     price: Decimal
     price_currency: Optional[str] = "NGN"
     bedrooms: Optional[int] = None
@@ -114,6 +115,14 @@ class PropertyCreate(PropertyBase):
 
     model_config = ConfigDict(use_enum_values=True)
 
+    @field_validator('location_name')
+    @classmethod
+    def validate_location_name(cls, v: Optional[str]) -> Optional[str]:
+        """Allow free-text locations while treating blank strings as omitted."""
+        if v is not None and not v.strip():
+            return None
+        return v.strip() if v else None
+
 
 # Update Schema (for PATCH/PUT requests - all fields optional)
 class PropertyUpdate(BaseModel):
@@ -122,6 +131,7 @@ class PropertyUpdate(BaseModel):
     description: Optional[str] = None
     property_type_id: Optional[int] = None
     location_id: Optional[int] = None
+    location_name: Optional[str] = None
     price: Optional[Decimal] = None
     price_currency: Optional[str] = None
     bedrooms: Optional[int] = None
@@ -170,6 +180,13 @@ class PropertyUpdate(BaseModel):
         if v is not None and (v < 1950 or v > current_year + 2):
             raise ValueError(f'year_built must be between 1950 and {current_year + 2}')
         return v
+
+    @field_validator('location_name')
+    @classmethod
+    def validate_location_name(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and not v.strip():
+            return None
+        return v.strip() if v else None
 
 
 class PropertyVerificationUpdate(BaseModel):

@@ -492,8 +492,7 @@ class PropertyCRUD:
         - Validates location_id and property_type_id exist
         - NO manual timestamp setting (DB handles via DEFAULT now())
         """
-        location_obj = db.get(Location, obj_in.location_id)
-        if not location_obj:
+        if obj_in.location_id is not None and not db.get(Location, obj_in.location_id):
             raise HTTPException(
                 status_code=404,
                 detail=f"Location with id={obj_in.location_id} not found"

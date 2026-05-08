@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 # --- DIRECT CRUD IMPORTS ---
 from app.crud.locations import location as location_crud
 from app.crud.users import user as user_crud
+from app.services.location_resolution_service import search_locations_via_nominatim
 
 # --- DIRECT DEPENDENCY IMPORTS ---
 from app.api.dependencies import (
@@ -157,6 +158,23 @@ def read_neighborhoods(
 
     neighborhoods = location_crud.get_neighborhoods(db, state=state, city=city)
     return neighborhoods
+
+
+@router.get("/search", response_model=List[LocationResponse])
+def search_locations(
+    *,
+    db: Session = Depends(get_db),
+    q: str = Query(..., min_length=2, max_length=200),
+    limit: int = Query(default=5, ge=1, le=10),
+) -> Any:
+    """
+    Resolve free-text locations through the backend.
+
+    The browser never calls Nominatim directly. This endpoint performs the
+    server-side lookup, stores canonical rows through get_or_create(), and
+    returns reusable location records for autocomplete consumers.
+    """
+    return search_locations_via_nominatim(db, query=q, limit=limit)
 
 
 @router.get("/{location_id}", response_model=LocationResponse)
