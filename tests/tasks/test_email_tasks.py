@@ -1,4 +1,5 @@
 from typing import Any, cast
+import runpy
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -145,6 +146,32 @@ def test_inquiry_received_email_contains_lead_context(monkeypatch: pytest.Monkey
     assert "/properties/42" in payload["html"]
 
 
+def test_inquiry_received_email_uses_phone_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    mock_send = _patch_send_email(monkeypatch)
+
+    task = cast(Any, email_tasks.send_inquiry_received_email)
+    task.apply(
+        args=(
+            "agent@example.com",
+            "Lekki Apartment",
+            "Test User",
+            "seeker@example.com",
+            None,
+            "Can I inspect tomorrow?",
+            42,
+        )
+    ).get()
+
+    assert "Phone: Not provided" in _sent_payload(mock_send)["text"]
+
+
+def test_backend_url_adds_query_string() -> None:
+    assert (
+        email_tasks._backend_url("/unsubscribe", {"token": "abc"})
+        == "https://api.realtornet.test/unsubscribe?token=abc"
+    )
+
+
 def test_property_moderation_email_includes_outcome_reason(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_send = _patch_send_email(monkeypatch)
 
@@ -247,3 +274,62 @@ def test_dispatch_email_task_fail_open_for_sync_errors(monkeypatch: pytest.Monke
     email_tasks.dispatch_email_task(task, "one")
 
     task.apply.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("task", "args"),
+    [
+        (email_tasks.send_welcome_email, ("agent@example.com", "Welcome", "Plain", "<p>HTML</p>")),
+        (email_tasks.send_verification_email, ("agent@example.com", "123456", "Ada")),
+        (email_tasks.send_agency_approval_email, ("owner@example.com", "Prime Homes")),
+        (email_tasks.send_agency_rejection_email, ("owner@example.com", "Prime Homes", "Incomplete documents")),
+        (email_tasks.send_agent_invitation_email, ("agent@example.com", "Prime Homes", "signed.token")),
+        (email_tasks.send_join_request_status_email, ("seeker@example.com", "Prime Homes", "declined", "Portfolio too thin")),
+        (
+            email_tasks.send_inquiry_received_email,
+            (
+                "agent@example.com",
+                "Lekki Apartment",
+                "Test User",
+                "seeker@example.com",
+                "+2347000000000",
+                "Can I inspect tomorrow?",
+                42,
+            ),
+        ),
+        (email_tasks.send_property_moderation_email, ("agent@example.com", "Lekki Apartment", "rejected", 42, "Photos are unclear")),
+        (
+            email_tasks.send_saved_search_match_email,
+            (
+                "seeker@example.com",
+                "Lekki 2BR",
+                "Lekki Apartment",
+                "NGN 45,000,000.00",
+                42,
+                "00000000-0000-0000-0000-000000000001",
+            ),
+        ),
+        (email_tasks.send_role_change_email, ("agent@example.com", "Test Agent", "agent", "seeker", "Membership revoked")),
+        (email_tasks.send_review_request_status_email, ("agent@example.com", "Test Agent", "Acme Realty", "declined", "Still missing documents")),
+    ],
+)
+def test_email_tasks_retry_then_raise_provider_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    task: Any,
+    args: tuple[Any, ...],
+) -> None:
+    monkeypatch.setattr(email_tasks, "send_email", AsyncMock(side_effect=RuntimeError("provider down")))
+
+    with pytest.raises(RuntimeError, match="provider down"):
+        cast(Any, task).apply(args=args).get(propagate=True)
+
+
+def test_celery_worker_entrypoint_starts_worker(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.core.celery_config import celery_app
+
+    start = Mock()
+    monkeypatch.setattr(celery_app, "start", start)
+
+    runpy.run_module("app.celery_worker", run_name="__main__")
+
+    start.assert_called_once_with()

@@ -8,9 +8,13 @@ import pytest
 from unittest.mock import MagicMock, patch
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from app.crud.saved_searches import SavedSearchCRUD, saved_search as ss_singleton
+from app.models.locations import Location
+from app.models.properties import Property, ListingStatus, ListingType
 from app.models.saved_searches import SavedSearch
+from app.models.users import User, UserRole
 from app.schemas.saved_searches import SavedSearchCreate, SavedSearchUpdate
 
 
@@ -242,3 +246,93 @@ class TestSavedSearchPattern:
 class TestSavedSearchSingleton:
     def test_is_instance(self):
         assert isinstance(ss_singleton, SavedSearchCRUD)
+
+
+class TestSavedSearchMatchDetection:
+    def test_find_matches_filters_invalid_non_matching_and_email_missing_rows(
+        self,
+        ss_crud,
+        db,
+        property_type,
+    ):
+        location = Location(state="Lagos", city="Lekki", neighborhood="Phase 1")
+        matching_user = User(
+            email="match@example.com",
+            password_hash="hashed",
+            first_name="Match",
+            last_name="User",
+            supabase_id=uuid4(),
+            user_role=UserRole.SEEKER,
+        )
+        blank_email_user = User(
+            email="",
+            password_hash="hashed",
+            first_name="Blank",
+            last_name="Email",
+            supabase_id=uuid4(),
+            user_role=UserRole.SEEKER,
+        )
+        db.add_all([location, matching_user, blank_email_user])
+        db.flush()
+
+        prop = Property(
+            title="Lekki Match",
+            description="A property that should match one saved search",
+            user_id=matching_user.user_id,
+            property_type_id=property_type.property_type_id,
+            location_id=location.location_id,
+            price=50_000_000,
+            bedrooms=3,
+            bathrooms=2,
+            listing_type=ListingType.sale,
+            listing_status=ListingStatus.available,
+        )
+        db.add(prop)
+        db.flush()
+
+        matching_search = SavedSearch(
+            user_id=matching_user.user_id,
+            name="Lekki",
+            search_params={
+                "price_min": 40_000_000,
+                "price_max": 60_000_000,
+                "bedrooms": 2,
+                "bathrooms": 2,
+                "property_type_id": property_type.property_type_id,
+                "location_id": location.location_id,
+                "listing_type": "sale",
+                "listing_status": "available",
+                "state": "lagos",
+                "city": "lekki",
+                "neighborhood": "phase 1",
+            },
+        )
+        non_matching_search = SavedSearch(
+            user_id=matching_user.user_id,
+            name="Too expensive",
+            search_params={"price_max": 10_000_000},
+        )
+        invalid_search = SavedSearch(
+            user_id=matching_user.user_id,
+            name="Invalid",
+            search_params={"bedrooms": "not-a-number"},
+        )
+        blank_email_search = SavedSearch(
+            user_id=blank_email_user.user_id,
+            name="No email",
+            search_params={"city": "lekki"},
+        )
+        db.add_all([matching_search, non_matching_search, invalid_search, blank_email_search])
+        db.flush()
+
+        matches = ss_crud.find_matches_for_verified_property(db, property_obj=prop)
+
+        assert [match.search_id for match in matches] == [matching_search.search_id]
+        assert matches[0].user_email == "match@example.com"
+        assert matches[0].search_name == "Lekki"
+
+    def test_filter_helpers_cover_none_invalid_and_enum_values(self, ss_crud):
+        assert ss_crud._to_decimal(None) is None
+        assert ss_crud._to_decimal("not-money") is None
+        assert ss_crud._enum_value(None) is None
+        assert ss_crud._enum_value(ListingType.sale) == "sale"
