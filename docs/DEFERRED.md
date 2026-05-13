@@ -116,13 +116,14 @@ Resolved status:
 - Agent-facing status is backed by the enum contract
 - Public feed excludes non-verified listings
 
-## DEF-002: Audit log retention (Promoted to Phase H)
+## DEF-002: Audit log retention
 
-No real traffic data yet to size policy against.
-
-Revisit after 60 days of production usage. Decision at that point:
-- rolling window (e.g. 90 days)
-- archive-to-cold-storage strategy
+Assessed at Phase J close (May 2026). Production volume too low to warrant
+a retention policy: 7 registered users, 2 properties, 4 inquiries at time
+of assessment. No material growth in audit_logs table observed.
+Decision: defer to Phase K. Trigger for implementation:
+audit_logs table exceeds 10,000 rows OR production user count exceeds 500.
+Revisit at Phase K open.
 
 ## DEF-G-INQ-002 (Resolved): Inquiry cards missing property title/link on agent inbox
 
