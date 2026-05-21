@@ -46,6 +46,8 @@ class TestReadAgency:
         data = response.json()
         assert data["agency_id"] == agency.agency_id
         assert data["name"] == agency.name
+        assert "agent_count" in data
+        assert "property_count" in data
 
 
 class TestAgencyApplication:
@@ -1051,9 +1053,19 @@ class TestDeleteAgency:
         assert response.status_code == 404
 
     def test_cannot_delete_agency_with_active_agents_returns_400(
-        self, client: TestClient, admin_token_headers, agency, agent_user
+        self, client: TestClient, admin_token_headers, db, agency, agent_user
     ):
-        # agent_user fixture already belongs to agency
+        from app.models.agency_join_requests import AgencyAgentMembership
+
+        db.add(
+            AgencyAgentMembership(
+                agency_id=agency.agency_id,
+                user_id=agent_user.user_id,
+                status="active",
+            )
+        )
+        db.flush()
+
         response = client.delete(
             f"/api/v1/agencies/{agency.agency_id}",
             headers=admin_token_headers
@@ -1103,7 +1115,7 @@ class TestDeleteAgency:
     def test_cannot_delete_agency_with_active_properties_returns_400(
         self, client: TestClient, admin_token_headers, agency, monkeypatch
     ):
-        monkeypatch.setattr(agencies_api.user_crud, "count_by_agency", lambda *args, **kwargs: 0)
+        monkeypatch.setattr(agencies_api.agency_crud, "count_active_members", lambda *args, **kwargs: 0)
         monkeypatch.setattr(agencies_api.property_crud, "count_by_agency", lambda *args, **kwargs: 2)
 
         response = client.delete(
@@ -1116,7 +1128,7 @@ class TestDeleteAgency:
     def test_delete_agency_soft_delete_returns_none(
         self, client: TestClient, admin_token_headers, agency, monkeypatch
     ):
-        monkeypatch.setattr(agencies_api.user_crud, "count_by_agency", lambda *args, **kwargs: 0)
+        monkeypatch.setattr(agencies_api.agency_crud, "count_active_members", lambda *args, **kwargs: 0)
         monkeypatch.setattr(agencies_api.property_crud, "count_by_agency", lambda *args, **kwargs: 0)
         monkeypatch.setattr(agencies_api.agency_crud, "soft_delete", lambda *args, **kwargs: None)
 
@@ -2159,25 +2171,102 @@ class TestReadAgencyStats:
         assert "agent_count" in data
         assert "property_count" in data
 
-    def test_agency_stats_counts_users_not_profiles(
+    def test_agency_stats_counts_active_memberships_not_legacy_users(
         self, client: TestClient, admin_token_headers, db, agency
     ):
-        agent_without_profile = User(
-            email=f"agency_stats_agent_{uuid.uuid4().hex[:6]}@example.com",
+        from app.models.agency_join_requests import AgencyAgentMembership
+
+        legacy_user_without_membership = User(
+            email=f"legacy_stats_agent_{uuid.uuid4().hex[:6]}@example.com",
             password_hash="hashed_placeholder",
-            first_name="NoProfile",
+            first_name="Legacy",
             last_name="Agent",
             user_role=UserRole.AGENT,
             supabase_id=uuid.uuid4(),
             agency_id=agency.agency_id,
         )
-        db.add(agent_without_profile)
+        active_member_without_profile = User(
+            email=f"member_stats_agent_{uuid.uuid4().hex[:6]}@example.com",
+            password_hash="hashed_placeholder",
+            first_name="Member",
+            last_name="Agent",
+            user_role=UserRole.AGENT,
+            supabase_id=uuid.uuid4(),
+        )
+        db.add_all([legacy_user_without_membership, active_member_without_profile])
         db.flush()
-        db.refresh(agent_without_profile)
+        db.refresh(active_member_without_profile)
+
+        db.add(
+            AgencyAgentMembership(
+                agency_id=agency.agency_id,
+                user_id=active_member_without_profile.user_id,
+                status="active",
+            )
+        )
+        db.flush()
 
         response = client.get(
             f"/api/v1/agencies/{agency.agency_id}/stats",
             headers=admin_token_headers
         )
         assert response.status_code == 200
-        assert response.json()["agent_count"] >= 1
+        assert response.json()["agent_count"] == 1
+
+    def test_agency_stats_count_verified_listings_by_agency_id(
+        self, client: TestClient, admin_token_headers, db, agency, other_agency, agent_user, location, property_type
+    ):
+        from app.models.properties import ListingStatus, ListingType, ModerationStatus, Property
+
+        verified_listing = Property(
+            title="Verified Agency Listing",
+            description="Counts because it belongs to the agency and is verified.",
+            user_id=agent_user.user_id,
+            agency_id=agency.agency_id,
+            property_type_id=property_type.property_type_id,
+            location_id=location.location_id,
+            price=100000,
+            listing_type=ListingType.sale,
+            listing_status=ListingStatus.available,
+            moderation_status=ModerationStatus.verified,
+            is_verified=True,
+        )
+        pending_listing = Property(
+            title="Pending Agency Listing",
+            description="Does not count until verified.",
+            user_id=agent_user.user_id,
+            agency_id=agency.agency_id,
+            property_type_id=property_type.property_type_id,
+            location_id=location.location_id,
+            price=120000,
+            listing_type=ListingType.sale,
+            listing_status=ListingStatus.available,
+            moderation_status=ModerationStatus.pending_review,
+            is_verified=False,
+        )
+        other_agency_listing = Property(
+            title="Other Agency Listing",
+            description="Verified, but belongs to another agency.",
+            user_id=agent_user.user_id,
+            agency_id=other_agency.agency_id,
+            property_type_id=property_type.property_type_id,
+            location_id=location.location_id,
+            price=140000,
+            listing_type=ListingType.sale,
+            listing_status=ListingStatus.available,
+            moderation_status=ModerationStatus.verified,
+            is_verified=True,
+        )
+        db.add_all([verified_listing, pending_listing, other_agency_listing])
+        db.flush()
+
+        stats_response = client.get(
+            f"/api/v1/agencies/{agency.agency_id}/stats",
+            headers=admin_token_headers
+        )
+        detail_response = client.get(f"/api/v1/agencies/{agency.agency_id}")
+
+        assert stats_response.status_code == 200
+        assert detail_response.status_code == 200
+        assert stats_response.json()["property_count"] == 1
+        assert detail_response.json()["property_count"] == 1

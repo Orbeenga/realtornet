@@ -60,6 +60,19 @@ Implemented in I.2:
 Deferred to Phase J:
 - `DEF-I-SEARCH-FREQ-001`: Add saved-search notification frequency preferences and UI. Until that preference exists, Phase I sends immediately and records this default in backend behavior/tests.
 
+## DEF-K-AUDIT-FK-001: Smoke-user hard delete blocked by immutable membership audit
+
+Phase K Task 1A cleaned production Codex smoke accounts `user_id=90` and `user_id=91`
+from live operational tables and deleted their Supabase Auth identities. The local
+`users` rows were soft-deleted, not hard-deleted, because `agent_membership_audit`
+is intentionally append-only and its `user_id` foreign key is `ON DELETE CASCADE`
+with a non-null column. Hard-deleting those users would cascade into the immutable
+audit table and correctly fire `prevent_agent_membership_audit_mutation()`.
+
+Deferred to Phase L: decide whether membership audit should support orphaned
+historical records through a nullable `user_id` / non-cascading FK, or keep the
+current schema and retain soft-deleted smoke users as historical principals.
+
 ## DEF-J-EMAIL-DOMAIN-001: Verify RealtorNet transactional sender domain
 
 Current production sender remains `MAIL_FROM=onboarding@resend.dev`, which is Resend's temporary sender. This is only suitable for Resend test/sink delivery and is not a production sender for real user inboxes.
