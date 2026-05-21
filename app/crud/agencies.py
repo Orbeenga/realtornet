@@ -367,31 +367,39 @@ class AgencyCRUD:
     
     
     # STATISTICS OPERATIONS
+
+    def count_active_members(self, db: Session, *, agency_id: int) -> int:
+        """Count active, non-deleted membership rows for an agency roster."""
+        from app.models.agency_join_requests import AgencyAgentMembership
+        from app.models.users import User
+
+        return int(
+            db.execute(
+                select(func.count(func.distinct(AgencyAgentMembership.user_id)))
+                .join(User, User.user_id == AgencyAgentMembership.user_id)
+                .where(
+                    AgencyAgentMembership.agency_id == agency_id,
+                    AgencyAgentMembership.status == "active",
+                    AgencyAgentMembership.deleted_at.is_(None),
+                    User.deleted_at.is_(None),
+                )
+            ).scalar()
+            or 0
+        )
     
     def get_stats(self, db: Session, agency_id: int) -> Dict[str, Any]:
         """
         Get statistics for an agency.
-        Returns agent count, property count, active listings, etc.
+        Returns canonical roster and verified listing counts.
         """
-        from app.models.agent_profiles import AgentProfile
-        from app.models.properties import Property
-        from app.models.users import User
+        from app.models.properties import ModerationStatus, Property
         
-        # Count agents
-        agent_count = int(db.execute(
-            select(func.count(User.user_id)).where(
-                User.agency_id == agency_id,
-                User.deleted_at.is_(None)
-            )
-        ).scalar() or 0)  # Count aggregation is narrowed to an int for the stats payload.
+        agent_count = self.count_active_members(db, agency_id=agency_id)
         
-        # Count properties (via agents)
         property_count = int(db.execute(
-            select(func.count(Property.property_id.distinct())).join(
-                AgentProfile,
-                Property.user_id == AgentProfile.user_id
-            ).where(
-                AgentProfile.agency_id == agency_id,
+            select(func.count(Property.property_id)).where(
+                Property.agency_id == agency_id,
+                Property.moderation_status == ModerationStatus.verified,
                 Property.deleted_at.is_(None)
             )
         ).scalar() or 0)  # Count aggregation is narrowed to an int for the stats payload.

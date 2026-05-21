@@ -266,6 +266,20 @@ def _is_agency_owner_for(*, user: User | None, agency_id: int) -> bool:
     )
 
 
+def _has_active_agency_membership(*, db: Session, user_id: int, agency_id: int) -> bool:
+    return (
+        db.execute(
+            select(AgencyAgentMembership.membership_id).where(
+                AgencyAgentMembership.agency_id == agency_id,
+                AgencyAgentMembership.user_id == user_id,
+                AgencyAgentMembership.status == "active",
+                AgencyAgentMembership.deleted_at.is_(None),
+            )
+        ).scalar_one_or_none()
+        is not None
+    )
+
+
 def _get_owned_agency_membership(
     *,
     db: Session,
@@ -708,7 +722,9 @@ def read_agency(
             detail="Agency not found"
         )
     
-    return agency
+    payload = AgencyResponse.model_validate(agency).model_dump()
+    payload.update(agency_crud.get_stats(db, agency_id=agency_id))
+    return payload
 
 
 @router.post("/", response_model=AgencyResponse, status_code=status.HTTP_201_CREATED)
@@ -871,7 +887,7 @@ def delete_agency(
         )
     
     # Optional business rule: Prevent deletion if agency has active agents
-    active_agents_count = user_crud.count_by_agency(db, agency_id=agency_id)
+    active_agents_count = agency_crud.count_active_members(db, agency_id=agency_id)
     if active_agents_count > 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -2098,8 +2114,12 @@ def read_agency_stats(
     current_user_model = cast(User, current_user)  # Narrow the dependency response object to the ORM user shape expected by the CRUD authorization helper.
     if not user_crud.is_admin(current_user_model):
         # Check if user is an agent of this agency
-        current_agency_id = cast(int | None, current_user_model.agency_id)  # Narrow the optional ORM agency foreign key before comparing it to the route parameter.
-        if current_agency_id is None or current_agency_id != agency_id:
+        current_agency_id = cast(int | None, current_user_model.agency_id)  # Keep legacy primary-agency authorization while honoring active membership rows.
+        if (current_agency_id is None or current_agency_id != agency_id) and not _has_active_agency_membership(
+            db=db,
+            user_id=cast(int, current_user_model.user_id),
+            agency_id=agency_id,
+        ):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not enough permissions to view this agency's statistics"

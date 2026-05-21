@@ -400,6 +400,8 @@ class AgencyResponse(AgencyBase):
     created_by: Optional[UUID] = None
     updated_by: Optional[UUID] = None
     deleted_by: Optional[UUID] = None
+    agent_count: int = 0
+    property_count: int = 0
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -695,11 +695,12 @@ class PropertyCRUD:
         return db_obj
     
     def count_by_agency(self, db: Session, *, agency_id: int) -> int:
-        """Count active properties for an agency."""
+        """Count verified, non-deleted properties for an agency."""
         stmt = (
             select(func.count(Property.property_id))
             .where(
                 Property.agency_id == agency_id,
+                self._verified_visibility_filter(),
                 Property.deleted_at.is_(None)
             )
         )
@@ -727,9 +728,10 @@ class PropertyCRUD:
         return list(db.execute(stmt).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
 
     def count_by_user(self, db: Session, *, user_id: int) -> int:
-        """Count active properties owned by a specific user."""
+        """Count verified, non-deleted properties owned by a specific user."""
         stmt = select(func.count(Property.property_id)).where(
             Property.user_id == user_id,
+            self._verified_visibility_filter(),
             Property.deleted_at.is_(None)
         )
         return int(db.execute(stmt).scalar() or 0)  # Coerce nullable aggregate scalar into the concrete int this API returns.
