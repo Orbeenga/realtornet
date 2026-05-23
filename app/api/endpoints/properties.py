@@ -394,19 +394,26 @@ def verify_property(
     current_user_model: User = typing_cast(User, current_user)  # Narrow the authenticated dependency result to the ORM-backed user type used by permission helpers.
     property_user_id: int = typing_cast(int, property.user_id)  # Narrow the ORM integer attribute to the runtime int carried on the loaded entity.
     is_admin = user_crud.is_admin(current_user_model)
-    is_agent_owner = (
+    property_agency_id: int | None = typing_cast(int | None, property.agency_id)
+    current_user_agency_id: int | None = typing_cast(int | None, current_user_model.agency_id)
+    is_owning_agent = (
         property_user_id == current_user.user_id
         and user_crud.is_agent(current_user_model)
     )
+    is_agency_owner_for_listing = (
+        user_crud.is_agency_owner(current_user_model)
+        and property_agency_id is not None
+        and property_agency_id == current_user_agency_id
+    )
 
-    if not is_admin and not is_agent_owner:
+    if not is_admin and not is_owning_agent and not is_agency_owner_for_listing:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to verify this property"
         )
 
     requested_status = verification_in.resolved_moderation_status
-    if not is_admin and requested_status in {ModerationStatus.rejected, ModerationStatus.revoked}:
+    if not is_admin and not is_agency_owner_for_listing and requested_status in {ModerationStatus.rejected, ModerationStatus.revoked}:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can reject or revoke property moderation",

@@ -756,6 +756,53 @@ class TestVerifyProperty:
         assert response.status_code == 403
         assert response.json()["detail"] == "Only admins can reject or revoke property moderation"
 
+    def test_agency_owner_can_revoke_listing_for_own_agency(
+        self, client: TestClient, agency_owner_token_headers, unverified_property
+    ):
+        response = client.patch(
+            f"/api/v1/properties/{unverified_property.property_id}/verify",
+            json={"moderation_status": "revoked", "moderation_reason": "Agency governance"},
+            headers=agency_owner_token_headers,
+        )
+
+        assert response.status_code == 200
+        assert response.json()["moderation_status"] == "revoked"
+        assert response.json()["moderation_reason"] == "Agency governance"
+
+    def test_agency_owner_cannot_moderate_other_agency_listing(
+        self, client: TestClient, db, agency_owner_token_headers, other_agency,
+        agent_user, location, property_type
+    ):
+        from geoalchemy2.elements import WKTElement
+
+        other_listing = Property(
+            title="Other Agency Review Listing",
+            description="Belongs to another agency",
+            user_id=agent_user.user_id,
+            agency_id=other_agency.agency_id,
+            property_type_id=property_type.property_type_id,
+            location_id=location.location_id,
+            geom=WKTElement("POINT(3.3488 6.6018)", srid=4326),
+            price=35000000,
+            bedrooms=2,
+            bathrooms=1,
+            property_size=100.0,
+            listing_type=ListingType.sale,
+            listing_status=ListingStatus.available,
+            is_verified=False,
+        )
+        db.add(other_listing)
+        db.flush()
+        db.refresh(other_listing)
+
+        response = client.patch(
+            f"/api/v1/properties/{other_listing.property_id}/verify",
+            json={"moderation_status": "verified"},
+            headers=agency_owner_token_headers,
+        )
+
+        assert response.status_code == 403
+
     def test_admin_rejection_dispatches_moderation_email(
         self, client: TestClient, admin_token_headers, unverified_property
     ):

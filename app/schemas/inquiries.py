@@ -76,6 +76,7 @@ class InquiryResponse(InquiryBase):
     updated_at: datetime
     deleted_at: Optional[datetime] = None
     deleted_by: Optional[UUID] = None
+    can_respond: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

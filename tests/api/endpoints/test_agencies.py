@@ -1201,6 +1201,14 @@ class TestReadAgencyAgents:
         assert item["license_number"] == "LIC-AGENCY-001"
         assert item["email"] == agent_user.email
 
+    def test_agency_roster_accepts_trailing_slash(
+        self, client: TestClient, agency
+    ):
+        response = client.get(f"/api/v1/agencies/{agency.agency_id}/agents/")
+
+        assert response.status_code == 200
+        assert isinstance(response.json(), list)
+
     def test_agency_owner_can_view_all_membership_statuses(
         self, client: TestClient, db, agency, agent_user, agency_owner_token_headers
     ):
@@ -1283,6 +1291,37 @@ class TestAgencyAgentMembershipManagement:
         assert revoke_response.json()["status"] == "inactive"
         assert block_response.status_code == 200
         assert block_response.json()["status"] == "blocked"
+
+    def test_agency_owner_can_suspend_membership_by_user_id(
+        self, client: TestClient, db, agency, agent_user, agency_owner_user, agency_owner_token_headers
+    ):
+        from app.models.agency_join_requests import AgencyAgentMembership
+
+        membership = AgencyAgentMembership(
+            agency_id=agency.agency_id,
+            user_id=agent_user.user_id,
+            status="active",
+        )
+        db.add(membership)
+        db.flush()
+
+        with patch("app.api.endpoints.agencies.sync_supabase_auth_user_metadata"):
+            response = client.patch(
+                f"/api/v1/agencies/{agency.agency_id}/agents/by-user/{agent_user.user_id}/suspend/",
+                json={"reason": "Roster governance"},
+                headers=agency_owner_token_headers,
+            )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "suspended"
+        assert response.json()["status_reason"] == "Roster governance"
+        assert response.json()["status_decided_by"] == agency_owner_user.user_id
+        audit = db.query(AgentMembershipAudit).filter(
+            AgentMembershipAudit.user_id == agent_user.user_id,
+            AgentMembershipAudit.agency_id == agency.agency_id,
+            AgentMembershipAudit.action == "suspended",
+        ).one()
+        assert audit.reason == "Roster governance"
 
     def test_revoking_last_active_membership_demotes_agent_to_seeker(
         self, client: TestClient, db, agency, agent_user, agency_owner_token_headers

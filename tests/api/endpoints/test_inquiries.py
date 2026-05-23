@@ -141,6 +141,25 @@ class TestReadReceivedInquiries:
         assert response.status_code == 200
         assert isinstance(response.json(), list)
 
+    def test_received_inquiries_can_respond_false_for_admin(
+        self, client: TestClient, normal_user_token_headers, admin_token_headers,
+        unverified_property_owned_by_agent
+    ):
+        create_response = client.post(
+            "/api/v1/inquiries/",
+            json={
+                "property_id": unverified_property_owned_by_agent.property_id,
+                "message": "Please send details",
+            },
+            headers=normal_user_token_headers,
+        )
+        assert create_response.status_code == 201
+
+        response = client.get("/api/v1/inquiries/received", headers=admin_token_headers)
+
+        assert response.status_code == 200
+        assert all(item["can_respond"] is False for item in response.json())
+
     def test_received_inquiries_include_seeker_contact_details(
         self,
         client: TestClient,
@@ -916,6 +935,27 @@ class TestMarkInquiryResponded:
         )
         assert response.status_code == 200
         assert response.json()["inquiry_status"] == "responded"
+
+    def test_admin_cannot_mark_responded(
+        self, client: TestClient, normal_user_token_headers, admin_token_headers,
+        unverified_property_owned_by_agent
+    ):
+        create_response = client.post(
+            "/api/v1/inquiries/",
+            json={
+                "property_id": unverified_property_owned_by_agent.property_id,
+                "message": "Please respond",
+            },
+            headers=normal_user_token_headers,
+        )
+        inquiry_id = create_response.json()["inquiry_id"]
+
+        response = client.post(
+            f"/api/v1/inquiries/{inquiry_id}/mark-responded",
+            headers=admin_token_headers,
+        )
+
+        assert response.status_code == 403
 
     def test_mark_responded_property_missing_returns_404(
         self, client: TestClient, agent_token_headers,

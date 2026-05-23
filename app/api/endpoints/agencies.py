@@ -924,7 +924,8 @@ def delete_agency(
     return agency
 
 
-@router.get("/{agency_id}/agents", response_model=List[AgencyAgentRosterResponse])
+@router.get("/{agency_id}/agents/", response_model=List[AgencyAgentRosterResponse])
+@router.get("/{agency_id}/agents", response_model=List[AgencyAgentRosterResponse], include_in_schema=False)
 def read_agency_agents(
     *,
     db: Session = Depends(get_db),
@@ -1052,6 +1053,44 @@ def suspend_agency_agent_membership(
         db=db,
         agency_id=agency_id,
         membership_id=membership_id,
+        current_user=cast(User, current_user),
+    )
+    return _set_membership_status_and_sync_user(
+        db=db,
+        membership=membership,
+        current_user=cast(User, current_user),
+        status_value="suspended",
+        reason=action_in.reason,
+    )
+
+
+@router.patch("/{agency_id}/agents/by-user/{user_id}/suspend/", response_model=AgencyAgentMembershipResponse)
+def suspend_agency_agent_membership_by_user(
+    *,
+    db: Session = Depends(get_db),
+    agency_id: int,
+    user_id: int,
+    action_in: AgencyAgentMembershipActionRequest,
+    current_user: UserResponse = Depends(get_current_agency_owner_user),
+    _: None = Depends(validate_request_size),
+) -> Any:
+    """Suspend an agency membership by member user ID."""
+    membership = db.execute(
+        select(AgencyAgentMembership).where(
+            AgencyAgentMembership.agency_id == agency_id,
+            AgencyAgentMembership.user_id == user_id,
+            AgencyAgentMembership.deleted_at.is_(None),
+        )
+    ).scalar_one_or_none()
+    if membership is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agency membership not found",
+        )
+    _get_owned_agency_membership(
+        db=db,
+        agency_id=agency_id,
+        membership_id=cast(int, membership.membership_id),
         current_user=cast(User, current_user),
     )
     return _set_membership_status_and_sync_user(
