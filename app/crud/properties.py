@@ -115,6 +115,8 @@ class PropertyCRUD:
             # Property type & location
             if filters.get("property_type_id") is not None:
                 query = query.where(Property.property_type_id == filters["property_type_id"])
+            if filters.get("agency_id") is not None:
+                query = query.where(Property.agency_id == filters["agency_id"])
             if filters.get("location_id") is not None:
                 query = query.where(Property.location_id == filters["location_id"])
 
@@ -330,6 +332,8 @@ class PropertyCRUD:
         # Property type filter
         if filters.property_type_id is not None:
             query = query.where(Property.property_type_id == filters.property_type_id)
+        if filters.agency_id is not None:
+            query = query.where(Property.agency_id == filters.agency_id)
         
         # CHANGE 3 (continued): ENUM filters in get_by_filters — case-insensitive cast
         if filters.listing_type is not None:
@@ -1142,6 +1146,8 @@ class PropertyCRUD:
             query = query.where(Property.bathrooms == filters["bathrooms"])
         if filters.get("property_type_id") is not None:
             query = query.where(Property.property_type_id == filters["property_type_id"])
+        if filters.get("agency_id") is not None:
+            query = query.where(Property.agency_id == filters["agency_id"])
         if filters.get("location_id") is not None:
             query = query.where(Property.location_id == filters["location_id"])
         if filters.get("listing_type") is not None:

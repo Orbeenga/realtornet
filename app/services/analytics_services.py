@@ -434,34 +434,42 @@ class AnalyticsService:
         ) or 0
 
         issues = [
-            DataIntegrityIssue(
-                category="properties",
-                issue_type="missing_created_by",
-                count=properties_missing_created_by,
-                description="Active properties with missing created_by",
-                severity="high"
-            ),
-            DataIntegrityIssue(
-                category="users",
-                issue_type="missing_created_by",
-                count=users_missing_created_by,
-                description="Active users with missing created_by",
-                severity="high"
-            ),
-            DataIntegrityIssue(
-                category="properties",
-                issue_type="missing_deleted_by",
-                count=soft_deleted_missing_deleted_by,
-                description="Soft-deleted properties with missing deleted_by",
-                severity="high"
-            ),
+            issue
+            for issue in (
+                DataIntegrityIssue(
+                    category="properties",
+                    issue_type="missing_created_by",
+                    count=properties_missing_created_by,
+                    description="Active properties with missing created_by",
+                    severity="high",
+                ),
+                DataIntegrityIssue(
+                    category="users",
+                    issue_type="missing_created_by",
+                    count=users_missing_created_by,
+                    description="Active users with missing created_by",
+                    severity="high",
+                ),
+                DataIntegrityIssue(
+                    category="properties",
+                    issue_type="missing_deleted_by",
+                    count=soft_deleted_missing_deleted_by,
+                    description="Soft-deleted properties with missing deleted_by",
+                    severity="high",
+                ),
+            )
+            if issue.count > 0
         ]
 
         total_issues = sum(issue.count for issue in issues)
         high_severity_count = sum(
             issue.count for issue in issues if issue.severity == "high"
         )
-        health_score = max(0.0, 100.0 - min(100.0, float(total_issues)))
+        health_score = (
+            100.0
+            if total_issues == 0
+            else max(0.0, 100.0 - min(100.0, float(total_issues)))
+        )
 
         return DataIntegrityResponse(
             issues=issues,

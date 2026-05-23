@@ -56,6 +56,7 @@ def read_properties(
     bedrooms: Optional[int] = None,
     bathrooms: Optional[float] = None,
     property_type_id: Optional[int] = None,
+    agency_id: Optional[int] = None,
     listing_type: Optional[ListingType] = None,
     listing_status: Optional[ListingStatus] = None,
     moderation_status: Optional[ModerationStatus] = None,
@@ -70,6 +71,18 @@ def read_properties(
     
     CRUD layer enforces soft delete filtering (deleted_at IS NULL).
     """
+    if agency_id is not None and (
+        current_user is None
+        or not (
+            user_crud.is_agent(typing_cast(User, current_user))
+            or user_crud.is_admin(typing_cast(User, current_user))
+        )
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="agency_id filter requires agent, agency_owner, or admin role",
+        )
+
     min_price_value: Decimal | None = typing_cast(Decimal | None, min_price)  # Preserve FastAPI's runtime coercion while narrowing the filter input for pyright.
     max_price_value: Decimal | None = typing_cast(Decimal | None, max_price)  # Preserve FastAPI's runtime coercion while narrowing the filter input for pyright.
     bathrooms_value: int | None = typing_cast(int | None, bathrooms)  # Preserve the existing query value flow while matching the filter schema's integer field.
@@ -83,6 +96,7 @@ def read_properties(
         bedrooms=bedrooms,
         bathrooms=bathrooms_value,
         property_type_id=property_type_id,
+        agency_id=agency_id,
         listing_type=listing_type_value,
         listing_status=listing_status_value,
         moderation_status=moderation_status,

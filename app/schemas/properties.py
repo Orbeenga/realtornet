@@ -274,6 +274,7 @@ class PropertyFilter(BaseModel):
     bedrooms: Optional[int] = None
     bathrooms: Optional[int] = None
     property_type_id: Optional[int] = None
+    agency_id: Optional[int] = None
     min_property_size: Optional[Decimal] = None
     max_property_size: Optional[Decimal] = None
 

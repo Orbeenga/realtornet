@@ -88,6 +88,78 @@ class TestReadProperties:
         response = client.get("/api/v1/properties/", params={"skip": 0, "limit": 5})
         assert response.status_code == 200
 
+    def test_seeker_cannot_filter_by_agency_id(
+        self, client: TestClient, normal_user_token_headers
+    ):
+        response = client.get(
+            "/api/v1/properties/",
+            params={"agency_id": 1},
+            headers=normal_user_token_headers,
+        )
+        assert response.status_code == 403
+
+    def test_anonymous_cannot_filter_by_agency_id(self, client: TestClient):
+        response = client.get("/api/v1/properties/", params={"agency_id": 1})
+        assert response.status_code == 403
+
+    def test_admin_filters_properties_by_agency_id(
+        self,
+        client: TestClient,
+        admin_token_headers,
+        db,
+        agency,
+        other_agency,
+        agent_user,
+        location,
+        property_type,
+    ):
+        from geoalchemy2.elements import WKTElement
+
+        primary = Property(
+            title="Agency Primary Listing",
+            description="Belongs to primary agency",
+            user_id=agent_user.user_id,
+            agency_id=agency.agency_id,
+            property_type_id=property_type.property_type_id,
+            location_id=location.location_id,
+            geom=WKTElement("POINT(3.3488 6.6018)", srid=4326),
+            price=30000000,
+            bedrooms=2,
+            bathrooms=1,
+            property_size=90.0,
+            listing_type=ListingType.sale,
+            listing_status=ListingStatus.available,
+            is_verified=True,
+        )
+        secondary = Property(
+            title="Other Agency Listing",
+            description="Belongs to other agency",
+            user_id=agent_user.user_id,
+            agency_id=other_agency.agency_id,
+            property_type_id=property_type.property_type_id,
+            location_id=location.location_id,
+            geom=WKTElement("POINT(3.3488 6.6018)", srid=4326),
+            price=40000000,
+            bedrooms=3,
+            bathrooms=2,
+            property_size=110.0,
+            listing_type=ListingType.sale,
+            listing_status=ListingStatus.available,
+            is_verified=True,
+        )
+        db.add_all([primary, secondary])
+        db.flush()
+
+        response = client.get(
+            "/api/v1/properties/",
+            params={"agency_id": agency.agency_id, "limit": 50},
+            headers=admin_token_headers,
+        )
+        assert response.status_code == 200
+        ids = {item["property_id"] for item in response.json()}
+        assert primary.property_id in ids
+        assert secondary.property_id not in ids
+
     def test_featured_properties_public_recent_verified_only(
         self, client: TestClient, db, normal_user, location, property_type
     ):

@@ -51,6 +51,7 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 - `GET /api/v1/agencies/{agency_id}/inquiries/` returns paginated agency-wide inquiry rollup for agency owners and admins
 - `PATCH /api/v1/properties/{property_id}/verify` accepts moderation status values: pending_review / verified / rejected / revoked
 - `GET /api/v1/properties/` accepts `property_type_id` as a public query filter; the endpoint forwards it through the shared `PropertyFilter` contract to the canonical property CRUD query.
+- `GET /api/v1/properties/` accepts `agency_id` for agent, agency_owner, and admin callers only; seekers and anonymous users receive 403 when `agency_id` is supplied.
 - `/api/v1/admin/properties` is admin-only and must serialize safely without leaking raw PostGIS objects
 - `/api/v1/property-types/` is the source of truth for property type dropdowns
 - `PATCH /api/v1/properties/{property_id}/verify` is the canonical listing moderation contract for UI review flows; admins can set all moderation states, while owning agents can publish or return their own listing to pending review.
