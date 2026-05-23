@@ -36,7 +36,7 @@ from app.schemas.properties import PropertyResponse
 router = APIRouter()
 
 
-def _build_inquiry_extended_response(inquiry: Any) -> dict[str, Any]:
+def _build_inquiry_extended_response(inquiry: Any, *, can_respond: bool = False) -> dict[str, Any]:
     """Serialize an inquiry with lightweight seeker contact details for owners."""
     inquiry_user = getattr(inquiry, "user", None)
     user_payload = None
@@ -66,6 +66,7 @@ def _build_inquiry_extended_response(inquiry: Any) -> dict[str, Any]:
         "updated_at": inquiry.updated_at,
         "deleted_at": inquiry.deleted_at,
         "deleted_by": inquiry.deleted_by,
+        "can_respond": can_respond,
         "user": user_payload,
         "property": property_payload,
     }
@@ -167,7 +168,8 @@ def read_received_inquiries(
         owner_user_id=current_user.user_id,
         **pagination,
     )
-    return [_build_inquiry_extended_response(inquiry) for inquiry in inquiries]
+    can_respond = user_crud.is_agent(current_user_model) and not user_crud.is_admin(current_user_model)
+    return [_build_inquiry_extended_response(inquiry, can_respond=can_respond) for inquiry in inquiries]
 
 
 @router.get("/{inquiry_id}", response_model=InquiryResponse)
@@ -391,7 +393,7 @@ def update_inquiry_status(
     property_owner_id: int = typing_cast(int, property.user_id)  # Narrow the ORM-backed property owner ID before the authorization comparison.
     current_user_id: int = typing_cast(int, current_user.user_id)  # Narrow the authenticated user ID locally without changing the dependency contract.
     current_user_model: User = typing_cast(User, current_user)  # typing cast: endpoint local only for CRUD permission helper compatibility.
-    if property_owner_id != current_user_id and not user_crud.is_admin(current_user_model):
+    if property_owner_id != current_user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to update inquiry status"
@@ -451,7 +453,7 @@ def mark_inquiry_viewed(
     property_owner_id: int = typing_cast(int, property.user_id)  # Narrow the ORM-backed property owner ID before the authorization comparison.
     current_user_id: int = typing_cast(int, current_user.user_id)  # Narrow the authenticated user ID locally without changing the dependency contract.
     current_user_model: User = typing_cast(User, current_user)  # typing cast: endpoint local only for CRUD permission helper compatibility.
-    if property_owner_id != current_user_id and not user_crud.is_admin(current_user_model):
+    if property_owner_id != current_user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to mark inquiry as viewed"
@@ -503,7 +505,7 @@ def mark_inquiry_responded(
     property_owner_id: int = typing_cast(int, property.user_id)  # Narrow the ORM-backed property owner ID before the authorization comparison.
     current_user_id: int = typing_cast(int, current_user.user_id)  # Narrow the authenticated user ID locally without changing the dependency contract.
     current_user_model: User = typing_cast(User, current_user)  # typing cast: endpoint local only for CRUD permission helper compatibility.
-    if property_owner_id != current_user_id and not user_crud.is_admin(current_user_model):
+    if property_owner_id != current_user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to mark inquiry as responded"
