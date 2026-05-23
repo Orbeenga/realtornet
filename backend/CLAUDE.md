@@ -3,7 +3,7 @@
 ## Entry State
 
 FastAPI backend deployed on Railway. Sentry is instrumented.
-Phase F is closed. Phase G is closed as of April 29, 2026. Phase H is closed as of May 6, 2026. Phase I is opening.
+Phase F is closed. Phase G is closed as of April 29, 2026. Phase H is closed as of May 6, 2026. Phase I is closed. Phase J is closed except `DEF-J-EMAIL-DOMAIN-001`. Phase K is open. Backend v0.5.3+ at commit `c34bca9`.
 
 Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this file for backend-specific state.
 
@@ -20,8 +20,8 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 - Auth source of truth: Supabase Auth
 - Production Supabase project ref: `avkhpachzsbgmbnkfnhu`
 - Dev Supabase project ref: `umhtnqxdvffpifqbdtjs`
-- Production migration head: `f4a8c2d9e5b1`
-- Current quality gate: pyright 0 errors; pytest passed; total coverage 93.97%
+- Production migration head: `a9d1f3c7b482`
+- Current quality gate: pyright 0 errors; pytest passed; total coverage 95.03%
 - Public registration creates a Supabase Auth identity first, then mirrors that UUID into the local `users` row
 - Registration rollback deletes the Supabase Auth user if the local DB write fails
 - Runtime auth is still based on backend-issued JWTs after login, not direct validation of raw Supabase access tokens
@@ -108,6 +108,8 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 - `GET /api/v1/locations/states` returns distinct state strings.
 - `GET /api/v1/locations/cities?state={state}` returns distinct city strings, optionally filtered by normalized state string.
 - `GET /api/v1/locations/neighborhoods?state={state}&city={city}` returns distinct neighborhood strings, optionally filtered by normalized state and/or city strings.
+- `GET /api/v1/locations/search?q=&limit=` resolves free-text locations server-side through Nominatim and returns reusable `LocationResponse` rows. Browser-direct geocoding is prohibited.
+- Property create/update accepts `location_id` for existing records or `location_name` for server-side resolution. When `location_name` resolves, the backend calls `location_crud.get_or_create()` and links the property to the returned `location_id`; if resolution fails, property creation must not be blocked.
 
 ### Saved Searches
 
@@ -171,6 +173,20 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 - Declining a review request records status `declined`, stores the decision reason, and dispatches `send_review_request_status_email`.
 - Final local backend gate: pyright 0 errors; `pytest -q` passed; coverage 93.97%.
 
+## Phase J Closed State
+
+- Phase J scope is closed at backend commit `c34bca9` (v0.5.3+): dynamic location resolution, map coordinate serialization, coverage gate, and multi-agency revocation smoke are complete.
+- Dynamic location resolution is live: `location_resolution_service.py` calls Nominatim server-side with caching/throttling, `PropertyCreate.location_name` is accepted, and `GET /api/v1/locations/search?q=&limit=` powers frontend autocomplete.
+- Email dispatch code is correct for sync mode: `dispatch_email_task` branches on `EMAIL_DELIVERY_MODE` and sync mode runs tasks in-process without requiring a Railway Celery worker.
+- Sole remaining Phase J exit criterion: `DEF-J-EMAIL-DOMAIN-001`. Real-user email delivery stays blocked while `MAIL_FROM=onboarding@resend.dev` until a verified sender domain is configured in Resend/Railway and a real inbox delivery is confirmed.
+- `DEF-I-MEM-SMOKE-001` is closed with production evidence: agent `user_id=90` retained `user_role=agent` and `role_version=6` after one of two active memberships was revoked; temporary agency `12`, owner `92`, invite `4`, and membership `7` were soft-deleted after verification.
+- `DEF-I-COV-001` is closed: commit `7e8fd35` raised coverage to 95.03%, full `pytest -q` passed, and `pyright` returned 0 errors.
+
+## Phase K Opening State
+
+- Current execution reference: [RealtorNet_Phase_K_Opening_Brief.md](C:/Users/Apine/realtornet/RealtorNet_Phase_K_Opening_Brief.md)
+- Phase K backend work starts from v0.5.3+ at commit `c34bca9`; promoted J items (map, location quality, messaging, aggregation, audit retention) are tracked in the Phase K brief and `docs/DEFERRED.md`.
+
 ## Locked Invariants
 
 - Public registration must always downgrade requested role to `seeker`
@@ -182,8 +198,7 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 ## Reference Data
 
 - Production currently has 12 property types
-- Production currently has 15 Lagos location records seeded for the current dropdown-based flow
-- A full move to free-text geocoding is a later architectural change, not the current backend contract
+- Location data is dynamic and self-populating through server-side Nominatim resolution; do not manually seed broad location data as a substitute for the resolver.
 
 ## Backend Agent Protocol
 
@@ -205,7 +220,9 @@ Do not answer from stale docs when the router, schema, or CRUD layer says otherw
 
 ## Next Session Handover
 
-- Phase H is closed; start future work from Phase I unless investigating a regression from the closed Phase H state
+- Phase H is closed; do not reopen Phase H unless investigating a regression from the closed Phase H state
+- Phase I is closed; Phase J is closed except `DEF-J-EMAIL-DOMAIN-001`
+- Phase K is active from the Phase K opening brief; verified sender domain remains the launch-blocking operations item
 - Keep production and dev Supabase separation strict during all work
 - Treat agency card branding as blocked on backend enrichment until the response contract changes
 - Keep Railway `/healthz` returning 200 in degraded mode; Redis rate limiting should connect through `REDIS_URL` or Railway `REDISHOST`/`REDISPORT`/`REDISUSER`/`REDISPASSWORD`
