@@ -22,7 +22,7 @@ class AgentDirectoryResponse(BaseModel):
     user_id: int
     display_name: str
     agency_id: Optional[int] = None
-    agency_name: Optional[int] = None
+    agency_name: Optional[str] = None
     bio: Optional[str] = None
     profile_image_url: Optional[str] = None
 
