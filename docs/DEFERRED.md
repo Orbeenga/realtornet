@@ -60,6 +60,24 @@ Implemented in I.2:
 Deferred to Phase J:
 - `DEF-I-SEARCH-FREQ-001`: Add saved-search notification frequency preferences and UI. Until that preference exists, Phase I sends immediately and records this default in backend behavior/tests.
 
+## Phase J workbook and closeout update (May 13, 2026)
+
+The Phase J workbook is now attached at repository root as `RealtorNet_Phase_J_Workbook.md` and is the current execution reference.
+
+Closed before Phase J active dispatch:
+- `DEF-I-MEM-SMOKE-001`: Multi-agency revocation smoke passed in production. Agent `user_id=90` had two active memberships; revoking the temporary second membership left `user_role=agent`, kept `role_version=6`, marked only the temporary membership inactive, and left the original active membership intact. Temporary agency `12`, owner `92`, invite `4`, and membership `7` were soft-deleted after verification.
+- `DEF-I-COV-001`: Coverage gate is closed. Commit `7e8fd35` raised backend coverage to 95.03%; `pyright` returned 0 errors and full `pytest -q` passed.
+- `DEF-I-LOC-001`: Dynamic location resolution is live. Property create/update accepts `location_name`; backend resolves server-side through Nominatim, stores rows through `location_crud.get_or_create()`, and exposes `GET /api/v1/locations/search?q=&limit=` for frontend autocomplete. No manual broad seeding is required.
+
+Phase J active backlog:
+- `DEF-J-EMAIL-DOMAIN-001`: Real-user email delivery remains blocked until a verified sender domain is configured in Resend and Railway `MAIL_FROM` is updated.
+- `DEF-J-MAP-001`: Interactive `/properties` map view with Leaflet/OSM pins from resolved coordinates.
+- `DEF-J-LOC-001`: Location breadth/result-quality monitoring; prefer Nigerian-relevant Nominatim results and prevent global location pollution.
+- `DEF-J-FREQ-001`: Saved-search notification frequency preferences; current behavior remains immediate delivery.
+- `DEF-J-MSG-001`: In-app messaging / inquiry reply thread model.
+- `DEF-J-AGG-001`: Agency public-directory aggregation optimization after traffic data.
+- `DEF-002`: Audit log retention decision after enough production volume exists.
+
 ## DEF-K-AUDIT-FK-001: Smoke-user hard delete blocked by immutable membership audit
 
 Phase K Task 1A cleaned production Codex smoke accounts `user_id=90` and `user_id=91`

@@ -65,10 +65,10 @@ class AgencyCRUD:
         ).scalar_one_or_none()
     
     def get_multi(
-        self, 
-        db: Session, 
-        *, 
-        skip: int = 0, 
+        self,
+        db: Session,
+        *,
+        skip: int = 0,
         limit: int = 100,
         is_verified: Optional[bool] = None,
         status: Optional[str] = None,
@@ -76,22 +76,43 @@ class AgencyCRUD:
         """
         Get multiple agencies with optional verification filter and pagination.
         Filters out soft-deleted agencies.
+        Includes agent_count and property_count from canonical queries.
         """
+        from app.models.properties import ModerationStatus, Property
+
         query = select(Agency).where(Agency.deleted_at.is_(None))
-        
+
         # Apply verification filter
         if is_verified is not None:
             query = query.where(Agency.is_verified == is_verified)
         if status is not None:
             query = query.where(Agency.status == status)
-        
+
         # Order by name alphabetically
         query = query.order_by(Agency.name.asc())
-        
+
         # Pagination
         query = query.offset(skip).limit(limit)
-        
-        return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence return to the declared concrete list type.
+
+        agencies = list(db.execute(query).scalars().all())
+
+        # Attach computed counts to avoid N+1 queries
+        for agency in agencies:
+            agency_id: int = agency.agency_id  # type: ignore
+            agent_count = self.count_active_members(db, agency_id=agency_id)
+            property_count = int(db.execute(
+                select(func.count(Property.property_id)).where(
+                    Property.agency_id == agency_id,
+                    Property.moderation_status == ModerationStatus.verified,
+                    Property.deleted_at.is_(None)
+                )
+            ).scalar() or 0)
+
+            # Attach as attributes (not persisted to DB, used for response)
+            object.__setattr__(agency, "_agent_count", agent_count)
+            object.__setattr__(agency, "_property_count", property_count)
+
+        return agencies
     
     def search(
         self,
