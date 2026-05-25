@@ -38,18 +38,18 @@ def read_agents_directory(
     """
     Public agents directory.
 
-    Returns all non-deleted agents with their display name and agency affiliation.
+    Returns all non-deleted agents and agency_owners with their display name and agency affiliation.
     Used to populate the frontend agents directory listing.
     """
     skip = pagination.get("skip", 0)
     limit = pagination.get("limit", 100)
 
-    # Query users who are agents, not deleted, with their agency name
+    # Query users who are agents OR agency_owners, not deleted, with their agency name
     query = select(User, Agency.name).outerjoin(
         Agency, User.agency_id == Agency.agency_id
     ).where(
         User.deleted_at.is_(None),
-        User.user_role == UserRole.AGENT
+        User.user_role.in_([UserRole.AGENT, UserRole.AGENCY_OWNER])
     ).order_by(
         User.first_name.asc(),
         User.last_name.asc()
