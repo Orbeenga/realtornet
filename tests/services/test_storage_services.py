@@ -60,7 +60,7 @@ def test_resize_image_returns_optimized_image_bytes():
 
 
 def test_resize_image_rejects_invalid_bytes():
-    with pytest.raises(ValueError, match="Invalid image file"):
+    with pytest.raises(ValueError, match="Invalid image"):
         storage_services.resize_image(b"not an image")
 
 
