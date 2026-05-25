@@ -78,6 +78,36 @@ Phase J active backlog:
 - `DEF-J-AGG-001`: Agency public-directory aggregation optimization after traffic data.
 - `DEF-002`: Audit log retention decision after enough production volume exists.
 
+## Phase K Stream A-C backend update (May 25, 2026)
+
+Backend infrastructure and data-gap items deployed in commit `52f14b5`:
+
+Stream A — Settings & Infrastructure:
+- A.1: Settings class environment variable names confirmed aligned (SUPABASE_SERVICE_ROLE_KEY, REDIS_URL); redis://localhost:6379 defaults are intentional fallbacks replaced if platform Redis available
+- A.2: Test telemetry isolated — `SENTRY_DSN=""` added to conftest.py to prevent test errors (including RuntimeError: surprise from test mocks) leaking to production Sentry
+
+Stream B — Frontend-Blocking Data Gaps:
+- B.1: `property_count` added to agency list response via canonical query (verified + not deleted); CRUD layer computes per agency in get_multi()
+- B.2: New public `/api/v1/agents/` directory endpoint deployed; returns agent display_name (first_name + last_name) with agency_name affiliation; no generic/null names filtered
+- B.3: 12 property types seeded via Alembic migration (20260524_0000): Apartment, House, Bungalow, Duplex, Condo, Townhouse, Land, Commercial, Office, Warehouse, Shop, Semi-detached
+
+Stream C — Sentry Code Fixes:
+- C.1: Image format validation (imghdr magic-bytes check) added before resize_image() to reject non-image files early with clear error
+- C.2: Storage delete confirmed using service role client; buckets still need RLS policies (0 → 4 each) via operator action in Supabase dashboard
+- C.3: RuntimeError: surprise was from test_property_amenities.py mock; resolved by A.2 Sentry isolation (tests no longer leak to production)
+- C.4: Stats overview error logging improved with exc_info=True and error_type context
+
+Stream D — Stats Canonical Sources:
+- Agency detail (GET /agencies/{id}) and stats (GET /agencies/{id}/stats) endpoints both use agency_crud.get_stats() with canonical queries
+- agent_count: count_active_members (distinct users with active non-deleted memberships)
+- property_count: count(property_id) WHERE agency_id=X AND moderation_status=verified AND deleted_at IS NULL
+
+Pending completion:
+- Railway deployment confirmation: migration must complete and property-types endpoint must return 12 types
+- E.1–E.3: Production SQL verification (smoke user deletion, user_id=74 data consistency, property 3 listing_type) — queries prepared, need Supabase SQL editor execution
+- F: N+1 query investigation — enable locally via DEBUG=true + SQLAlchemy echo (already configured in database.py line 24)
+- Frontend action: After B.1 confirmed live on Railway, run `pnpm gen:types` to regenerate API types from updated OpenAPI schema
+
 ## DEF-K-AUDIT-FK-001: Smoke-user hard delete blocked by immutable membership audit
 
 Phase K Task 1A cleaned production Codex smoke accounts `user_id=90` and `user_id=91`

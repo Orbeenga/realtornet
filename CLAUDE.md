@@ -60,11 +60,20 @@
 - Agency-wide inquiry rollup is live; do not aggregate per-property inquiry calls in the frontend
 - Public signup remains seeker-only; admin and agent are backend-authoritative roles
 - Resend is the live transactional email provider, but `onboarding@resend.dev` is test-only for real-recipient delivery restrictions. Real user email delivery is blocked until a RealtorNet-controlled sender domain is verified and Railway `MAIL_FROM` is updated.
-- Public `/agents` directory is live
+- Public `/agents` directory is now live (new Phase K endpoint)
 - `/account/reviews` is live
 - Public frontend hooks should use the `authMode: omit` pattern for public API surfaces
 - Browser-direct geocoding is prohibited; all Nominatim/OSM resolution must happen server-side through backend contracts.
 - Mobile total blocking time target was met in Phase I I.6 for the current revised threshold; deeper <100ms RSC work is Phase K unless fresh traces reprioritize it.
+
+## Phase K backend progress
+- Stream A (settings/infrastructure): Settings class env variables confirmed correct; test telemetry isolated from production Sentry
+- Stream B (data gaps): property_count added to agency list with canonical query; agents directory endpoint `/api/v1/agents/` deployed; 12 property types migration created
+- Stream C (Sentry fixes): Image validation (imghdr) added before resize; stats overview error logging improved; test RuntimeError: surprise resolved by Sentry isolation
+- Stream D (canonical sources): Agency detail and stats endpoints verified using canonical queries
+- Backend pyright: 0 errors after all changes
+- Pending: Railway deployment confirmation (migration must complete), production SQL verification (E.1–E.3), N+1 investigation (F, use DEBUG=true + SQLAlchemy echo)
+- Frontend action required: After B.1 live on Railway, run `pnpm gen:types` to regenerate API types
 
 ## Phase K opening backlog
 - `DEF-J-EMAIL-DOMAIN-001` - sole remaining Phase J exit criterion; real-user email delivery is blocked until a RealtorNet-controlled sender domain is verified in Resend and Railway `MAIL_FROM` is updated.
