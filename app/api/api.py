@@ -14,13 +14,14 @@ from app.api.endpoints import (
     auth,
     admin,
     analytics,
-    
+
     # Core Entities
     users,
     agencies,
     agency_invitations,
     agency_memberships,
     agent_profiles,
+    agents,
     profiles,
     
     # Domain Entities
@@ -87,6 +88,12 @@ api_router.include_router(
     agent_profiles.router,
     prefix="/agent-profiles",
     tags=["agent-profiles"]
+)
+
+api_router.include_router(
+    agents.router,
+    prefix="/agents",
+    tags=["agents"]
 )
 
 api_router.include_router(

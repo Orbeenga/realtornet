@@ -1034,7 +1034,7 @@ def get_stats_overview(
 ) -> Any:
     """
     Get quick system overview statistics (admin only).
-    
+
     All counts exclude soft-deleted records.
     Uses CRUD layer methods that enforce deleted_at IS NULL filtering.
     """
@@ -1042,11 +1042,11 @@ def get_stats_overview(
         # Use CRUD methods that respect soft delete
         total_users = user_crud.count_active(db)
         total_properties = property_crud.count_active(db)
-        
+
         # Get approved/pending counts (also filtering deleted_at)
         approved_properties = property_crud.count_approved(db)
         pending_properties = property_crud.count_pending(db)
-        
+
         return {
             "total_users": total_users,
             "total_properties": total_properties,
@@ -1054,7 +1054,11 @@ def get_stats_overview(
             "pending_properties": pending_properties
         }
     except Exception as e:
-        logger.error(f"Error generating stats overview")
+        logger.error(
+            "Stats overview aggregation failed",
+            extra={"error_type": type(e).__name__},
+            exc_info=True
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Unable to generate statistics. Please try again later."

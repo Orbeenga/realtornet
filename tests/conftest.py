@@ -12,6 +12,7 @@ from sqlalchemy import text
 
 import os
 os.environ["ENV"] = "test"
+os.environ["SENTRY_DSN"] = ""  # Disable Sentry during tests to prevent test errors leaking to production
 
 from app.core.config import settings
 from app.core.database import Base, get_db

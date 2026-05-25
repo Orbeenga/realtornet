@@ -93,5 +93,22 @@ class Agency(Base, AuditMixin, SoftDeleteMixin):
     
     @property
     def agent_count(self) -> int:
-        """Get count of active agents (excluding soft-deleted)."""
+        """Get count of active agents (excluding soft-deleted).
+        Uses pre-computed value if available (set by CRUD layer), otherwise computes from relationship.
+        """
+        # Check if pre-computed value was set by CRUD layer
+        if hasattr(self, "_agent_count"):
+            return getattr(self, "_agent_count")
+        # Fallback to computing from relationship
         return sum(1 for agent in self.agents if agent.deleted_at is None)
+
+    @property
+    def property_count(self) -> int:
+        """Get count of verified properties (excluding soft-deleted).
+        Uses pre-computed value if available (set by CRUD layer), otherwise returns 0.
+        """
+        # Check if pre-computed value was set by CRUD layer
+        if hasattr(self, "_property_count"):
+            return getattr(self, "_property_count")
+        # Default to 0 if not pre-computed (to avoid query overhead)
+        return 0

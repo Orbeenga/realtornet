@@ -35,17 +35,26 @@ SUPPORTED_FORMATS = {"JPEG", "PNG", "WEBP"}
 def resize_image(file_data: bytes, size: Tuple[int, int] = (512, 512)) -> bytes:
     """
     Resize image to a fixed size while maintaining aspect ratio.
-    
+
     Args:
         file_data: Original image bytes
         size: Target size as (width, height) tuple
-        
+
     Returns:
         Resized image bytes optimized for storage
-        
+
     Raises:
         ValueError: If image format is unsupported or file is corrupted
     """
+    # Validate image format before processing - MIME/magic bytes check
+    import imghdr
+    detected_format = imghdr.what(None, h=file_data)
+    if detected_format not in ('jpeg', 'png', 'webp'):
+        raise ValueError(
+            f"Invalid image format: {detected_format}. "
+            f"Supported formats: JPEG, PNG, WebP"
+        )
+
     try:
         with Image.open(BytesIO(file_data)) as img:
             # Convert RGBA to RGB for JPEG compatibility
@@ -53,21 +62,24 @@ def resize_image(file_data: bytes, size: Tuple[int, int] = (512, 512)) -> bytes:
                 rgb_img = Image.new('RGB', img.size, (255, 255, 255))
                 rgb_img.paste(img, mask=img.split()[3])
                 img = rgb_img
-            
+
             # Resize maintaining aspect ratio
             img.thumbnail(size, Image.Resampling.LANCZOS)
-            
+
             # Determine output format
             output_format = img.format
             if not output_format or output_format not in SUPPORTED_FORMATS:
                 output_format = "JPEG"  # Safe default for photos
-            
+
             # Save optimized image
             buf = BytesIO()
             img.save(buf, format=output_format, optimize=True, quality=85)
             buf.seek(0)
             return buf.read()
-            
+
+    except ValueError:
+        # Re-raise validation errors as-is
+        raise
     except Exception as e:
         logger.error(
             "Image resize failed",
