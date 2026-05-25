@@ -1,4 +1,3 @@
-# app/api/endpoints/agents.py
 """
 Public agents directory endpoint - read-only public view of agents
 Returns simplified agent information for frontend display
@@ -23,7 +22,7 @@ class AgentDirectoryResponse(BaseModel):
     user_id: int
     display_name: str
     agency_id: Optional[int] = None
-    agency_name: Optional[str] = None
+    agency_name: Optional[int] = None
     bio: Optional[str] = None
     profile_image_url: Optional[str] = None
 
@@ -67,7 +66,7 @@ def read_agents_directory(
 
         if display_name:  # Only include agents with non-empty display names
             agents.append(AgentDirectoryResponse(
-                user_id=user.id,
+                user_id=user.user_id,
                 display_name=display_name,
                 agency_id=user.agency_id,
                 agency_name=agency_name,
@@ -76,4 +75,3 @@ def read_agents_directory(
             ))
 
     return agents
-
