@@ -111,7 +111,7 @@ class ResourceNotFoundException(ApplicationException):
         super().__init__(message, status_code=404)
 
 # Example of how to use in an endpoint
-def example_endpoint():
+def example_endpoint():  # pragma: no cover
     try:
         # Some business logic
         if not valid_condition:  # pyright: ignore[reportUndefinedVariable] - illustrative placeholder in example-only snippet.

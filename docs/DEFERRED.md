@@ -104,9 +104,18 @@ Stream D — Stats Canonical Sources:
 
 Pending completion:
 - Railway deployment confirmation: migration must complete and property-types endpoint must return 12 types
-- E.1–E.3: Production SQL verification (smoke user deletion, user_id=74 data consistency, property 3 listing_type) — queries prepared, need Supabase SQL editor execution
+- E.1–E.3: Production SQL verification (smoke user deletion, user_id=74 data consistency, property 3 listing_type) — queries corrected (display_name→first_name/last_name, id→user_id/property_id), ready for Supabase SQL editor execution
 - F: N+1 query investigation — enable locally via DEBUG=true + SQLAlchemy echo (already configured in database.py line 24)
 - Frontend action: After B.1 confirmed live on Railway, run `pnpm gen:types` to regenerate API types from updated OpenAPI schema
+
+## Phase K quality gate update (May 26, 2026)
+
+Backend quality gates now fully enforced:
+- Coverage: raised from 94.97% → 95.23%; `pytest.ini --cov-fail-under` updated from 92.78 to 95.0
+- New test: `tests/core/test_exceptions.py` covers `ErrorHandler.global_exception_handler` (all 3 dispatch paths) and `ValidationException`, `AuthorizationException`, `ResourceNotFoundException` constructors
+- pyright: 0 errors confirmed after new test file
+- CI fix: `.github/workflows/ci.yml` now exports `POSTGRES_SERVER`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT` at job-runner level so pydantic-settings `Settings()` instantiates cleanly without a `.env` file; added `pyright` step and `alembic upgrade head` before tests
+- E.1–E.3 query bugs fixed in `scripts/PRODUCTION_VERIFICATION.md`: `display_name` column does not exist on `users` table (correct: `first_name`/`last_name` concat); `WHERE id =` corrected to `WHERE user_id =` (E.2) and `WHERE property_id =` (E.3)
 
 ## DEF-K-AUDIT-FK-001: Smoke-user hard delete blocked by immutable membership audit
 
