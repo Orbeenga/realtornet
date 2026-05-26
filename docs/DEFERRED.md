@@ -117,6 +117,24 @@ Backend quality gates now fully enforced:
 - CI fix: `.github/workflows/ci.yml` now exports `POSTGRES_SERVER`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT` at job-runner level so pydantic-settings `Settings()` instantiates cleanly without a `.env` file; added `pyright` step and `alembic upgrade head` before tests
 - E.1–E.3 query bugs fixed in `scripts/PRODUCTION_VERIFICATION.md`: `display_name` column does not exist on `users` table (correct: `first_name`/`last_name` concat); `WHERE id =` corrected to `WHERE user_id =` (E.2) and `WHERE property_id =` (E.3)
 
+## DEF-L-POSTGIS-001: Move PostGIS to extensions schema (Phase L)
+
+PostGIS is currently installed in the `public` schema. Best practice is to install
+it in a dedicated `extensions` schema so PostGIS objects do not pollute the public
+namespace and do not interact with `SET search_path = ''` function hardening.
+
+Blocked on: operator action to reinstall PostGIS into the `extensions` schema in
+Supabase project `avkhpachzsbgmbnkfnhu`. Cannot be done via Alembic migration alone
+because PostGIS extension installation requires superuser privileges.
+
+Action required (Phase L):
+1. Create `extensions` schema if not present.
+2. Drop and reinstall PostGIS into `extensions` schema via Supabase dashboard or
+   `psql` with superuser: `CREATE EXTENSION postgis SCHEMA extensions;`
+3. Update any Alembic migrations or ORM code that reference `public.geometry` or
+   `public.geography` types to use `extensions.geometry` / `extensions.geography`.
+4. Verify `scripts/check_rls.sql` still passes after schema move.
+
 ## DEF-K-AUDIT-FK-001: Smoke-user hard delete blocked by immutable membership audit
 
 Phase K Task 1A cleaned production Codex smoke accounts `user_id=90` and `user_id=91`
