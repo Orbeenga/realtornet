@@ -6,14 +6,15 @@ Run these queries in Supabase SQL editor against production DB (avkhpachzsbgmbnk
 
 ```sql
 -- Find any remaining smoke/generic users (should be empty if E.1 complete)
-SELECT user_id, display_name, email, deleted_at
+-- Note: users table has first_name/last_name, not display_name
+SELECT user_id, first_name, last_name, email, deleted_at
 FROM users
 WHERE deleted_at IS NULL
 AND (
-  display_name ~ '^Agent\s*#?\d+' OR
-  display_name ~ '^A#\d+' OR
-  display_name IS NULL OR
-  display_name = ''
+  CONCAT(first_name, ' ', last_name) ~ '^Agent\s*#?\d+' OR
+  first_name ~ '^A#\d+' OR
+  first_name IS NULL OR first_name = '' OR
+  last_name IS NULL OR last_name = ''
 )
 ORDER BY user_id;
 ```
@@ -42,7 +43,7 @@ WHERE user_id = 74 AND deleted_at IS NULL;
 SELECT 'user_record' AS check_type, COUNT(*) as count,
        user_role, agency_id
 FROM users 
-WHERE id = 74 AND deleted_at IS NULL;
+WHERE user_id = 74 AND deleted_at IS NULL;
 ```
 
 **Expected:** 
@@ -57,9 +58,9 @@ WHERE id = 74 AND deleted_at IS NULL;
 ## E.3: Verify property 3 listing_type is correct
 
 ```sql
-SELECT id, title, listing_type, moderation_status, deleted_at
+SELECT property_id, title, listing_type, moderation_status, deleted_at
 FROM properties 
-WHERE id = 3 AND deleted_at IS NULL;
+WHERE property_id = 3 AND deleted_at IS NULL;
 ```
 
 **Expected:** 

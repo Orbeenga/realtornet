@@ -31,7 +31,14 @@ jobs:
         python-version: ["3.11", "3.12"]
 
     env:
+      # Full connection string used by conftest and Settings.DATABASE_URI
       DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/testdb
+      # Individual fields required by pydantic-settings Settings() model
+      POSTGRES_SERVER: localhost
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: testdb
+      POSTGRES_PORT: "5432"
       TEST_POSTGRES_DB: testdb
       SECRET_KEY: ci-test-secret-key-minimum-64-characters-not-for-production-use-only
       ACCESS_TOKEN_EXPIRE_MINUTES: 15
@@ -57,8 +64,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Run pyright type check
+        run: |
+          python -m pyright app/
+
       - name: Verify migration state
         run: |
+          python -m alembic upgrade head
           python -m alembic current
           echo "Migration check passed"
 

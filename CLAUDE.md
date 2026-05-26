@@ -72,8 +72,11 @@
 - Stream C (Sentry fixes): Image validation (imghdr) added before resize; stats overview error logging improved; test RuntimeError: surprise resolved by Sentry isolation
 - Stream D (canonical sources): Agency detail and stats endpoints verified using canonical queries
 - Backend pyright: 0 errors after all changes
-- Pending: Railway deployment confirmation (migration must complete), production SQL verification (E.1–E.3), N+1 investigation (F, use DEBUG=true + SQLAlchemy echo)
-- Frontend action required: After B.1 live on Railway, run `pnpm gen:types` to regenerate API types
+- Coverage: raised to 95.23%; `pytest.ini --cov-fail-under` set to 95.0; new test `tests/core/test_exceptions.py` covers exception handler paths
+- CI fix: `.github/workflows/ci.yml` now includes all required `POSTGRES_*` job-level env vars and a `pyright` step
+- E.1–E.3 queries corrected: `display_name`→`first_name`/`last_name`, `WHERE id =`→`WHERE user_id =` / `WHERE property_id =`
+- Pending: Railway deployment confirmation, production SQL verification (E.1–E.3 ready to run in Supabase SQL editor), N+1 investigation (F, use DEBUG=true + SQLAlchemy echo)
+- Frontend action required: After B.1 confirmed live on Railway, run `pnpm gen:types` to regenerate API types
 
 ## Phase K opening backlog
 - `DEF-J-EMAIL-DOMAIN-001` - sole remaining Phase J exit criterion; real-user email delivery is blocked until a RealtorNet-controlled sender domain is verified in Resend and Railway `MAIL_FROM` is updated.
@@ -98,6 +101,8 @@
 - Phase I is closed; do not reopen Phase I unless investigating a regression from the closed state
 - Phase J is closed except `DEF-J-EMAIL-DOMAIN-001`; do not reopen Phase J scope unless investigating a regression
 - Phase K is active from [RealtorNet_Phase_K_Opening_Brief.md](RealtorNet_Phase_K_Opening_Brief.md); verified sender domain remains the launch-blocking operations item
+- Backend quality gates are now enforced at 95%: pyright 0 errors, pytest ≥ 95.0% coverage, CI passes with all required env vars
+- E.1–E.3 production SQL verification queries are corrected and ready; must be run in Supabase SQL editor against avkhpachzsbgmbnkfnhu
 - Keep production vs dev Supabase separation strict during all investigations
 - Treat agency card branding as blocked on backend enrichment, not frontend fetch fan-out
 - Use the backlog above as the opening queue for planning and execution
