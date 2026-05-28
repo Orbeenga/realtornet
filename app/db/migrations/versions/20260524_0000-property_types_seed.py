@@ -58,8 +58,6 @@ def upgrade() -> None:
                 }
             )
 
-    connection.commit()
-
 
 def downgrade() -> None:
     """Remove seeded property types (if they're not in use)"""
@@ -88,5 +86,3 @@ def downgrade() -> None:
                 ),
                 {"name": prop_type_name}
             )
-
-    connection.commit()

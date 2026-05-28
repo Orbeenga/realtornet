@@ -29,6 +29,7 @@ engine = create_engine(
         "keepalives_idle": 30,
         "keepalives_interval": 10,
         "keepalives_count": 5,
+        "options": "-c timezone=utc -c search_path=public,extensions",
         # Disable psycopg prepared statements so Supabase/Railway poolers
         # running in transaction mode don't trip DuplicatePreparedStatement.
         "prepare_threshold": None,
@@ -56,6 +57,9 @@ def set_pg_session_params(dbapi_conn, connection_record):
         cursor.execute("SET statement_timeout = '30s'")
         # Set timezone to UTC for consistency
         cursor.execute("SET TIME ZONE 'UTC'")
+        # Resolve app tables from public and PostGIS functions/types from
+        # Supabase's dedicated extensions schema.
+        cursor.execute("SET search_path TO public, extensions")
         # Cursor automatically closed by context manager
 
 
