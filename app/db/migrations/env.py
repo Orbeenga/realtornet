@@ -170,13 +170,14 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
         connect_args={
              "connect_timeout": 30,
-             "options": "-c timezone=utc -c search_path=public"
+             "options": "-c timezone=utc -c search_path=public,extensions"
         }
     )
     
     with connectable.connect() as connection:
-        # Explicitly set schema to public to prevent auth schema reflection
-        connection.execute(text("SET search_path TO public"))
+        # Keep public first for app tables while resolving PostGIS types
+        # from Supabase's dedicated extensions schema.
+        connection.execute(text("SET search_path TO public, extensions"))
         connection.commit()
         
         context.configure(
