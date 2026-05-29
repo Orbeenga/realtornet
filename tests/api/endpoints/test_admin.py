@@ -1249,3 +1249,54 @@ class TestAdminBootstrapDemoData:
         public_props = admin_api.property_crud.get_multi_by_params_approved(db, skip=0, limit=100)
         assert any(p.property_id == data["verified_property_id"] for p in public_props)
         assert all(p.property_id != data["pending_property_id"] for p in public_props)
+
+
+class TestAdminAuditActivity:
+    def test_admin_can_access_audit_activity(
+        self, client: TestClient, admin_token_headers
+    ):
+        """
+        Admin can retrieve audit activity summary.
+
+        Verifies the endpoint returns the expected shape with counts
+        and a recent_changes list.
+        """
+        response = client.get("/api/v1/admin/audit/", headers=admin_token_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert "creation_count_30d" in data
+        assert "deletion_count_30d" in data
+        assert "recent_changes" in data
+        assert isinstance(data["recent_changes"], list)
+
+    def test_audit_activity_non_admin_returns_403(
+        self, client: TestClient, normal_user_token_headers
+    ):
+        """
+        Non-admin users must not access the audit endpoint.
+        """
+        response = client.get("/api/v1/admin/audit/", headers=normal_user_token_headers)
+        assert response.status_code == 403
+
+    def test_audit_activity_unauthenticated_returns_401(
+        self, client: TestClient
+    ):
+        """
+        Unauthenticated requests must be rejected.
+        """
+        response = client.get("/api/v1/admin/audit/")
+        assert response.status_code == 401
+
+    def test_audit_activity_limit_query_param(
+        self, client: TestClient, admin_token_headers
+    ):
+        """
+        The limit query parameter controls recent_changes page size.
+        """
+        response = client.get(
+            "/api/v1/admin/audit/?limit=5",
+            headers=admin_token_headers,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["recent_changes"]) <= 5

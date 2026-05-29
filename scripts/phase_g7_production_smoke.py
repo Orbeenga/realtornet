@@ -127,7 +127,7 @@ def main() -> None:
     admin = _fetch_user("apineorbeenga@gmail.com")
     owner = _fetch_user("apineorbeenga@outlook.com")
     agent = _fetch_user("apineorbeenga@yahoo.com")
-    seeker = _fetch_user("godwinemagun@gmail.com")
+    seeker = _fetch_user("apineterngu19@gmail.com")
 
     admin_token = _token_for(admin)
     owner_token = _token_for(owner)
@@ -168,8 +168,12 @@ def main() -> None:
         checks.append("property types")
 
         locations = _request(client, "GET", f"{API_URL}/locations/")
-        assert locations
-        location_id = int(locations[0]["location_id"])
+        assert isinstance(locations, list)
+        location_payload: dict[str, Any]
+        if locations:
+            location_payload = {"location_id": int(locations[0]["location_id"])}
+        else:
+            location_payload = {"location_name": "Lekki Phase 1, Lagos, Nigeria"}
         checks.append("locations")
 
         amenities = _request(client, "GET", f"{API_URL}/amenities/")
@@ -227,6 +231,7 @@ def main() -> None:
             "PATCH",
             f"{API_URL}/admin/agencies/{agency_id}/approve/",
             token=admin_token,
+            json={"reason": "Phase G.7 smoke approval"},
         )
         assert approved["status"] == "approved"
 
@@ -259,7 +264,7 @@ def main() -> None:
                 "title": f"Phase G7 Smoke Listing {stamp}",
                 "description": "Disposable listing created by the G.7 production smoke journey.",
                 "property_type_id": property_type_id,
-                "location_id": location_id,
+                **location_payload,
                 "price": "75000000",
                 "bedrooms": 3,
                 "bathrooms": 2,

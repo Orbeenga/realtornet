@@ -8,6 +8,7 @@ from typing import Any, Dict, List, cast as typing_cast  # Alias typing.cast so 
 from decimal import Decimal
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from fastapi.encoders import jsonable_encoder
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import (
@@ -56,6 +57,7 @@ from app.schemas.properties import PropertyResponse, PropertyUpdate, ListingStat
 from app.schemas.properties import PropertyCreate, ListingType as PropertyListingType
 from app.schemas.inquiries import InquiryResponse
 from app.schemas.stats import SystemStatsResponse as SystemStats
+from app.schemas.audit import AuditActivityResponse
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -1062,4 +1064,84 @@ def get_stats_overview(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Unable to generate statistics. Please try again later."
+        )
+
+
+# AUDIT ACTIVITY ENDPOINT
+
+@router.get("/audit/", response_model=AuditActivityResponse)
+def get_audit_activity(
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_admin_user),
+    limit: int = Query(default=20, ge=1, le=100),
+) -> Any:
+    """
+    Admin-only audit activity summary.
+
+    Returns creation count (last 30 days), deletion count (last 30 days),
+    and a paginated list of recent changes from the audit views.
+    """
+    try:
+        creation_count_result = db.execute(
+            text("""
+                SELECT COUNT(*) FROM public.audit_creations
+                WHERE created_at > NOW() - INTERVAL '30 days'
+            """)
+        ).scalar()
+        creation_count_30d = int(creation_count_result or 0)
+
+        deletion_count_result = db.execute(
+            text("""
+                SELECT COUNT(*) FROM public.audit_deletions
+                WHERE deleted_at > NOW() - INTERVAL '30 days'
+            """)
+        ).scalar()
+        deletion_count_30d = int(deletion_count_result or 0)
+
+        recent_changes_result = db.execute(
+            text("""
+                SELECT
+                    table_name,
+                    record_id,
+                    created_at,
+                    created_by,
+                    updated_at,
+                    updated_by,
+                    deleted_at,
+                    deleted_by
+                FROM public.audit_recent_changes
+                ORDER BY updated_at DESC NULLS LAST
+                LIMIT :limit
+            """),
+            {"limit": limit},
+        ).mappings().all()
+
+        recent_changes = [
+            {
+                "table_name": str(row["table_name"]),
+                "record_id": int(row["record_id"]),
+                "created_at": row["created_at"],
+                "created_by": row["created_by"],
+                "updated_at": row["updated_at"],
+                "updated_by": row["updated_by"],
+                "deleted_at": row["deleted_at"],
+                "deleted_by": row["deleted_by"],
+            }
+            for row in recent_changes_result
+        ]
+
+        return {
+            "creation_count_30d": creation_count_30d,
+            "deletion_count_30d": deletion_count_30d,
+            "recent_changes": recent_changes,
+        }
+    except Exception as e:
+        logger.error(
+            "Audit activity query failed",
+            extra={"error_type": type(e).__name__},
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to retrieve audit activity. Please try again later.",
         )
