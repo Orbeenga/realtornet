@@ -169,6 +169,105 @@ def db():
             ADD CONSTRAINT agency_agent_memberships_status_check
             CHECK (status IN ('active', 'inactive', 'suspended', 'blocked'));
         """))
+        # Create audit views for test coverage of the admin audit endpoint
+        schema_conn.execute(text("""
+            CREATE OR REPLACE VIEW public.audit_creations AS
+            SELECT 'users'::text AS table_name, u.user_id AS record_id,
+                   u.created_at, u.created_by, NULL::uuid AS created_by_email
+            FROM users u
+            UNION ALL
+            SELECT 'profiles'::text, p.profile_id, p.created_at, p.created_by, NULL
+            FROM profiles p
+            UNION ALL
+            SELECT 'properties'::text, pr.property_id, pr.created_at, pr.created_by, NULL
+            FROM properties pr
+            UNION ALL
+            SELECT 'agencies'::text, a.agency_id, a.created_at, a.created_by, NULL
+            FROM agencies a
+            UNION ALL
+            SELECT 'agent_profiles'::text, ap.profile_id, ap.created_at, ap.created_by, NULL
+            FROM agent_profiles ap
+            ORDER BY 3 DESC;
+        """))
+        schema_conn.execute(text("""
+            CREATE OR REPLACE VIEW public.audit_deletions AS
+            SELECT 'users'::text AS table_name, u.user_id AS record_id,
+                   u.deleted_at, u.deleted_by, NULL::uuid AS deleted_by_email
+            FROM users u WHERE u.deleted_at IS NOT NULL
+            UNION ALL
+            SELECT 'profiles'::text, p.profile_id, p.deleted_at, p.deleted_by, NULL
+            FROM profiles p WHERE p.deleted_at IS NOT NULL
+            UNION ALL
+            SELECT 'properties'::text, pr.property_id, pr.deleted_at, pr.deleted_by, NULL
+            FROM properties pr WHERE pr.deleted_at IS NOT NULL
+            UNION ALL
+            SELECT 'agencies'::text, a.agency_id, a.deleted_at, a.deleted_by, NULL
+            FROM agencies a WHERE a.deleted_at IS NOT NULL
+            UNION ALL
+            SELECT 'agent_profiles'::text, ap.profile_id, ap.deleted_at, ap.deleted_by, NULL
+            FROM agent_profiles ap WHERE ap.deleted_at IS NOT NULL
+            UNION ALL
+            SELECT 'inquiries'::text, i.inquiry_id, i.deleted_at, i.deleted_by, NULL
+            FROM inquiries i WHERE i.deleted_at IS NOT NULL
+            UNION ALL
+            SELECT 'reviews'::text, r.review_id, r.deleted_at, r.deleted_by, NULL
+            FROM reviews r WHERE r.deleted_at IS NOT NULL
+            UNION ALL
+            SELECT 'saved_searches'::text, ss.search_id, ss.deleted_at, ss.deleted_by, NULL
+            FROM saved_searches ss WHERE ss.deleted_at IS NOT NULL
+            UNION ALL
+            SELECT 'favorites'::text, f.user_id, f.deleted_at, f.deleted_by, NULL
+            FROM favorites f WHERE f.deleted_at IS NOT NULL
+            UNION ALL
+            SELECT 'locations'::text, l.location_id, l.deleted_at, l.deleted_by, NULL
+            FROM locations l WHERE l.deleted_at IS NOT NULL
+            ORDER BY 3 DESC;
+        """))
+        schema_conn.execute(text("""
+            CREATE OR REPLACE VIEW public.audit_recent_changes AS
+            SELECT 'users'::text AS table_name, users.user_id AS record_id,
+                   users.created_at, users.created_by,
+                   users.updated_at, users.updated_by,
+                   users.deleted_at, users.deleted_by
+            FROM users WHERE users.updated_at > (now() - '90 days'::interval)
+            UNION ALL
+            SELECT 'profiles'::text, profiles.profile_id, profiles.created_at, profiles.created_by,
+                   profiles.updated_at, profiles.updated_by, profiles.deleted_at, profiles.deleted_by
+            FROM profiles WHERE profiles.updated_at > (now() - '90 days'::interval)
+            UNION ALL
+            SELECT 'properties'::text, properties.property_id, properties.created_at, properties.created_by,
+                   properties.updated_at, properties.updated_by, properties.deleted_at, properties.deleted_by
+            FROM properties WHERE properties.updated_at > (now() - '90 days'::interval)
+            UNION ALL
+            SELECT 'agencies'::text, agencies.agency_id, agencies.created_at, agencies.created_by,
+                   agencies.updated_at, agencies.updated_by, agencies.deleted_at, agencies.deleted_by
+            FROM agencies WHERE agencies.updated_at > (now() - '90 days'::interval)
+            UNION ALL
+            SELECT 'agent_profiles'::text, agent_profiles.profile_id, agent_profiles.created_at, agent_profiles.created_by,
+                   agent_profiles.updated_at, agent_profiles.updated_by, agent_profiles.deleted_at, agent_profiles.deleted_by
+            FROM agent_profiles WHERE agent_profiles.updated_at > (now() - '90 days'::interval)
+            UNION ALL
+            SELECT 'inquiries'::text, inquiries.inquiry_id, inquiries.created_at, NULL::uuid,
+                   inquiries.updated_at, NULL::uuid, inquiries.deleted_at, inquiries.deleted_by
+            FROM inquiries WHERE inquiries.updated_at > (now() - '90 days'::interval)
+            UNION ALL
+            SELECT 'reviews'::text, reviews.review_id, reviews.created_at, NULL::uuid,
+                   reviews.updated_at, NULL::uuid, reviews.deleted_at, reviews.deleted_by
+            FROM reviews WHERE reviews.updated_at > (now() - '90 days'::interval)
+            UNION ALL
+            SELECT 'saved_searches'::text, saved_searches.search_id, saved_searches.created_at, NULL::uuid,
+                   saved_searches.updated_at, NULL::uuid, saved_searches.deleted_at, saved_searches.deleted_by
+            FROM saved_searches WHERE saved_searches.updated_at > (now() - '90 days'::interval)
+            UNION ALL
+            SELECT 'favorites'::text, favorites.user_id, favorites.created_at, NULL::uuid,
+                   favorites.updated_at, NULL::uuid, favorites.deleted_at, favorites.deleted_by
+            FROM favorites WHERE favorites.updated_at > (now() - '90 days'::interval)
+            UNION ALL
+            SELECT 'locations'::text, locations.location_id, locations.created_at, NULL::uuid,
+                   locations.updated_at, locations.updated_by, locations.deleted_at, locations.deleted_by
+            FROM locations WHERE locations.updated_at > (now() - '90 days'::interval)
+            ORDER BY 5 DESC NULLS LAST;
+        """))
     connection = engine.connect()
     transaction = connection.begin()
     db = TestingSessionLocal(bind=connection)

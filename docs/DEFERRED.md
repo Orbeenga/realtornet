@@ -1,5 +1,23 @@
 # Deferred Items
 
+## DEF-L-ADMIN-AUDIT-001: Admin dashboard audit activity
+
+Phase L dispatch item. The audit views are present in the database, but admins
+should not need direct SQL access for routine activity review.
+
+Backend brief:
+"Add GET /api/v1/admin/audit/ endpoint — role-gated to admin only. Query all
+three audit views (audit_creations, audit_deletions, audit_recent_changes) and
+return a combined response: creation count (last 30 days), deletion count (last
+30 days), and a paginated list of recent changes (default 20 rows). Pyright 0,
+pytest ≥ 85% on the new router."
+
+Frontend brief:
+"Add an 'Audit Activity' section to /account/admin/analytics. Use existing
+StatCard components for the two counts and a simple table for recent changes —
+same visual pattern as current analytics sections. Source: the new audit
+endpoint above. Only visible to admin role. tsc 0, lint 0, build 0."
+
 ## Phase G close update (April 29, 2026)
 
 Phase G backend exit is closed after production smoke validation.
