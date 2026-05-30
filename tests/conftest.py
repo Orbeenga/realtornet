@@ -225,48 +225,69 @@ def db():
         """))
         schema_conn.execute(text("""
             CREATE OR REPLACE VIEW public.audit_recent_changes AS
-            SELECT 'users'::text AS table_name, users.user_id AS record_id,
-                   users.created_at, users.created_by,
-                   users.updated_at, users.updated_by,
-                   users.deleted_at, users.deleted_by
-            FROM users WHERE users.updated_at > (now() - '90 days'::interval)
-            UNION ALL
-            SELECT 'profiles'::text, profiles.profile_id, profiles.created_at, profiles.created_by,
-                   profiles.updated_at, profiles.updated_by, profiles.deleted_at, profiles.deleted_by
-            FROM profiles WHERE profiles.updated_at > (now() - '90 days'::interval)
-            UNION ALL
-            SELECT 'properties'::text, properties.property_id, properties.created_at, properties.created_by,
-                   properties.updated_at, properties.updated_by, properties.deleted_at, properties.deleted_by
-            FROM properties WHERE properties.updated_at > (now() - '90 days'::interval)
-            UNION ALL
-            SELECT 'agencies'::text, agencies.agency_id, agencies.created_at, agencies.created_by,
-                   agencies.updated_at, agencies.updated_by, agencies.deleted_at, agencies.deleted_by
-            FROM agencies WHERE agencies.updated_at > (now() - '90 days'::interval)
-            UNION ALL
-            SELECT 'agent_profiles'::text, agent_profiles.profile_id, agent_profiles.created_at, agent_profiles.created_by,
-                   agent_profiles.updated_at, agent_profiles.updated_by, agent_profiles.deleted_at, agent_profiles.deleted_by
-            FROM agent_profiles WHERE agent_profiles.updated_at > (now() - '90 days'::interval)
-            UNION ALL
-            SELECT 'inquiries'::text, inquiries.inquiry_id, inquiries.created_at, NULL::uuid,
-                   inquiries.updated_at, NULL::uuid, inquiries.deleted_at, inquiries.deleted_by
-            FROM inquiries WHERE inquiries.updated_at > (now() - '90 days'::interval)
-            UNION ALL
-            SELECT 'reviews'::text, reviews.review_id, reviews.created_at, NULL::uuid,
-                   reviews.updated_at, NULL::uuid, reviews.deleted_at, reviews.deleted_by
-            FROM reviews WHERE reviews.updated_at > (now() - '90 days'::interval)
-            UNION ALL
-            SELECT 'saved_searches'::text, saved_searches.search_id, saved_searches.created_at, NULL::uuid,
-                   saved_searches.updated_at, NULL::uuid, saved_searches.deleted_at, saved_searches.deleted_by
-            FROM saved_searches WHERE saved_searches.updated_at > (now() - '90 days'::interval)
-            UNION ALL
-            SELECT 'favorites'::text, favorites.user_id, favorites.created_at, NULL::uuid,
-                   favorites.updated_at, NULL::uuid, favorites.deleted_at, favorites.deleted_by
-            FROM favorites WHERE favorites.updated_at > (now() - '90 days'::interval)
-            UNION ALL
-            SELECT 'locations'::text, locations.location_id, locations.created_at, NULL::uuid,
-                   locations.updated_at, locations.updated_by, locations.deleted_at, locations.deleted_by
-            FROM locations WHERE locations.updated_at > (now() - '90 days'::interval)
-            ORDER BY 5 DESC NULLS LAST;
+            WITH base AS (
+                SELECT 'users'::text AS table_name, users.user_id AS record_id,
+                       users.created_at, users.created_by,
+                       users.updated_at, users.updated_by,
+                       users.deleted_at, users.deleted_by,
+                       COALESCE(users.deleted_by, users.updated_by, users.created_by) AS _actor_id
+                FROM users WHERE users.updated_at > (now() - '90 days'::interval)
+                UNION ALL
+                SELECT 'profiles'::text, profiles.profile_id, profiles.created_at, profiles.created_by,
+                       profiles.updated_at, profiles.updated_by, profiles.deleted_at, profiles.deleted_by,
+                       COALESCE(profiles.deleted_by, profiles.updated_by, profiles.created_by)
+                FROM profiles WHERE profiles.updated_at > (now() - '90 days'::interval)
+                UNION ALL
+                SELECT 'properties'::text, properties.property_id, properties.created_at, properties.created_by,
+                       properties.updated_at, properties.updated_by, properties.deleted_at, properties.deleted_by,
+                       COALESCE(properties.deleted_by, properties.updated_by, properties.created_by)
+                FROM properties WHERE properties.updated_at > (now() - '90 days'::interval)
+                UNION ALL
+                SELECT 'agencies'::text, agencies.agency_id, agencies.created_at, agencies.created_by,
+                       agencies.updated_at, agencies.updated_by, agencies.deleted_at, agencies.deleted_by,
+                       COALESCE(agencies.deleted_by, agencies.updated_by, agencies.created_by)
+                FROM agencies WHERE agencies.updated_at > (now() - '90 days'::interval)
+                UNION ALL
+                SELECT 'agent_profiles'::text, agent_profiles.profile_id, agent_profiles.created_at, agent_profiles.created_by,
+                       agent_profiles.updated_at, agent_profiles.updated_by, agent_profiles.deleted_at, agent_profiles.deleted_by,
+                       COALESCE(agent_profiles.deleted_by, agent_profiles.updated_by, agent_profiles.created_by)
+                FROM agent_profiles WHERE agent_profiles.updated_at > (now() - '90 days'::interval)
+                UNION ALL
+                SELECT 'inquiries'::text, inquiries.inquiry_id, inquiries.created_at, NULL::uuid,
+                       inquiries.updated_at, NULL::uuid, inquiries.deleted_at, inquiries.deleted_by,
+                       COALESCE(inquiries.deleted_by, NULL::uuid, NULL::uuid)
+                FROM inquiries WHERE inquiries.updated_at > (now() - '90 days'::interval)
+                UNION ALL
+                SELECT 'reviews'::text, reviews.review_id, reviews.created_at, NULL::uuid,
+                       reviews.updated_at, NULL::uuid, reviews.deleted_at, reviews.deleted_by,
+                       COALESCE(reviews.deleted_by, NULL::uuid, NULL::uuid)
+                FROM reviews WHERE reviews.updated_at > (now() - '90 days'::interval)
+                UNION ALL
+                SELECT 'saved_searches'::text, saved_searches.search_id, saved_searches.created_at, NULL::uuid,
+                       saved_searches.updated_at, NULL::uuid, saved_searches.deleted_at, saved_searches.deleted_by,
+                       COALESCE(saved_searches.deleted_by, NULL::uuid, NULL::uuid)
+                FROM saved_searches WHERE saved_searches.updated_at > (now() - '90 days'::interval)
+                UNION ALL
+                SELECT 'favorites'::text, favorites.user_id, favorites.created_at, NULL::uuid,
+                       favorites.updated_at, NULL::uuid, favorites.deleted_at, favorites.deleted_by,
+                       COALESCE(favorites.deleted_by, NULL::uuid, NULL::uuid)
+                FROM favorites WHERE favorites.updated_at > (now() - '90 days'::interval)
+                UNION ALL
+                SELECT 'locations'::text, locations.location_id, locations.created_at, NULL::uuid,
+                       locations.updated_at, locations.updated_by, locations.deleted_at, locations.deleted_by,
+                       COALESCE(locations.deleted_by, locations.updated_by, NULL::uuid)
+                FROM locations WHERE locations.updated_at > (now() - '90 days'::interval)
+            )
+            SELECT base.table_name, base.record_id, base.created_at, base.created_by,
+                   base.updated_at, base.updated_by, base.deleted_at, base.deleted_by,
+                   COALESCE(
+                       u.first_name || ' ' || u.last_name,
+                       CASE WHEN base._actor_id IS NULL THEN 'System'
+                            ELSE LEFT(base._actor_id::text, 8) END
+                   ) AS actor_name
+            FROM base
+            LEFT JOIN users u ON u.supabase_id = base._actor_id
+            ORDER BY base.updated_at DESC NULLS LAST;
         """))
     connection = engine.connect()
     transaction = connection.begin()
