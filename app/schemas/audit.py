@@ -36,6 +36,7 @@ class AuditRecentChangeEntry(BaseModel):
     updated_by: Optional[UUID] = None
     deleted_at: Optional[datetime] = None
     deleted_by: Optional[UUID] = None
+    actor_name: str = "System"
 
     model_config = ConfigDict(from_attributes=True)
 

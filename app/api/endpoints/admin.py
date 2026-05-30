@@ -1108,7 +1108,8 @@ def get_audit_activity(
                     updated_at,
                     updated_by,
                     deleted_at,
-                    deleted_by
+                    deleted_by,
+                    actor_name
                 FROM public.audit_recent_changes
                 ORDER BY updated_at DESC NULLS LAST
                 LIMIT :limit
@@ -1126,6 +1127,7 @@ def get_audit_activity(
                 "updated_by": row["updated_by"],
                 "deleted_at": row["deleted_at"],
                 "deleted_by": row["deleted_by"],
+                "actor_name": str(row["actor_name"]),
             }
             for row in recent_changes_result
         ]
