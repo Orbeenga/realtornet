@@ -25,7 +25,7 @@
 - Phase H closed May 6 2026
 - Phase I closed May 2026
 - Phase J closed May 2026; only `DEF-J-EMAIL-DOMAIN-001` (verified sender domain + Railway `MAIL_FROM`) remains open
-- Phase K is active; use [RealtorNet_Phase_K_Opening_Brief.md](RealtorNet_Phase_K_Opening_Brief.md) as the current execution reference
+- Phase K closed May 2026; Phase L is active
 - Backend v0.5.3+ at commit `c34bca9`
 - Backend G.7 exit sweep passed: pyright 0 errors; pytest passed with 92.99% coverage; production smoke 12/12; new agency journey passed end to end
 - Frontend G.7 closed in commit `d74806f`: tsc 0 errors, production build clean, Lighthouse mobile LCP 1.5s, accessibility 1.00, production routes 200
@@ -38,12 +38,21 @@
 - Backend Phase J closeout items completed May 8 2026: `DEF-I-MEM-SMOKE-001` multi-agency revocation smoke passed in production, `DEF-I-COV-001` coverage was raised to 95.03%, pyright stayed at 0, and commit `7e8fd35` was pushed.
 
 ## Locked environment decisions
-- Production Supabase project ref: `avkhpachzsbgmbnkfnhu`
+- Production Supabase project ref: `fobvnshrqxduuhzgflvd`
 - Dev Supabase project ref: `umhtnqxdvffpifqbdtjs`
 - Local backend env had been pointed at dev during investigation; verify target project before any destructive or verification action
 - Never mix production and dev Supabase projects during cleanup, verification, migrations, or auth debugging
 - Railway backend service `imaginative-peace` must run with `ENV=production`
 - Railway backend service `imaginative-peace` must include `RESEND_API_KEY` for transactional email delivery
+
+## Production accounts (new project fobvnshrqxduuhzgflvd)
+
+| Email | Role | Supabase Auth UUID |
+|---|---|---|
+| `apineorbeenga@gmail.com` | admin | `bad65084-0233-4f20-ade7-a83c11f5f4c0` |
+| `apineorbeenga@outlook.com` | agency_owner | `e9f45e96-6703-43ad-a0a2-65912c8de85c` |
+| `apineorbeenga@yahoo.com` | agent | `69cc1b4e-0c47-43ad-9950-7f39f66c9822` |
+| `apineterngu19@gmail.com` | seeker | `5d426595-71d3-46fd-b706-a381cdbadc79` |
 
 ## Locked product decisions
 - Agency-first public hierarchy is locked: Agencies -> Listings -> Agents
@@ -66,7 +75,7 @@
 - Browser-direct geocoding is prohibited; all Nominatim/OSM resolution must happen server-side through backend contracts.
 - Mobile total blocking time target was met in Phase I I.6 for the current revised threshold; deeper <100ms RSC work is Phase K unless fresh traces reprioritize it.
 
-## Phase K backend progress
+## Phase K close
 - Stream A (settings/infrastructure): Settings class env variables confirmed correct; test telemetry isolated from production Sentry
 - Stream B (data gaps): property_count added to agency list with canonical query; agents directory endpoint `/api/v1/agents/` deployed; 12 property types migration created
 - Stream C (Sentry fixes): Image validation (imghdr) added before resize; stats overview error logging improved; test RuntimeError: surprise resolved by Sentry isolation
@@ -75,12 +84,13 @@
 - Coverage: raised to 95.23%; `pytest.ini --cov-fail-under` set to 95.0; new test `tests/core/test_exceptions.py` covers exception handler paths
 - CI fix: `.github/workflows/ci.yml` now includes all required `POSTGRES_*` job-level env vars and a `pyright` step
 - E.1–E.3 queries corrected: `display_name`→`first_name`/`last_name`, `WHERE id =`→`WHERE user_id =` / `WHERE property_id =`
-- Pending: Railway deployment confirmation, production SQL verification (E.1–E.3 ready to run in Supabase SQL editor), N+1 investigation (F, use DEBUG=true + SQLAlchemy echo)
-- Frontend action required: After B.1 confirmed live on Railway, run `pnpm gen:types` to regenerate API types
+- Production smoke passed 12/12; new agency journey passed end to end
+- `DEF-L-ADMIN-AUDIT-001`: Admin audit endpoint `GET /api/v1/admin/audit/` implemented and tested
+- `DEF-L-POSTGIS-001`: Closed by clean-slate migration on new production project
 
-## Phase K opening backlog
-- `DEF-J-EMAIL-DOMAIN-001` - sole remaining Phase J exit criterion; real-user email delivery is blocked until a RealtorNet-controlled sender domain is verified in Resend and Railway `MAIL_FROM` is updated.
-- Phase K work queue: [RealtorNet_Phase_K_Opening_Brief.md](RealtorNet_Phase_K_Opening_Brief.md) (production data repair, product completeness, deferred J items promoted to K).
+## Phase L opening backlog
+- `DEF-J-EMAIL-DOMAIN-001` - real-user email delivery is blocked until a RealtorNet-controlled sender domain is verified in Resend and Railway `MAIL_FROM` is updated.
+- Phase L work queue: audit activity UI frontend, clean-slate DB propagation, Railway env cut-over to new project.
 - `DEF-002` - audit log retention decision after enough production volume exists.
 - `DEF-007` - psycopg3 dev restart investigation.
 - `DEF-FE-004A` - residual third-party `core-js` dependency audit.
@@ -100,9 +110,9 @@
 - Phase H is closed; do not reopen Phase H unless investigating a regression from the closed state
 - Phase I is closed; do not reopen Phase I unless investigating a regression from the closed state
 - Phase J is closed except `DEF-J-EMAIL-DOMAIN-001`; do not reopen Phase J scope unless investigating a regression
-- Phase K is active from [RealtorNet_Phase_K_Opening_Brief.md](RealtorNet_Phase_K_Opening_Brief.md); verified sender domain remains the launch-blocking operations item
+- Phase K is closed; Phase L is active
 - Backend quality gates are now enforced at 95%: pyright 0 errors, pytest ≥ 95.0% coverage, CI passes with all required env vars
-- E.1–E.3 production SQL verification queries are corrected and ready; must be run in Supabase SQL editor against avkhpachzsbgmbnkfnhu
+- Production SQL verification (E.1–E.3) has been corrected and executed against new project fobvnshrqxduuhzgflvd
 - Keep production vs dev Supabase separation strict during all investigations
 - Treat agency card branding as blocked on backend enrichment, not frontend fetch fan-out
 - Use the backlog above as the opening queue for planning and execution

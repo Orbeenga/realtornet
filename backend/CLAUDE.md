@@ -3,7 +3,7 @@
 ## Entry State
 
 FastAPI backend deployed on Railway. Sentry is instrumented.
-Phase F is closed. Phase G is closed as of April 29, 2026. Phase H is closed as of May 6, 2026. Phase I is closed. Phase J is closed except `DEF-J-EMAIL-DOMAIN-001`. Phase K is open. Backend v0.5.3+ at commit `c34bca9`.
+Phase F is closed. Phase G is closed as of April 29, 2026. Phase H is closed as of May 6, 2026. Phase I is closed. Phase J is closed except `DEF-J-EMAIL-DOMAIN-001`. Phase K is closed May 2026. Phase L is active. Backend v0.5.3+ at commit `c34bca9`.
 
 Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this file for backend-specific state.
 
@@ -18,7 +18,7 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 
 - Database: Supabase PostgreSQL
 - Auth source of truth: Supabase Auth
-- Production Supabase project ref: `avkhpachzsbgmbnkfnhu`
+- Production Supabase project ref: `fobvnshrqxduuhzgflvd`
 - Dev Supabase project ref: `umhtnqxdvffpifqbdtjs`
 - Production migration head: `a9d1f3c7b482`
 - Current quality gate: pyright 0 errors; pytest passed; total coverage 95.03%
@@ -157,7 +157,7 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 
 - Current migration head is `d3e7c5a1b9f2`
 - `agent_membership_audit` is the append-only membership memory layer with actions: `invited`, `joined`, `suspended`, `revoked`, `left`, `reinstated`.
-- Production migration verification passed on Supabase project `avkhpachzsbgmbnkfnhu`: Alembic head `d3e7c5a1b9f2`, `users.role_version` present, audit table present, RLS enabled, two append-only triggers present, and 3 backfilled `joined` rows for 3 active memberships.
+- Production migration verified on new project `fobvnshrqxduuhzgflvd`: Alembic head `49e4e5adc1c7` (add_audit_views), `users.role_version` present, audit table present, RLS enabled, two append-only triggers present, and backfilled `joined` rows for active memberships.
 - Backend-issued JWTs include `role_version`; `get_current_user` rejects access tokens whose `role_version` no longer matches the database user row.
 - Last active membership revocation or voluntary leave demotes non-owner/non-admin agents to `seeker`, clears `users.agency_id`, increments `users.role_version`, writes audit, and syncs Supabase Auth `app_metadata.role_version`.
 - Revoking one membership while another active membership remains does not demote the user; it switches `users.agency_id` to the remaining active membership if needed.
@@ -168,7 +168,7 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 
 - Current migration head is `f4a8c2d9e5b1`
 - `review_requests` is the agency-level review/rejoin queue used by the contextual post-revocation frontend flow.
-- Production migration verification passed on Supabase project `avkhpachzsbgmbnkfnhu`: Alembic head `f4a8c2d9e5b1`, `review_requests` present, RLS enabled, three RLS policies present, pending user+agency unique index present, and columns match the I.5 schema.
+- Production migration verified on new project `fobvnshrqxduuhzgflvd`: Alembic head `49e4e5adc1c7`, `review_requests` present, RLS enabled, three RLS policies present, pending user+agency unique index present, and columns match the I.5 schema.
 - Duplicate pending review requests for the same user+agency pair return 409.
 - Accepting a review request reinstates or creates the agency membership, writes `agent_membership_audit.action = 'reinstated'`, increments `users.role_version` when `seeker` is restored to `agent`, syncs Supabase Auth app metadata, and dispatches `send_role_change_email` when the role changes.
 - Declining a review request records status `declined`, stores the decision reason, and dispatches `send_review_request_status_email`.
@@ -183,10 +183,18 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 - `DEF-I-MEM-SMOKE-001` is closed with production evidence: agent `user_id=90` retained `user_role=agent` and `role_version=6` after one of two active memberships was revoked; temporary agency `12`, owner `92`, invite `4`, and membership `7` were soft-deleted after verification.
 - `DEF-I-COV-001` is closed: commit `7e8fd35` raised coverage to 95.03%, full `pytest -q` passed, and `pyright` returned 0 errors.
 
-## Phase K Opening State
+## Phase K Closed State
 
-- Current execution reference: [RealtorNet_Phase_K_Opening_Brief.md](C:/Users/Apine/realtornet/RealtorNet_Phase_K_Opening_Brief.md)
-- Phase K backend work starts from v0.5.3+ at commit `c34bca9`; promoted J items (map, location quality, messaging, aggregation, audit retention) are tracked in the Phase K brief and `docs/DEFERRED.md`.
+- Backend Stream A–D completed: settings env vars confirmed, property_count in agency list, `/api/v1/agents/` deployed, 12 property types seeded, Sentry fixes, canonical stats sources
+- Coverage gate raised to 95.23%; pyright 0 errors; CI fixed with POSTGRES_* env vars and pyright step
+- E.1–E.3 queries corrected; production smoke 12/12 passed; new agency journey passed
+- `DEF-L-ADMIN-AUDIT-001`: Admin audit endpoint `GET /api/v1/admin/audit/` implemented, tested, and deployed
+- `DEF-L-POSTGIS-001`: Closed by clean-slate migration on new production project
+
+## Phase L Opening State
+
+- Phase L execution reference: `docs/DEFERRED.md` and root `CLAUDE.md`
+- Promoted K items: audit activity UI frontend, Railway env cut-over to new Supabase project, clean-slate DB propagation verification
 
 ## Locked Invariants
 
@@ -223,7 +231,8 @@ Do not answer from stale docs when the router, schema, or CRUD layer says otherw
 
 - Phase H is closed; do not reopen Phase H unless investigating a regression from the closed Phase H state
 - Phase I is closed; Phase J is closed except `DEF-J-EMAIL-DOMAIN-001`
-- Phase K is active from the Phase K opening brief; verified sender domain remains the launch-blocking operations item
+- Phase K is closed; Phase L is active
+- Verified sender domain remains the launch-blocking operations item (`DEF-J-EMAIL-DOMAIN-001`)
 - Keep production and dev Supabase separation strict during all work
 - Treat agency card branding as blocked on backend enrichment until the response contract changes
 - Keep Railway `/healthz` returning 200 in degraded mode; Redis rate limiting should connect through `REDIS_URL` or Railway `REDISHOST`/`REDISPORT`/`REDISUSER`/`REDISPASSWORD`

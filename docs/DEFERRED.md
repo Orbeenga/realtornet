@@ -2,15 +2,13 @@
 
 ## DEF-L-ADMIN-AUDIT-001: Admin dashboard audit activity
 
-Phase L dispatch item. The audit views are present in the database, but admins
-should not need direct SQL access for routine activity review.
+**Status: BACKEND CLOSED May 2026; FRONTEND OPEN (Phase L)**
 
-Backend brief:
-"Add GET /api/v1/admin/audit/ endpoint — role-gated to admin only. Query all
-three audit views (audit_creations, audit_deletions, audit_recent_changes) and
-return a combined response: creation count (last 30 days), deletion count (last
-30 days), and a paginated list of recent changes (default 20 rows). Pyright 0,
-pytest ≥ 85% on the new router."
+Backend: `GET /api/v1/admin/audit/` is live — role-gated to admin only. Queries
+all three audit views (`audit_creations`, `audit_deletions`, `audit_recent_changes`)
+and returns creation count (last 30 days), deletion count (last 30 days), and a
+paginated list of recent changes (default 20 rows). Pyright 0, pytest coverage
+95.20% on new router and schema.
 
 Frontend brief:
 "Add an 'Audit Activity' section to /account/admin/analytics. Use existing
@@ -126,7 +124,10 @@ Pending completion:
 - F: N+1 query investigation — enable locally via DEBUG=true + SQLAlchemy echo (already configured in database.py line 24)
 - Frontend action: After B.1 confirmed live on Railway, run `pnpm gen:types` to regenerate API types from updated OpenAPI schema
 
-## Phase K quality gate update (May 26, 2026)
+## Phase K close update (May 30, 2026)
+
+Phase K is formally closed. All backend streams A–D completed, quality gates
+verified, and production smoke passed 12/12.
 
 Backend quality gates now fully enforced:
 - Coverage: raised from 94.97% → 95.23%; `pytest.ini --cov-fail-under` updated from 92.78 to 95.0
@@ -134,24 +135,24 @@ Backend quality gates now fully enforced:
 - pyright: 0 errors confirmed after new test file
 - CI fix: `.github/workflows/ci.yml` now exports `POSTGRES_SERVER`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT` at job-runner level so pydantic-settings `Settings()` instantiates cleanly without a `.env` file; added `pyright` step and `alembic upgrade head` before tests
 - E.1–E.3 query bugs fixed in `scripts/PRODUCTION_VERIFICATION.md`: `display_name` column does not exist on `users` table (correct: `first_name`/`last_name` concat); `WHERE id =` corrected to `WHERE user_id =` (E.2) and `WHERE property_id =` (E.3)
+- Production cut-over to new Supabase project `fobvnshrqxduuhzgflvd` completed
+- Five production accounts seeded with correct roles: admin, agency_owner, agent, seeker, seeker
+- `DEF-L-ADMIN-AUDIT-001` backend endpoint implemented and tested
+- `DEF-L-POSTGIS-001` closed by clean-slate migration
+
+Promoted to Phase L:
+- Frontend Audit Activity UI (`DEF-L-ADMIN-AUDIT-001` frontend brief)
+- Railway env cut-over verification
+- Clean-slate DB propagation confirmation
+- `DEF-J-EMAIL-DOMAIN-001` remains the launch-blocking operations item
 
 ## DEF-L-POSTGIS-001: Move PostGIS to extensions schema (Phase L)
 
-PostGIS is currently installed in the `public` schema. Best practice is to install
-it in a dedicated `extensions` schema so PostGIS objects do not pollute the public
-namespace and do not interact with `SET search_path = ''` function hardening.
+**Status: CLOSED May 2026 — clean-slate complete**
 
-Blocked on: operator action to reinstall PostGIS into the `extensions` schema in
-Supabase project `avkhpachzsbgmbnkfnhu`. Cannot be done via Alembic migration alone
-because PostGIS extension installation requires superuser privileges.
-
-Action required (Phase L):
-1. Create `extensions` schema if not present.
-2. Drop and reinstall PostGIS into `extensions` schema via Supabase dashboard or
-   `psql` with superuser: `CREATE EXTENSION postgis SCHEMA extensions;`
-3. Update any Alembic migrations or ORM code that reference `public.geometry` or
-   `public.geography` types to use `extensions.geometry` / `extensions.geography`.
-4. Verify `scripts/check_rls.sql` still passes after schema move.
+The new production Supabase project `fobvnshrqxduuhzgflvd` was provisioned as a
+clean slate with PostGIS installed correctly. The old project `avkhpachzsbgmbnkfnhu`
+PostGIS concern is moot after the cut-over. No operator action required.
 
 ## DEF-K-AUDIT-FK-001: Smoke-user hard delete blocked by immutable membership audit
 
