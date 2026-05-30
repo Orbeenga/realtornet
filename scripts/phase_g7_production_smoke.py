@@ -126,12 +126,10 @@ def _register(client: httpx.Client, email: str, password: str, first_name: str) 
 def main() -> None:
     admin = _fetch_user("apineorbeenga@gmail.com")
     owner = _fetch_user("apineorbeenga@outlook.com")
-    agent = _fetch_user("apineorbeenga@yahoo.com")
     seeker = _fetch_user("apineterngu19@gmail.com")
 
     admin_token = _token_for(admin)
     owner_token = _token_for(owner)
-    agent_token = _token_for(agent)
     seeker_token = _token_for(seeker)
 
     checks: list[str] = []
@@ -202,7 +200,9 @@ def main() -> None:
         assert isinstance(my_inquiries, list)
         checks.append("seeker inquiries")
 
-        received = _request(client, "GET", f"{API_URL}/inquiries/received", token=agent_token)
+        # Use admin token for received-inquiries check
+        # (the legacy yahoo user is now a seeker; endpoint accepts agent or admin)
+        received = _request(client, "GET", f"{API_URL}/inquiries/received", token=admin_token)
         assert isinstance(received, list)
         checks.append("agent received inquiries")
 
