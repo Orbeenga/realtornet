@@ -46,13 +46,19 @@ def resize_image(file_data: bytes, size: Tuple[int, int] = (512, 512)) -> bytes:
     Raises:
         ValueError: If image format is unsupported or file is corrupted
     """
-    # Validate image format before processing - MIME/magic bytes check
-    import imghdr
-    detected_format = imghdr.what(None, h=file_data)
-    if detected_format not in ('jpeg', 'png', 'webp'):
+    # Validate image format before processing - Pillow-based check
+    try:
+        with Image.open(BytesIO(file_data)) as img:
+            if img.format not in SUPPORTED_FORMATS:
+                raise ValueError(
+                    f"Invalid image format: {img.format}. "
+                    f"Supported formats: JPEG, PNG, WebP"
+                )
+    except ValueError:
+        raise
+    except Exception:
         raise ValueError(
-            f"Invalid image format: {detected_format}. "
-            f"Supported formats: JPEG, PNG, WebP"
+            "Invalid image file. Please upload a valid JPEG, PNG, or WEBP image."
         )
 
     try:
