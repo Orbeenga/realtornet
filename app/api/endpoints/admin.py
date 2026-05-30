@@ -4,7 +4,7 @@ Admin management endpoints - Canonical compliant
 Handles system-wide operations with proper soft delete, audit tracking, and RLS enforcement
 """
 import logging
-from typing import Any, Dict, List, cast as typing_cast  # Alias typing.cast so endpoint-local narrowing never shadows SQLAlchemy helpers in future edits.
+from typing import Any, Dict, List, Optional, cast as typing_cast  # Alias typing.cast so endpoint-local narrowing never shadows SQLAlchemy helpers in future edits.
 from decimal import Decimal
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from fastapi.encoders import jsonable_encoder
@@ -53,7 +53,7 @@ from app.schemas.users import (
 )
 from app.schemas.agencies import AgencyCreate, AgencyRejectRequest, AgencyResponse
 from app.schemas.agent_profiles import AgentProfileCreate
-from app.schemas.properties import PropertyResponse, PropertyUpdate, ListingStatus, PropertyVerificationUpdate
+from app.schemas.properties import PropertyResponse, PropertyUpdate, ListingStatus, PropertyVerificationUpdate, ModerationStatus
 from app.schemas.properties import PropertyCreate, ListingType as PropertyListingType
 from app.schemas.inquiries import InquiryResponse
 from app.schemas.stats import SystemStatsResponse as SystemStats
@@ -636,11 +636,12 @@ def deactivate_user(
 def get_properties(
     db: Session = Depends(get_db),
     pagination: dict = Depends(pagination_params),
+    moderation_status: Optional[ModerationStatus] = Query(None),
     current_user: UserResponse = Depends(get_current_admin_user)
 ) -> Any:
     """
     Retrieve properties with pagination (admin only).
-    
+
     Returns only non-deleted properties (deleted_at IS NULL).
     CRUD layer enforces soft delete filtering.
 
@@ -648,10 +649,17 @@ def get_properties(
     serialize through `PropertyResponse` instead of exposing the raw ORM model.
     That avoids production-only encoding failures from the database geometry
     column while keeping the response shape stable for the frontend.
+
+    Query params:
+    - moderation_status: filter by moderation status (e.g. agency_approved for queue).
     """
-    properties = property_crud.get_multi(db, **pagination,)
+    filters: Dict[str, Any] = {}
+    if moderation_status is not None:
+        filters["moderation_status"] = moderation_status.value
+
+    properties = property_crud.get_multi(db, **pagination, filters=filters if filters else None)
     total = property_crud.count_active(db)  # Use CRUD method that filters deleted_at
-    
+
     return {
         "items": _serialize_property_items(properties),
         "total": total,
@@ -721,6 +729,13 @@ def verify_property(
     moderation_update = verification_in or PropertyVerificationUpdate()
     requested_status = moderation_update.resolved_moderation_status
     previous_status = str(getattr(prop.moderation_status, "value", prop.moderation_status))
+
+    # Three-tier moderation: admin can only verify from agency_approved.
+    if requested_status.value == "verified" and previous_status not in {"agency_approved", "verified"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Admin can only verify listings that have been approved by the agency",
+        )
 
     # Use CRUD method with audit tracking
     prop = property_crud.verify_property(

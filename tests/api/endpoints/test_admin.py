@@ -859,6 +859,34 @@ class TestAdminGetProperties:
         response = client.get("/api/v1/admin/properties")
         assert response.status_code == 401
 
+    def test_admin_can_filter_properties_by_moderation_status(
+        self, client: TestClient, admin_token_headers,
+        db, normal_user, location, property_type, agency
+    ):
+        """Admin moderation queue filters to agency_approved listings."""
+        from app.models.properties import ModerationStatus
+
+        pending = _create_property(
+            db, normal_user.user_id, location, property_type, agency, "Pending Property"
+        )
+        approved = _create_property(
+            db, normal_user.user_id, location, property_type, agency, "Approved Property"
+        )
+        approved.moderation_status = ModerationStatus.agency_approved
+        db.flush()
+        db.refresh(approved)
+
+        response = client.get(
+            "/api/v1/admin/properties",
+            params={"moderation_status": "agency_approved"},
+            headers=admin_token_headers,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        ids = {item["property_id"] for item in data["items"]}
+        assert approved.property_id in ids
+        assert pending.property_id not in ids
+
 
 class TestAdminDeleteProperty:
     def test_admin_soft_deletes_any_property(
@@ -930,13 +958,19 @@ class TestAdminVerifyProperty:
         db, normal_user, location, property_type, agency
     ):
         """
-        Admin can verify a property and set is_verified.
+        Admin can verify a property that is agency_approved.
 
-        This ensures verification is persisted and audited.
+        Three-tier moderation: property must be at agency_approved status first.
         """
+        from app.models.properties import ModerationStatus
+
         prop = _create_property(
             db, normal_user.user_id, location, property_type, agency, "Admin Verify Property"
         )
+        prop.moderation_status = "agency_approved"
+        db.flush()
+        db.refresh(prop)
+
         response = client.post(
             f"/api/v1/admin/properties/{prop.property_id}/verify",
             headers=admin_token_headers
@@ -953,6 +987,21 @@ class TestAdminVerifyProperty:
         )
         assert response2.status_code == 200
         assert response2.json()["is_verified"] is True
+
+    def test_admin_cannot_verify_from_pending_review(
+        self, client: TestClient, admin_token_headers,
+        db, normal_user, location, property_type, agency
+    ):
+        """Admin verification must follow three-tier flow."""
+        prop = _create_property(
+            db, normal_user.user_id, location, property_type, agency, "Admin Direct Verify"
+        )
+        response = client.post(
+            f"/api/v1/admin/properties/{prop.property_id}/verify",
+            headers=admin_token_headers
+        )
+        assert response.status_code == 400
+        assert "only verify listings that have been approved by the agency" in response.json()["detail"]
 
     def test_admin_verify_nonexistent_property_returns_404(
         self, client: TestClient, admin_token_headers

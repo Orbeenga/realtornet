@@ -670,12 +670,12 @@ class TestVerifyProperty:
     """Covers the UI-facing verification flow for property listings."""
 
     def test_admin_can_verify_property(
-        self, client: TestClient, admin_token_headers, unverified_property
+        self, client: TestClient, admin_token_headers, agency_approved_property
     ):
-        """Admins can still publish listings from the review flow."""
+        """Admins can only verify listings that have been agency-approved."""
         with patch("app.api.endpoints.properties.dispatch_email_task") as mock_email:
             response = client.patch(
-                f"/api/v1/properties/{unverified_property.property_id}/verify",
+                f"/api/v1/properties/{agency_approved_property.property_id}/verify",
                 json={"is_verified": True},
                 headers=admin_token_headers
             )
@@ -693,6 +693,7 @@ class TestVerifyProperty:
         ("moderation_status", "expected_verified"),
         [
             ("pending_review", False),
+            ("agency_approved", False),
             ("verified", True),
             ("rejected", False),
             ("revoked", False),
@@ -702,12 +703,12 @@ class TestVerifyProperty:
         self,
         client: TestClient,
         admin_token_headers,
-        unverified_property,
+        agency_approved_property,
         moderation_status,
         expected_verified,
     ):
         response = client.patch(
-            f"/api/v1/properties/{unverified_property.property_id}/verify",
+            f"/api/v1/properties/{agency_approved_property.property_id}/verify",
             json={
                 "moderation_status": moderation_status,
                 "moderation_reason": f"Reason for {moderation_status}",
@@ -825,7 +826,7 @@ class TestVerifyProperty:
         assert args[5] == "Photos are unclear"
 
     def test_admin_verification_dispatches_saved_search_match_email(
-        self, client: TestClient, admin_token_headers, db, normal_user, unverified_property
+        self, client: TestClient, admin_token_headers, db, normal_user, agency_approved_property
     ):
         saved = SavedSearch(
             user_id=normal_user.user_id,
@@ -833,14 +834,14 @@ class TestVerifyProperty:
                 "min_price": 1000000,
                 "max_price": 6000000,
                 "bedrooms": 3,
-                "location_id": unverified_property.location_id,
-                "property_type_id": unverified_property.property_type_id,
+                "location_id": agency_approved_property.location_id,
+                "property_type_id": agency_approved_property.property_type_id,
                 "listing_type": "sale",
             },
             name="Matching homes",
         )
         image = PropertyImage(
-            property_id=unverified_property.property_id,
+            property_id=agency_approved_property.property_id,
             image_url="https://cdn.example.com/property.jpg",
             is_primary=True,
         )
@@ -853,7 +854,7 @@ class TestVerifyProperty:
             "app.services.saved_search_notification_service.dispatch_email_task"
         ) as mock_match_email:
             response = client.patch(
-                f"/api/v1/properties/{unverified_property.property_id}/verify",
+                f"/api/v1/properties/{agency_approved_property.property_id}/verify",
                 json={"moderation_status": "verified"},
                 headers=admin_token_headers,
             )
@@ -864,12 +865,12 @@ class TestVerifyProperty:
         args = mock_match_email.call_args.args
         assert args[1] == normal_user.email
         assert args[2] == "Matching homes"
-        assert args[3] == unverified_property.title
+        assert args[3] == agency_approved_property.title
         assert args[6] == str(saved.unsubscribe_token)
         assert args[7] == "https://cdn.example.com/property.jpg"
 
     def test_admin_verified_property_becomes_publicly_visible(
-        self, client: TestClient, admin_token_headers, unverified_property
+        self, client: TestClient, admin_token_headers, agency_approved_property
     ):
         """
         Admin verification should move the listing into the public feed.
@@ -880,16 +881,16 @@ class TestVerifyProperty:
         """
         before_response = client.get(
             "/api/v1/properties/",
-            params={"search": unverified_property.title}
+            params={"search": agency_approved_property.title}
         )
         assert before_response.status_code == 200
         assert all(
-            item["property_id"] != unverified_property.property_id
+            item["property_id"] != agency_approved_property.property_id
             for item in before_response.json()
         )
 
         verify_response = client.patch(
-            f"/api/v1/properties/{unverified_property.property_id}/verify",
+            f"/api/v1/properties/{agency_approved_property.property_id}/verify",
             json={"is_verified": True},
             headers=admin_token_headers
         )
@@ -897,29 +898,26 @@ class TestVerifyProperty:
 
         after_response = client.get(
             "/api/v1/properties/",
-            params={"search": unverified_property.title}
+            params={"search": agency_approved_property.title}
         )
         assert after_response.status_code == 200
         assert any(
-            item["property_id"] == unverified_property.property_id
+            item["property_id"] == agency_approved_property.property_id
             for item in after_response.json()
         )
 
-    def test_owner_agent_can_verify_own_property(
+    def test_owner_agent_cannot_verify_own_property_directly(
         self, client: TestClient, owner_token_headers, unverified_property_owned_by_agent
     ):
-        """Agent owners can verify their own listing through the same endpoint."""
+        """Three-tier moderation: agents can no longer skip agency approval."""
         response = client.patch(
             f"/api/v1/properties/{unverified_property_owned_by_agent.property_id}/verify",
             json={"is_verified": True},
             headers=owner_token_headers
         )
 
-        assert response.status_code == 200
-        data = response.json()
-        assert data["is_verified"] is True
-        assert data["moderation_status"] == "verified"
-        assert data["verification_date"] is not None
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Only admins can verify listings"
 
     def test_owner_agent_can_unverify_own_property(
         self, client: TestClient, owner_token_headers, verified_property
@@ -937,14 +935,13 @@ class TestVerifyProperty:
         assert data["moderation_status"] == "pending_review"
         assert data["verification_date"] is None
 
-    def test_owner_verified_property_becomes_publicly_visible(
-        self, client: TestClient, owner_token_headers, unverified_property_owned_by_agent
+    def test_full_three_tier_flow_becomes_publicly_visible(
+        self, client: TestClient, agency_owner_token_headers, admin_token_headers,
+        unverified_property_owned_by_agent
     ):
         """
-        Agent-owner verification should also move the listing into the public feed.
-
-        This is the backend proof that the old manual SQL workaround is no
-        longer required for the listing verification step.
+        Full three-tier flow: agency owner approves, admin verifies,
+        listing becomes public.
         """
         before_response = client.get(
             "/api/v1/properties/",
@@ -956,12 +953,21 @@ class TestVerifyProperty:
             for item in before_response.json()
         )
 
-        response = client.patch(
+        # Step 1: agency owner approves
+        approve_response = client.patch(
+            f"/api/v1/properties/{unverified_property_owned_by_agent.property_id}/agency-approve",
+            headers=agency_owner_token_headers
+        )
+        assert approve_response.status_code == 200
+        assert approve_response.json()["moderation_status"] == "agency_approved"
+
+        # Step 2: admin verifies
+        verify_response = client.patch(
             f"/api/v1/properties/{unverified_property_owned_by_agent.property_id}/verify",
             json={"is_verified": True},
-            headers=owner_token_headers
+            headers=admin_token_headers
         )
-        assert response.status_code == 200
+        assert verify_response.status_code == 200
 
         after_response = client.get(
             "/api/v1/properties/",
@@ -1006,6 +1012,122 @@ class TestVerifyProperty:
 
         assert response.status_code == 404
         assert response.json()["detail"] == "Property not found"
+
+
+# ===========================================================================
+# PATCH /{property_id}/agency-approve  &  agency-reject
+# ===========================================================================
+
+class TestAgencyApproveRejectProperty:
+    """Covers the agency-owner moderation endpoints."""
+
+    def test_agency_owner_can_approve_own_agency_listing(
+        self, client: TestClient, agency_owner_token_headers, unverified_property
+    ):
+        response = client.patch(
+            f"/api/v1/properties/{unverified_property.property_id}/agency-approve",
+            headers=agency_owner_token_headers
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["moderation_status"] == "agency_approved"
+        assert data["is_verified"] is False
+
+    def test_agency_owner_cannot_approve_other_agency_listing(
+        self, client: TestClient, db, agency_owner_token_headers, other_agency,
+        agent_user, location, property_type
+    ):
+        from geoalchemy2.elements import WKTElement
+
+        other_listing = Property(
+            title="Other Agency Listing",
+            description="Belongs to another agency",
+            user_id=agent_user.user_id,
+            agency_id=other_agency.agency_id,
+            property_type_id=property_type.property_type_id,
+            location_id=location.location_id,
+            geom=WKTElement("POINT(3.3488 6.6018)", srid=4326),
+            price=35000000,
+            bedrooms=2,
+            bathrooms=1,
+            property_size=100.0,
+            listing_type=ListingType.sale,
+            listing_status=ListingStatus.available,
+            is_verified=False,
+        )
+        db.add(other_listing)
+        db.flush()
+        db.refresh(other_listing)
+
+        response = client.patch(
+            f"/api/v1/properties/{other_listing.property_id}/agency-approve",
+            headers=agency_owner_token_headers,
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Not enough permissions to approve this property"
+
+    def test_agency_owner_cannot_approve_non_pending_listing(
+        self, client: TestClient, agency_owner_token_headers, agency_approved_property
+    ):
+        response = client.patch(
+            f"/api/v1/properties/{agency_approved_property.property_id}/agency-approve",
+            headers=agency_owner_token_headers
+        )
+
+        assert response.status_code == 400
+        assert "only allowed for listings at pending_review" in response.json()["detail"]
+
+    def test_agency_owner_can_reject_own_agency_listing(
+        self, client: TestClient, agency_owner_token_headers, unverified_property
+    ):
+        response = client.patch(
+            f"/api/v1/properties/{unverified_property.property_id}/agency-reject",
+            json={"moderation_reason": "Incomplete documentation"},
+            headers=agency_owner_token_headers
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["moderation_status"] == "rejected"
+        assert data["moderation_reason"] == "Incomplete documentation"
+        assert data["is_verified"] is False
+
+    def test_agency_owner_cannot_reject_without_reason(
+        self, client: TestClient, agency_owner_token_headers, unverified_property
+    ):
+        response = client.patch(
+            f"/api/v1/properties/{unverified_property.property_id}/agency-reject",
+            json={"moderation_reason": ""},
+            headers=agency_owner_token_headers
+        )
+
+        assert response.status_code == 422
+        assert "reason is required" in response.json()["detail"]
+
+    def test_agent_cannot_access_agency_approve(
+        self, client: TestClient, owner_token_headers, unverified_property_owned_by_agent
+    ):
+        response = client.patch(
+            f"/api/v1/properties/{unverified_property_owned_by_agent.property_id}/agency-approve",
+            headers=owner_token_headers
+        )
+
+        assert response.status_code == 403
+
+    def test_admin_cannot_verify_from_pending_review_directly(
+        self, client: TestClient, admin_token_headers, unverified_property
+    ):
+        """Admin verification must follow three-tier flow: agency_approved first."""
+        response = client.patch(
+            f"/api/v1/properties/{unverified_property.property_id}/verify",
+            json={"is_verified": True},
+            headers=admin_token_headers
+        )
+
+        assert response.status_code == 400
+        assert "only verify listings that have been approved by the agency" in response.json()["detail"]
 
 
 # ===========================================================================

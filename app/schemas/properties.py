@@ -32,6 +32,7 @@ class ListingStatus(str, Enum):
 class ModerationStatus(str, Enum):
     """Schema enum - values match moderation_status_enum exactly"""
     pending_review = "pending_review"
+    agency_approved = "agency_approved"
     verified = "verified"
     rejected = "rejected"
     revoked = "revoked"
@@ -214,6 +215,11 @@ class PropertyVerificationUpdate(BaseModel):
         if self.moderation_status is not None:
             return ModerationStatus(self.moderation_status)
         return ModerationStatus.verified if self.is_verified else ModerationStatus.pending_review
+
+
+class PropertyAgencyActionUpdate(BaseModel):
+    """Schema for agency owner approve/reject actions."""
+    moderation_reason: Optional[str] = None
 
 
 # Response Schema (includes DB-controlled fields)

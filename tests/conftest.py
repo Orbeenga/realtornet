@@ -67,7 +67,7 @@ with engine.connect() as conn:
     """))
     conn.execute(text("""
         DO $$ BEGIN
-            CREATE TYPE moderation_status_enum AS ENUM ('pending_review', 'verified', 'rejected', 'revoked');
+            CREATE TYPE moderation_status_enum AS ENUM ('pending_review', 'agency_approved', 'verified', 'rejected', 'revoked');
         EXCEPTION WHEN duplicate_object THEN null;
         END $$;
     """))
@@ -638,6 +638,17 @@ def unverified_property_owned_by_agent(db, agent_user, location, property_type, 
     """Owned by agent_user — same principal as owner_token_headers."""
     return _make_property(db, agent_user.user_id, location, property_type, agency,
                           title="Agent Owned Unverified", is_verified=False)
+
+
+@pytest.fixture
+def agency_approved_property(db, agent_user, location, property_type, agency):
+    """Listing at agency_approved status — ready for admin verification."""
+    prop = _make_property(db, agent_user.user_id, location, property_type, agency,
+                          title="Agency Approved Property", is_verified=False)
+    prop.moderation_status = ModerationStatus.agency_approved
+    db.flush()
+    db.refresh(prop)
+    return prop
 
 
 # ---------------------------------------------------------------------------

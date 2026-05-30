@@ -32,6 +32,7 @@ from app.schemas.properties import (
     PropertyCreate,
     PropertyUpdate,
     PropertyVerificationUpdate,
+    PropertyAgencyActionUpdate,
     PropertyFilter,
     ListingStatus as PropertyListingStatus,
     ListingType as PropertyListingType,
@@ -375,9 +376,11 @@ def verify_property(
     """
     Update the public-verification state of a property listing.
 
-    Permissions:
-    - Admins can set any moderation status
-    - The owning agent can verify or return their own listing to pending review
+    Permissions (three-tier moderation):
+    - Admins can set any moderation status; verifying to 'verified'
+      is only allowed from 'agency_approved' status.
+    - Agency owners and owning agents can return their listing to
+      pending_review, but can no longer directly publish.
 
     This endpoint exists separately from the general update endpoint so the UI
     can expose a clear "verification" action without asking operators to edit
@@ -413,13 +416,27 @@ def verify_property(
         )
 
     requested_status = verification_in.resolved_moderation_status
+    previous_status = str(getattr(property.moderation_status, "value", property.moderation_status))
+
+    # Three-tier moderation: only admins can transition to verified.
+    if requested_status == ModerationStatus.verified:
+        if not is_admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only admins can verify listings",
+            )
+        if previous_status not in {ModerationStatus.agency_approved.value, ModerationStatus.verified.value}:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Admin can only verify listings that have been approved by the agency",
+            )
+
     if not is_admin and not is_agency_owner_for_listing and requested_status in {ModerationStatus.rejected, ModerationStatus.revoked}:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can reject or revoke property moderation",
         )
 
-    previous_status = str(getattr(property.moderation_status, "value", property.moderation_status))
     updated_by_supabase_id: str = str(current_user.supabase_id)  # Normalize the authenticated UUID to the string audit format expected by the CRUD layer.
     property = property_crud.verify_property(
         db=db,
@@ -448,6 +465,145 @@ def verify_property(
 
         if previous_status != ModerationStatus.verified.value and requested_status == ModerationStatus.verified:
             notify_saved_search_matches_for_property(db, property_obj=property)
+
+    return property
+
+
+@router.patch("/{property_id}/agency-approve", response_model=PropertyResponse)
+def agency_approve_property(
+    *,
+    db: Session = Depends(get_db),
+    property_id: int,
+    current_user: UserResponse = Depends(get_current_active_user),
+    _: None = Depends(validate_request_size)
+) -> Any:
+    """
+    Agency owner approves a listing for admin review.
+
+    Permissions:
+    - Agency owner of the listing's agency only.
+    - Property must be at pending_review status.
+    """
+    property = property_crud.get(db=db, property_id=property_id)
+
+    if not property:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Property not found"
+        )
+
+    current_user_model: User = typing_cast(User, current_user)
+    property_agency_id: int | None = typing_cast(int | None, property.agency_id)
+    current_user_agency_id: int | None = typing_cast(int | None, current_user_model.agency_id)
+    is_agency_owner_for_listing = (
+        user_crud.is_agency_owner(current_user_model)
+        and property_agency_id is not None
+        and property_agency_id == current_user_agency_id
+    )
+
+    if not is_agency_owner_for_listing:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough permissions to approve this property"
+        )
+
+    previous_status = str(getattr(property.moderation_status, "value", property.moderation_status))
+    if previous_status != ModerationStatus.pending_review.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Agency approval is only allowed for listings at pending_review status",
+        )
+
+    updated_by_supabase_id: str = str(current_user.supabase_id)
+    property = property_crud.verify_property(
+        db=db,
+        property_id=property_id,
+        is_verified=False,
+        moderation_status=ModerationStatus.agency_approved.value,
+        updated_by=updated_by_supabase_id
+    )
+
+    return property
+
+
+@router.patch("/{property_id}/agency-reject", response_model=PropertyResponse)
+def agency_reject_property(
+    *,
+    db: Session = Depends(get_db),
+    property_id: int,
+    action_in: PropertyAgencyActionUpdate,
+    current_user: UserResponse = Depends(get_current_active_user),
+    _: None = Depends(validate_request_size)
+) -> Any:
+    """
+    Agency owner rejects a listing back to the agent.
+
+    Permissions:
+    - Agency owner of the listing's agency only.
+    - Property must be at pending_review status.
+    - Requires a rejection reason.
+    """
+    property = property_crud.get(db=db, property_id=property_id)
+
+    if not property:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Property not found"
+        )
+
+    current_user_model: User = typing_cast(User, current_user)
+    property_agency_id: int | None = typing_cast(int | None, property.agency_id)
+    current_user_agency_id: int | None = typing_cast(int | None, current_user_model.agency_id)
+    is_agency_owner_for_listing = (
+        user_crud.is_agency_owner(current_user_model)
+        and property_agency_id is not None
+        and property_agency_id == current_user_agency_id
+    )
+
+    if not is_agency_owner_for_listing:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough permissions to reject this property"
+        )
+
+    if not action_in.moderation_reason or not str(action_in.moderation_reason).strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="A moderation reason is required for rejection",
+        )
+
+    previous_status = str(getattr(property.moderation_status, "value", property.moderation_status))
+    if previous_status != ModerationStatus.pending_review.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Agency rejection is only allowed for listings at pending_review status",
+        )
+
+    updated_by_supabase_id: str = str(current_user.supabase_id)
+    property = property_crud.verify_property(
+        db=db,
+        property_id=property_id,
+        is_verified=False,
+        moderation_status=ModerationStatus.rejected.value,
+        moderation_reason=action_in.moderation_reason,
+        updated_by=updated_by_supabase_id
+    )
+
+    if property is not None:
+        owner_user_id: int | None = typing_cast(int | None, property.user_id)
+        property_id_value: int = typing_cast(int, property.property_id)
+        if owner_user_id is not None:
+            owner = user_crud.get(db, user_id=owner_user_id)
+            owner_email = str(getattr(owner, "email", "") or "").strip() if owner is not None else ""
+            if owner_email:
+                dispatch_email_task(
+                    send_property_moderation_email,
+                    owner_email,
+                    str(property.title),
+                    ModerationStatus.rejected.value,
+                    property_id_value,
+                    action_in.moderation_reason,
+                )
 
     return property
 

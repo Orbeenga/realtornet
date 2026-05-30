@@ -30,6 +30,7 @@ class ListingStatus(str, enum.Enum):
 class ModerationStatus(str, enum.Enum):
     # Listing moderation lifecycle for admin review.
     pending_review = "pending_review"
+    agency_approved = "agency_approved"
     verified = "verified"
     rejected = "rejected"
     revoked = "revoked"
