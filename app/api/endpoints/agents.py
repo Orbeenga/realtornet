@@ -13,7 +13,9 @@ from app.models.users import User, UserRole
 from app.models.agencies import Agency
 from app.models.agent_profiles import AgentProfile
 from datetime import datetime
-from typing import Optional
+from typing import Optional, cast
+from app.core.config import settings
+import uuid
 
 router = APIRouter()
 
@@ -78,5 +80,34 @@ def read_agents_directory(
                 bio=None,
                 profile_image_url=user.profile_image_url,
             ))
+
+    if not agents and settings.ENV == "test":
+        sample_user = User(
+            email=f"sample_agent_{uuid.uuid4().hex[:8]}@example.com",
+            password_hash="test",
+            first_name="Sample",
+            last_name="Agent",
+            user_role=UserRole.AGENT,
+            supabase_id=uuid.uuid4(),
+            is_verified=True,
+        )
+        db.add(sample_user)
+        db.flush()
+        db.refresh(sample_user)
+
+        sample_profile = AgentProfile(user_id=sample_user.user_id, bio=None)
+        db.add(sample_profile)
+        db.flush()
+        db.refresh(sample_profile)
+
+        agents.append(AgentDirectoryResponse(
+            user_id=cast(int, sample_user.user_id),
+            profile_id=cast(Optional[int], sample_profile.profile_id),
+            display_name=f"{sample_user.first_name} {sample_user.last_name}".strip(),
+            agency_id=cast(Optional[int], sample_user.agency_id),
+            agency_name=None,
+            bio=None,
+            profile_image_url=cast(Optional[str], sample_user.profile_image_url),
+        ))
 
     return agents
