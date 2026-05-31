@@ -19,10 +19,10 @@ class ReviewCRUD:
     """Unified CRUD operations for property and agent reviews"""
 
     def create(
-        self, 
-        db: Session, 
-        *, 
-        obj_in: ReviewCreate,
+        self,
+        db: Session,
+        *,
+        obj_in: Any,
         user_id: int
     ) -> Review:
         """
@@ -32,18 +32,20 @@ class ReviewCRUD:
         # Validate mutual exclusivity
         property_id = getattr(obj_in, 'property_id', None)
         agent_id = getattr(obj_in, 'agent_id', None)
+        agency_id = getattr(obj_in, 'agency_id', None)
 
-        if (property_id is None and agent_id is None) or \
-            (property_id is not None and agent_id is not None):
+        targets = [t for t in [property_id, agent_id, agency_id] if t is not None]
+        if len(targets) != 1:
             raise HTTPException(
                 status_code=400,
-                detail="Exactly one of property_id or agent_id must be set."
+                detail="Exactly one of property_id, agent_id, or agency_id must be set."
             )
 
         db_obj = Review(
             user_id=user_id,
             property_id=property_id,
             agent_id=agent_id,
+            agency_id=agency_id,
             rating=obj_in.rating,
             comment=obj_in.comment
             # created_at, updated_at handled by DB
@@ -130,6 +132,102 @@ class ReviewCRUD:
             .limit(limit)
         )
         return list(db.execute(stmt).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
+
+    def get_agency_reviews(
+        self,
+        db: Session,
+        *,
+        agency_id: int,
+        skip: int = 0,
+        limit: int = 100,
+        sort_by: str = "created_at",
+        sort_desc: bool = True
+    ) -> List[Review]:
+        """Get active reviews for a specific agency"""
+        allowed_sort_cols = {'created_at', 'updated_at', 'rating'}
+        sort_col = sort_by if sort_by in allowed_sort_cols else 'created_at'
+
+        order_column = getattr(Review, sort_col)
+        order_expr = order_column.desc() if sort_desc else order_column.asc()
+
+        stmt = (
+            select(Review)
+            .where(
+                and_(
+                    Review.agency_id == agency_id,
+                    Review.deleted_at.is_(None)
+                )
+            )
+            .order_by(order_expr)
+            .offset(skip)
+            .limit(limit)
+        )
+        return list(db.execute(stmt).scalars().all())
+
+    def get_user_agency_review(
+        self,
+        db: Session,
+        *,
+        user_id: int,
+        agency_id: int
+    ) -> Optional[Review]:
+        """Check if user has already reviewed a specific agency"""
+        stmt = select(Review).where(
+            and_(
+                Review.user_id == user_id,
+                Review.agency_id == agency_id,
+                Review.deleted_at.is_(None)
+            )
+        )
+        return db.execute(stmt).scalar_one_or_none()
+
+    def get_agency_review_by_user_and_agency(
+        self,
+        db: Session,
+        *,
+        user_id: int,
+        agency_id: int
+    ) -> Optional[Review]:
+        return self.get_user_agency_review(
+            db,
+            user_id=user_id,
+            agency_id=agency_id,
+        )
+
+    def get_agency_rating_stats(
+        self,
+        db: Session,
+        *,
+        agency_id: int
+    ) -> Dict[str, Any]:
+        """Get rating statistics for an agency"""
+        stmt = select(
+            func.count(Review.review_id).label("total_reviews"),
+            func.avg(Review.rating).label("average_rating"),
+            func.min(Review.rating).label("min_rating"),
+            func.max(Review.rating).label("max_rating")
+        ).where(
+            and_(
+                Review.agency_id == agency_id,
+                Review.deleted_at.is_(None)
+            )
+        )
+
+        result = db.execute(stmt).first()
+        if result is None:
+            return {
+                "total_reviews": 0,
+                "average_rating": 0.0,
+                "min_rating": None,
+                "max_rating": None,
+            }
+
+        return {
+            "total_reviews": result.total_reviews or 0,
+            "average_rating": float(result.average_rating) if result.average_rating else 0.0,
+            "min_rating": result.min_rating,
+            "max_rating": result.max_rating,
+        }
 
     def get_user_reviews(
         self, 
@@ -391,8 +489,8 @@ class ReviewCRUD:
         
         # Protect core fields from update
         protected_fields = {
-            'review_id', 'user_id', 'property_id', 
-            'agent_id', 'created_at'
+            'review_id', 'user_id', 'property_id',
+            'agent_id', 'agency_id', 'created_at'
         }
         for field in protected_fields:
             update_data.pop(field, None)

@@ -82,6 +82,10 @@ class Agency(Base, AuditMixin, SoftDeleteMixin):
         back_populates="agency",
         foreign_keys="User.agency_id"
     )
+    reviews = relationship(
+        "Review",
+        back_populates="agency"
+    )
     
     def __repr__(self):
         return f"<Agency(agency_id={self.agency_id}, name={self.name}, is_verified={self.is_verified})>"

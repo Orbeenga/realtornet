@@ -106,6 +106,7 @@ class TestReviewCreate:
         obj_in = MagicMock()
         obj_in.property_id = None
         obj_in.agent_id = 5
+        obj_in.agency_id = None
         obj_in.rating = 4
         obj_in.comment = "Good agent"
         rev_crud.create(mock_db, obj_in=obj_in, user_id=1)
@@ -116,6 +117,7 @@ class TestReviewCreate:
         obj_in = MagicMock()
         obj_in.property_id = None
         obj_in.agent_id = None
+        obj_in.agency_id = None
         obj_in.rating = 4
         obj_in.comment = "x"
         with pytest.raises(HTTPException, match="Exactly one"):
@@ -126,6 +128,7 @@ class TestReviewCreate:
         obj_in = MagicMock()
         obj_in.property_id = 10
         obj_in.agent_id = 5
+        obj_in.agency_id = None
         obj_in.rating = 4
         obj_in.comment = "x"
         with pytest.raises(HTTPException, match="Exactly one"):
