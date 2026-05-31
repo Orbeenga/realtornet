@@ -253,6 +253,24 @@ class TestReviewGetUserAgentReview:
         assert rev_crud.get_user_agent_review(mock_db, user_id=1, agent_id=99) is None
 
 
+# ─── get_agency_reviews_by_user ──────────────
+
+class TestReviewGetAgencyReviewsByUser:
+    def test_returns_list(self, rev_crud, mock_db):
+        items = [make_review(agency_id=3, property_id=None, agent_id=None)]
+        scalars_all(mock_db, items)
+        assert rev_crud.get_agency_reviews_by_user(mock_db, user_id=1) == items
+
+    def test_empty(self, rev_crud, mock_db):
+        scalars_all(mock_db, [])
+        assert rev_crud.get_agency_reviews_by_user(mock_db, user_id=99) == []
+
+    def test_pagination(self, rev_crud, mock_db):
+        scalars_all(mock_db, [])
+        assert rev_crud.get_agency_reviews_by_user(
+            mock_db, user_id=1, skip=0, limit=5) == []
+
+
 # ─── update (lines 195-215) ──────────────────
 
 class TestReviewUpdate:

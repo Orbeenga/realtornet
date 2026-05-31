@@ -486,6 +486,18 @@ class TestReadCurrentUserReviews:
         assert isinstance(response.json(), list)
         assert len(response.json()) >= 1
 
+    def test_read_user_agency_reviews(
+        self, client: TestClient, db, normal_user, normal_user_token_headers, agency
+    ):
+        _create_agency_review(db, user_id=normal_user.user_id, agency_id=agency.agency_id)
+        response = client.get(
+            "/api/v1/reviews/by-user/agency/",
+            headers=normal_user_token_headers,
+        )
+        assert response.status_code == 200
+        assert isinstance(response.json(), list)
+        assert len(response.json()) >= 1
+
 
 # AGENCY REVIEW TESTS
 

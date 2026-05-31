@@ -470,6 +470,29 @@ class ReviewCRUD:
         )
         return list(db.execute(stmt).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
 
+    def get_agency_reviews_by_user(
+        self,
+        db: Session,
+        *,
+        user_id: int,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[Review]:
+        stmt = (
+            select(Review)
+            .where(
+                and_(
+                    Review.user_id == user_id,
+                    Review.agency_id.is_not(None),
+                    Review.deleted_at.is_(None),
+                )
+            )
+            .order_by(Review.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+        )
+        return list(db.execute(stmt).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
+
     def update(
         self, 
         db: Session, 
