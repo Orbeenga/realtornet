@@ -149,6 +149,10 @@ def db():
             ADD COLUMN IF NOT EXISTS status_decided_by BIGINT;
         """))
         schema_conn.execute(text("""
+            ALTER TABLE reviews
+            ADD COLUMN IF NOT EXISTS agency_id BIGINT;
+        """))
+        schema_conn.execute(text("""
             ALTER TABLE saved_searches
             ADD COLUMN IF NOT EXISTS unsubscribe_token UUID DEFAULT gen_random_uuid() NOT NULL;
         """))

@@ -16,6 +16,7 @@ class Review(Base, TimestampMixin, SoftDeleteMixin):
     user_id = Column(BigInteger, ForeignKey("users.user_id"), nullable=True)
     property_id = Column(BigInteger, ForeignKey("properties.property_id"), nullable=True)
     agent_id = Column(BigInteger, ForeignKey("users.user_id"), nullable=True)
+    agency_id = Column(BigInteger, ForeignKey("agencies.agency_id"), nullable=True)
     rating = Column(Integer, nullable=False)
     comment = Column(Text, nullable=True)
     # Remove created_at/updated_at lines - inherited from mixins
@@ -27,6 +28,7 @@ class Review(Base, TimestampMixin, SoftDeleteMixin):
     user = relationship("User", back_populates="reviews_given", foreign_keys=[user_id])
     property = relationship("Property", back_populates="reviews")
     agent = relationship("User", back_populates="reviews_received", foreign_keys=[agent_id])
+    agency = relationship("Agency", back_populates="reviews")
 
     def __repr__(self):
         return f"<Review(review_id={self.review_id}, rating={self.rating})>"

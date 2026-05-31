@@ -37,6 +37,21 @@ def _create_agent_review(db, *, user_id: int, agent_id: int, rating: int = 4, co
     return review
 
 
+def _create_agency_review(db, *, user_id: int, agency_id: int, rating: int = 4, comment: str = "Professional"):
+    review = Review(
+        user_id=user_id,
+        property_id=None,
+        agent_id=None,
+        agency_id=agency_id,
+        rating=rating,
+        comment=comment,
+    )
+    db.add(review)
+    db.flush()
+    db.refresh(review)
+    return review
+
+
 class TestCreatePropertyReview:
 
     def test_unauthenticated_returns_401(self, client: TestClient, verified_property):
@@ -470,4 +485,99 @@ class TestReadCurrentUserReviews:
         assert response.status_code == 200
         assert isinstance(response.json(), list)
         assert len(response.json()) >= 1
+
+
+# AGENCY REVIEW TESTS
+
+class TestCreateAgencyReview:
+
+    def test_unauthenticated_returns_401(self, client: TestClient, agency):
+        response = client.post(
+            f"/api/v1/reviews/agency/{agency.agency_id}",
+            json={"rating": 5, "comment": "Great agency"},
+        )
+        assert response.status_code == 401
+
+    def test_agency_not_found_returns_404(
+        self, client: TestClient, normal_user_token_headers
+    ):
+        response = client.post(
+            "/api/v1/reviews/agency/999999",
+            json={"rating": 5, "comment": "Great agency"},
+            headers=normal_user_token_headers,
+        )
+        assert response.status_code == 404
+
+    def test_non_seeker_returns_403(
+        self, client: TestClient, agency, agent_token_headers
+    ):
+        response = client.post(
+            f"/api/v1/reviews/agency/{agency.agency_id}",
+            json={"rating": 5, "comment": "Great agency"},
+            headers=agent_token_headers,
+        )
+        assert response.status_code == 403
+
+    def test_duplicate_returns_400(
+        self, client: TestClient, db, normal_user, normal_user_token_headers, agency
+    ):
+        _create_agency_review(db, user_id=normal_user.user_id, agency_id=agency.agency_id)
+        response = client.post(
+            f"/api/v1/reviews/agency/{agency.agency_id}",
+            json={"rating": 5, "comment": "Again"},
+            headers=normal_user_token_headers,
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "You have already reviewed this agency"
+
+    def test_create_success_201(
+        self, client: TestClient, normal_user_token_headers, agency
+    ):
+        response = client.post(
+            f"/api/v1/reviews/agency/{agency.agency_id}",
+            json={"rating": 5, "comment": "Excellent service"},
+            headers=normal_user_token_headers,
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["agency_id"] == agency.agency_id
+        assert data["rating"] == 5
+
+    def test_invalid_rating_returns_422(
+        self, client: TestClient, normal_user_token_headers, agency
+    ):
+        response = client.post(
+            f"/api/v1/reviews/agency/{agency.agency_id}",
+            json={"rating": 6, "comment": "Too high"},
+            headers=normal_user_token_headers,
+        )
+        assert response.status_code == 422
+
+
+class TestReadAgencyReviews:
+
+    def test_agency_not_found_returns_404(self, client: TestClient):
+        response = client.get("/api/v1/reviews/agency/999999")
+        assert response.status_code == 404
+
+    def test_returns_reviews_for_agency(
+        self, client: TestClient, db, normal_user, agency
+    ):
+        _create_agency_review(db, user_id=normal_user.user_id, agency_id=agency.agency_id)
+        response = client.get(f"/api/v1/reviews/agency/{agency.agency_id}")
+        assert response.status_code == 200
+        assert isinstance(response.json(), list)
+        assert len(response.json()) == 1
+
+    def test_skip_limit_applied(
+        self, client: TestClient, db, normal_user, agency
+    ):
+        _create_agency_review(db, user_id=normal_user.user_id, agency_id=agency.agency_id, comment="A")
+        _create_agency_review(db, user_id=normal_user.user_id, agency_id=agency.agency_id, comment="B")
+        response = client.get(
+            f"/api/v1/reviews/agency/{agency.agency_id}",
+            params={"skip": 1, "limit": 1},
+        )
+        assert response.status_code == 200
+        assert len(response.json()) == 1
 

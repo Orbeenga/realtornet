@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 # --- DIRECT CRUD IMPORTS ---
 from app.crud.reviews import review as review_crud
 from app.crud.properties import property as property_crud
+from app.crud.agencies import agency as agency_crud
 from app.crud.users import user as user_crud
 
 # --- DIRECT DEPENDENCY IMPORTS ---
@@ -20,6 +21,7 @@ from app.api.dependencies import (
     get_db,
     get_current_user,
     get_current_active_user,
+    get_current_seeker_user,
     validate_request_size
 )
 
@@ -32,7 +34,9 @@ from app.schemas.reviews import (
     PropertyReviewUpdate,
     AgentReviewResponse,
     AgentReviewCreate,
-    AgentReviewUpdate
+    AgentReviewUpdate,
+    AgencyReviewResponse,
+    AgencyReviewCreate,
 )
 
 router = APIRouter()
@@ -481,6 +485,115 @@ def delete_agent_ReviewResponse(
     )
 
     return deleted_review
+
+
+# AGENCY ReviewResponse ENDPOINTS
+
+@router.post("/agency/{agency_id}", response_model=AgencyReviewResponse, status_code=status.HTTP_201_CREATED)
+def create_agency_review(
+    *,
+    db: Session = Depends(get_db),
+    agency_id: int,
+    review_in: AgencyReviewCreate,
+    current_user: UserResponse = Depends(get_current_seeker_user),
+    _: None = Depends(validate_request_size)
+) -> Any:
+    """
+    Create a new agency review.
+
+    - Validates agency exists and is approved
+    - Prevents duplicate reviews (one per user per agency)
+    - Seeker-only endpoint
+    - Rating validation handled by schema
+    """
+    # Check if agency exists and is approved
+    agency_obj = agency_crud.get(db=db, agency_id=agency_id)
+    if agency_obj is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agency not found"
+        )
+    if cast(str, agency_obj.status) != "approved":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Agency is not approved"
+        )
+
+    # Check if user has already reviewed this agency
+    existing_review = review_crud.get_agency_review_by_user_and_agency(
+        db=db,
+        user_id=current_user.user_id,
+        agency_id=agency_id
+    )
+    if existing_review is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You have already reviewed this agency"
+        )
+
+    # Create review with agency_id injected from path
+    # Use a simple namespace object since CRUD.create reads attrs via getattr
+    class _ReviewPayload:
+        def __init__(self, rating: int, comment: str | None, agency_id: int):
+            self.rating = rating
+            self.comment = comment
+            self.property_id = None
+            self.agent_id = None
+            self.agency_id = agency_id
+
+    create_payload = _ReviewPayload(
+        rating=review_in.rating,
+        comment=review_in.comment,
+        agency_id=agency_id,
+    )
+
+    review_obj = review_crud.create(
+        db=db,
+        obj_in=create_payload,
+        user_id=current_user.user_id
+    )
+
+    logger.info(
+        "Agency review created",
+        extra={
+            "review_id": review_obj.review_id,
+            "agency_id": agency_id,
+            "user_id": current_user.user_id,
+            "rating": review_in.rating
+        }
+    )
+
+    return review_obj
+
+
+@router.get("/agency/{agency_id}", response_model=List[AgencyReviewResponse])
+def read_reviews_by_agency(
+    *,
+    db: Session = Depends(get_db),
+    agency_id: int,
+    skip: int = 0,
+    limit: int = 100,
+) -> Any:
+    """
+    Retrieve all reviews for a specific agency.
+
+    Public endpoint - returns only non-deleted reviews.
+    """
+    # Verify agency exists
+    agency_obj = agency_crud.get(db=db, agency_id=agency_id)
+    if agency_obj is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agency not found"
+        )
+
+    reviews = review_crud.get_agency_reviews(
+        db=db,
+        agency_id=agency_id,
+        skip=skip,
+        limit=limit
+    )
+    return reviews
 
 
 # USER'S REVIEWS ENDPOINTS

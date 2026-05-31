@@ -40,6 +40,13 @@ class AgentReviewCreate(ReviewBase):
     # user_id set by current_user in endpoint
 
 
+# Create Schema - Agency Review
+class AgencyReviewCreate(ReviewBase):
+    """Schema for creating an agency review"""
+    # agency_id comes from path parameter
+    # user_id set by current_user in endpoint
+
+
 # Update Schema (for PATCH/PUT requests - all fields optional)
 class ReviewUpdate(BaseModel):
     """Schema for updating a review"""
@@ -62,6 +69,7 @@ class ReviewResponse(ReviewBase):
     user_id: Optional[int] = None
     property_id: Optional[int] = None
     agent_id: Optional[int] = None
+    agency_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime] = None
@@ -80,6 +88,12 @@ class PropertyReviewResponse(ReviewResponse):
 class AgentReviewResponse(ReviewResponse):
     """Response for agent reviews"""
     agent_id: int  # pyright: ignore[reportGeneralTypeIssues,reportIncompatibleVariableOverride] - specialized response requires concrete agent_id.
+
+
+# Response Schema - Agency Review
+class AgencyReviewResponse(ReviewResponse):
+    """Response for agency reviews"""
+    agency_id: int  # pyright: ignore[reportGeneralTypeIssues,reportIncompatibleVariableOverride] - specialized response requires concrete agency_id.
 
 
 # Extended Response (with nested user/property/agent data)
@@ -109,6 +123,7 @@ class ReviewFilter(BaseModel):
     user_id: Optional[int] = None
     property_id: Optional[int] = None
     agent_id: Optional[int] = None
+    agency_id: Optional[int] = None
     min_rating: Optional[int] = Field(None, ge=1, le=5)
     max_rating: Optional[int] = Field(None, ge=1, le=5)
     include_deleted: bool = False
@@ -116,4 +131,5 @@ class ReviewFilter(BaseModel):
 # Aliases for backward compatibility
 PropertyReviewUpdate = ReviewUpdate
 AgentReviewUpdate = ReviewUpdate
+AgencyReviewUpdate = ReviewUpdate
 ReviewCreate = PropertyReviewCreate
