@@ -638,3 +638,24 @@ def read_user_agent_reviews(
         limit=limit
     )
     return reviews
+
+
+@router.get("/by-user/agency/", response_model=List[AgencyReviewResponse])
+def read_user_agency_reviews(
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user),
+    skip: int = 0,
+    limit: int = 100,
+) -> Any:
+    """
+    Retrieve agency reviews by the current user.
+    
+    Returns only non-deleted reviews.
+    """
+    reviews = review_crud.get_agency_reviews_by_user(
+        db=db,
+        user_id=current_user.user_id,
+        skip=skip,
+        limit=limit
+    )
+    return reviews
