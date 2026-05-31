@@ -29,3 +29,14 @@ class TestReadAgentsDirectory:
         assert response.status_code == 200
         assert normal_user.user_id not in {item["user_id"] for item in response.json()}
         assert normal_user.user_role == UserRole.SEEKER
+
+    def test_agents_directory_includes_profile_id(
+        self, client: TestClient
+    ):
+        response = client.get("/api/v1/agents/")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) > 0
+        for item in data:
+            assert "profile_id" in item
