@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict
 from app.api.dependencies import get_db, pagination_params
 from app.models.users import User, UserRole
 from app.models.agencies import Agency
+from app.models.agent_profiles import AgentProfile
 from datetime import datetime
 from typing import Optional
 
@@ -20,6 +21,7 @@ router = APIRouter()
 class AgentDirectoryResponse(BaseModel):
     """Simplified agent response for public directory"""
     user_id: int
+    profile_id: Optional[int] = None
     display_name: str
     agency_id: Optional[int] = None
     agency_name: Optional[str] = None
@@ -43,9 +45,11 @@ def read_agents_directory(
     skip = pagination.get("skip", 0)
     limit = pagination.get("limit", 100)
 
-    # Query users who are agents OR agency_owners, not deleted, with their agency name
-    query = select(User, Agency.name).outerjoin(
+    # Query users who are agents OR agency_owners, not deleted, with agency name and profile id
+    query = select(User, Agency.name, AgentProfile.profile_id).outerjoin(
         Agency, User.agency_id == Agency.agency_id
+    ).outerjoin(
+        AgentProfile, User.user_id == AgentProfile.user_id
     ).where(
         User.deleted_at.is_(None),
         User.user_role.in_([UserRole.AGENT, UserRole.AGENCY_OWNER])
@@ -58,7 +62,7 @@ def read_agents_directory(
 
     # Build response with display name (first_name + last_name)
     agents = []
-    for user, agency_name in results:
+    for user, agency_name, profile_id in results:
         # Only include agents with non-null first/last names
         first_name = user.first_name if user.first_name else ""
         last_name = user.last_name if user.last_name else ""
@@ -67,6 +71,7 @@ def read_agents_directory(
         if display_name:  # Only include agents with non-empty display names
             agents.append(AgentDirectoryResponse(
                 user_id=user.user_id,
+                profile_id=profile_id,
                 display_name=display_name,
                 agency_id=user.agency_id,
                 agency_name=agency_name,
