@@ -37,11 +37,23 @@ class PropertyCRUD:
         # FIX: Default read path excludes soft-deleted rows.
         if property_id is None:
             return None
-        stmt = select(Property).options(joinedload(Property.agency)).where(
+        stmt = select(Property).options(
+            joinedload(Property.agency),
+            joinedload(Property.location),
+        ).where(
             Property.property_id == property_id,
             Property.deleted_at.is_(None)
         )
-        return db.execute(stmt).scalar_one_or_none()
+        obj = db.execute(stmt).scalar_one_or_none()
+        if obj is not None and getattr(obj, "location_name", None) in (None, ""):
+            loc = getattr(obj, "location", None)
+            if loc is not None:
+                city = getattr(loc, "city", None)
+                neighborhood = getattr(loc, "neighborhood", None)
+                name = (f"{neighborhood}, {city}" if neighborhood else city) or None
+                if name:
+                    object.__setattr__(obj, "location_name", name)
+        return obj
 
     def get_including_deleted(self, db: Session, property_id: int) -> Optional[Property]:
         # FIX: Bypass soft-delete filter for restore/hard-delete operations only.
@@ -71,7 +83,10 @@ class PropertyCRUD:
         skip = max(0, skip)
         limit = max(0, limit)
 
-        query = select(Property).options(joinedload(Property.agency))
+        query = select(Property).options(
+            joinedload(Property.agency),
+            joinedload(Property.location),
+        )
 
         if filters:
             # Normalize: accept both Pydantic models and plain dicts.
@@ -151,7 +166,17 @@ class PropertyCRUD:
                 query = query.where(Property.has_security == filters["has_security"])
 
         query = query.order_by(Property.created_at.desc()).offset(skip).limit(limit)
-        return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
+        results = list(db.execute(query).scalars().all())
+        for obj in results:
+            if getattr(obj, "location_name", None) in (None, ""):
+                loc = getattr(obj, "location", None)
+                if loc is not None:
+                    city = getattr(loc, "city", None)
+                    neighborhood = getattr(loc, "neighborhood", None)
+                    name = (f"{neighborhood}, {city}" if neighborhood else city) or None
+                    if name:
+                        object.__setattr__(obj, "location_name", name)
+        return results  # Normalize SQLAlchemy's sequence result to the declared list return type.
     
     def get_featured(
         self, 
@@ -160,7 +185,9 @@ class PropertyCRUD:
         limit: int = 6
     ) -> List[Property]:
         """Get featured properties."""
-        query = select(Property).where(
+        query = select(Property).options(
+            joinedload(Property.location),
+        ).where(
             and_(
                 Property.is_featured == True,
                 Property.listing_status == ListingStatus.available,
@@ -168,7 +195,17 @@ class PropertyCRUD:
             )
         ).order_by(Property.created_at.desc()).limit(limit)
         
-        return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
+        results = list(db.execute(query).scalars().all())
+        for obj in results:
+            if getattr(obj, "location_name", None) in (None, ""):
+                loc = getattr(obj, "location", None)
+                if loc is not None:
+                    city = getattr(loc, "city", None)
+                    neighborhood = getattr(loc, "neighborhood", None)
+                    name = (f"{neighborhood}, {city}" if neighborhood else city) or None
+                    if name:
+                        object.__setattr__(obj, "location_name", name)
+        return results  # Normalize SQLAlchemy's sequence result to the declared list return type.
 
     def get_public_featured(
         self,
@@ -177,7 +214,9 @@ class PropertyCRUD:
         limit: int = 6
     ) -> List[Property]:
         """Get public featured properties for unauthenticated surfaces."""
-        query = select(Property).where(
+        query = select(Property).options(
+            joinedload(Property.location),
+        ).where(
             and_(
                 Property.is_featured == True,
                 self._verified_visibility_filter(),
@@ -186,7 +225,17 @@ class PropertyCRUD:
             )
         ).order_by(Property.created_at.desc()).limit(limit)
 
-        return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
+        results = list(db.execute(query).scalars().all())
+        for obj in results:
+            if getattr(obj, "location_name", None) in (None, ""):
+                loc = getattr(obj, "location", None)
+                if loc is not None:
+                    city = getattr(loc, "city", None)
+                    neighborhood = getattr(loc, "neighborhood", None)
+                    name = (f"{neighborhood}, {city}" if neighborhood else city) or None
+                    if name:
+                        object.__setattr__(obj, "location_name", name)
+        return results  # Normalize SQLAlchemy's sequence result to the declared list return type.
     
     def count(
         self, 
@@ -1117,7 +1166,10 @@ class PropertyCRUD:
         """Agent view — verified properties OR their own (any status)."""
         # FIX: Use one SQL query so skip/limit semantics stay correct.
         filters = params.model_dump(exclude_unset=True) if params else {}
-        query = select(Property).options(joinedload(Property.agency)).where(
+        query = select(Property).options(
+            joinedload(Property.agency),
+            joinedload(Property.location),
+        ).where(
             Property.deleted_at.is_(None),
             or_(
                 self._verified_visibility_filter(),
@@ -1172,7 +1224,17 @@ class PropertyCRUD:
             query = query.where(Property.has_security == filters["has_security"])
 
         query = query.order_by(Property.created_at.desc()).offset(skip).limit(limit)
-        return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
+        results = list(db.execute(query).scalars().all())
+        for obj in results:
+            if getattr(obj, "location_name", None) in (None, ""):
+                loc = getattr(obj, "location", None)
+                if loc is not None:
+                    city = getattr(loc, "city", None)
+                    neighborhood = getattr(loc, "neighborhood", None)
+                    name = (f"{neighborhood}, {city}" if neighborhood else city) or None
+                    if name:
+                        object.__setattr__(obj, "location_name", name)
+        return results  # Normalize SQLAlchemy's sequence result to the declared list return type.
 
 
     # GET /by-LocationResponse/{location_id}  —  location visibility variants

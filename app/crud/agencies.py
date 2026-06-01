@@ -96,7 +96,7 @@ class AgencyCRUD:
 
         agencies = list(db.execute(query).scalars().all())
 
-        # Attach computed counts to avoid N+1 queries
+        # Attach computed counts to avoid N+1 queries and match response schema
         for agency in agencies:
             agency_id: int = agency.agency_id  # type: ignore
             agent_count = self.count_active_members(db, agency_id=agency_id)
@@ -108,7 +108,9 @@ class AgencyCRUD:
                 )
             ).scalar() or 0)
 
-            # Attach as attributes (not persisted to DB, used for response)
+            # Attach as private attributes expected by model properties
+            # Agency.agent_count and Agency.property_count are @property getters that
+            # read pre-computed values from _agent_count/_property_count when present.
             object.__setattr__(agency, "_agent_count", agent_count)
             object.__setattr__(agency, "_property_count", property_count)
 
