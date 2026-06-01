@@ -47,12 +47,18 @@
 
 ## Production accounts (new project fobvnshrqxduuhzgflvd)
 
-| Email | Role | Supabase Auth UUID |
-|---|---|---|
-| `apineorbeenga@gmail.com` | admin | `bad65084-0233-4f20-ade7-a83c11f5f4c0` |
-| `apineorbeenga@outlook.com` | agency_owner | `e9f45e96-6703-43ad-a0a2-65912c8de85c` |
-| `apineorbeenga@yahoo.com` | agent | `69cc1b4e-0c47-43ad-9950-7f39f66c9822` |
-| `apineterngu19@gmail.com` | seeker | `5d426595-71d3-46fd-b706-a381cdbadc79` |
+| user_id | first_name | last_name | email | is_verified |
+|---|---|---|---|---|
+| 1 | Orbeenga | Apine | apineorbeenga@gmail.com | true |
+| 2 | Orbeenga | Apine | apineorbeenga@outlook.com | true |
+| 3 | Orbeenga | Apine | apineorbeenga@yahoo.com | true |
+| 4 | Terngu | Apine | apineterngu19@gmail.com | true |
+
+### Production agency
+
+| name | is_verified |
+|---|---|
+| Apine Real Estate | true |
 
 ## Locked product decisions
 - Agency-first public hierarchy is locked: Agencies -> Listings -> Agents
