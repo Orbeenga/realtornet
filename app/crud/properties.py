@@ -165,7 +165,7 @@ class PropertyCRUD:
             if filters.get("has_security") is not None:
                 query = query.where(Property.has_security == filters["has_security"])
 
-        query = query.order_by(Property.created_at.desc()).offset(skip).limit(limit)
+        query = query.order_by(Property.created_at.desc(), Property.property_id.desc()).offset(skip).limit(limit)
         results = list(db.execute(query).scalars().all())
         for obj in results:
             if getattr(obj, "location_name", None) in (None, ""):
@@ -193,7 +193,7 @@ class PropertyCRUD:
                 Property.listing_status == ListingStatus.available,
                 Property.deleted_at.is_(None)
             )
-        ).order_by(Property.created_at.desc()).limit(limit)
+        ).order_by(Property.created_at.desc(), Property.property_id.desc()).limit(limit)
         
         results = list(db.execute(query).scalars().all())
         for obj in results:
@@ -223,7 +223,7 @@ class PropertyCRUD:
                 Property.listing_status == ListingStatus.available,
                 Property.deleted_at.is_(None)
             )
-        ).order_by(Property.created_at.desc()).limit(limit)
+        ).order_by(Property.created_at.desc(), Property.property_id.desc()).limit(limit)
 
         results = list(db.execute(query).scalars().all())
         for obj in results:
@@ -338,7 +338,7 @@ class PropertyCRUD:
                     Property.description.ilike(search_pattern)
                 )
             )
-        ).order_by(Property.created_at.desc()).offset(skip).limit(limit)
+        ).order_by(Property.created_at.desc(), Property.property_id.desc()).offset(skip).limit(limit)
         
         return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
     
@@ -470,9 +470,9 @@ class PropertyCRUD:
         elif filters.sort_by == "price_desc":
             query = query.order_by(Property.price.desc())
         elif filters.sort_by == "date_desc":
-            query = query.order_by(Property.created_at.desc())
+            query = query.order_by(Property.created_at.desc(), Property.property_id.desc())
         elif filters.sort_by == "date_asc":
-            query = query.order_by(Property.created_at.asc())
+            query = query.order_by(Property.created_at.asc(), Property.property_id.asc())
         elif filters.sort_by == "size_desc":
             query = query.order_by(Property.property_size.desc())
         elif filters.sort_by == "size_asc":
@@ -480,7 +480,7 @@ class PropertyCRUD:
         elif filters.sort_by == "distance" and distance_column is not None:
             query = query.order_by(distance_column)
         else:
-            query = query.order_by(Property.created_at.desc())
+            query = query.order_by(Property.created_at.desc(), Property.property_id.desc())
         
         query = query.offset(skip).limit(limit)
         
@@ -1223,7 +1223,7 @@ class PropertyCRUD:
         if filters.get("has_security") is not None:
             query = query.where(Property.has_security == filters["has_security"])
 
-        query = query.order_by(Property.created_at.desc()).offset(skip).limit(limit)
+        query = query.order_by(Property.created_at.desc(), Property.property_id.desc()).offset(skip).limit(limit)
         results = list(db.execute(query).scalars().all())
         for obj in results:
             if getattr(obj, "location_name", None) in (None, ""):
@@ -1291,7 +1291,7 @@ class PropertyCRUD:
                     Property.user_id == agent_user_id,
                 ),
             )
-            .order_by(Property.created_at.desc())
+            .order_by(Property.created_at.desc(), Property.property_id.desc())
             .offset(skip)
             .limit(limit)
         )

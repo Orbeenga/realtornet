@@ -96,23 +96,50 @@ class AgencyCRUD:
 
         agencies = list(db.execute(query).scalars().all())
 
-        # Attach computed counts to avoid N+1 queries and match response schema
-        for agency in agencies:
-            agency_id: int = agency.agency_id  # type: ignore
-            agent_count = self.count_active_members(db, agency_id=agency_id)
-            property_count = int(db.execute(
-                select(func.count(Property.property_id)).where(
-                    Property.agency_id == agency_id,
-                    Property.moderation_status == ModerationStatus.verified,
-                    Property.deleted_at.is_(None)
+        # Batch-compute counts to avoid N+1
+        if agencies:
+            agency_ids = [a.agency_id for a in agencies]  # type: ignore
+
+            # Agent roster counts (active memberships with active users)
+            from app.models.agency_join_requests import AgencyAgentMembership
+            from app.models.users import User
+
+            agent_counts_rows = db.execute(
+                select(
+                    AgencyAgentMembership.agency_id,
+                    func.count(func.distinct(AgencyAgentMembership.user_id)).label("agent_count"),
                 )
-            ).scalar() or 0)
+                .join(User, User.user_id == AgencyAgentMembership.user_id)
+                .where(
+                    AgencyAgentMembership.agency_id.in_(agency_ids),
+                    AgencyAgentMembership.status == "active",
+                    AgencyAgentMembership.deleted_at.is_(None),
+                    User.deleted_at.is_(None),
+                )
+                .group_by(AgencyAgentMembership.agency_id)
+            ).all()
+            agent_counts = {row[0]: int(row[1] or 0) for row in agent_counts_rows}
+
+            # Verified property counts per agency
+            property_counts_rows = db.execute(
+                select(
+                    Property.agency_id,
+                    func.count(Property.property_id).label("property_count"),
+                )
+                .where(
+                    Property.agency_id.in_(agency_ids),
+                    Property.moderation_status == ModerationStatus.verified,
+                    Property.deleted_at.is_(None),
+                )
+                .group_by(Property.agency_id)
+            ).all()
+            property_counts = {row[0]: int(row[1] or 0) for row in property_counts_rows}
 
             # Attach as private attributes expected by model properties
-            # Agency.agent_count and Agency.property_count are @property getters that
-            # read pre-computed values from _agent_count/_property_count when present.
-            object.__setattr__(agency, "_agent_count", agent_count)
-            object.__setattr__(agency, "_property_count", property_count)
+            for agency in agencies:
+                aid: int = agency.agency_id  # type: ignore
+                object.__setattr__(agency, "_agent_count", agent_counts.get(aid, 0))
+                object.__setattr__(agency, "_property_count", property_counts.get(aid, 0))
 
         return agencies
     
