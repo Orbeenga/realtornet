@@ -4,7 +4,7 @@ Returns simplified agent information for frontend display
 """
 from typing import Any, List
 from fastapi import APIRouter, Depends, status
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, ConfigDict
 
@@ -54,7 +54,9 @@ def read_agents_directory(
         AgentProfile, User.user_id == AgentProfile.user_id
     ).where(
         User.deleted_at.is_(None),
-        User.user_role.in_([UserRole.AGENT, UserRole.AGENCY_OWNER])
+        User.user_role.in_([UserRole.AGENT, UserRole.AGENCY_OWNER]),
+        # Exclude agents whose primary agency is soft-deleted; allow agents with no primary agency
+        or_(User.agency_id.is_(None), Agency.deleted_at.is_(None)),
     ).order_by(
         User.first_name.asc(),
         User.last_name.asc()

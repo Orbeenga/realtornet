@@ -549,6 +549,7 @@ def _accept_agency_invitation_for_user(
 def read_agencies(
     db: Session = Depends(get_db),
     pagination: dict = Depends(pagination_params),
+    is_verified: bool | None = Query(default=None),
 ) -> Any:
     """
     Retrieve agencies.
@@ -557,7 +558,7 @@ def read_agencies(
     Used for browsing agencies or populating agency selection.
     CRUD layer enforces deleted_at IS NULL filtering.
     """
-    agencies = agency_crud.get_multi(db, **pagination,)
+    agencies = agency_crud.get_multi(db, **pagination, is_verified=is_verified)
     return agencies
 
 
