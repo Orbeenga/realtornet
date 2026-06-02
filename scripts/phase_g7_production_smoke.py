@@ -8,6 +8,7 @@ canonical production accounts do not store plaintext passwords in the repo.
 
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,7 +25,7 @@ from app.core.config import settings
 from app.core.security import generate_access_token
 
 
-BASE_URL = "https://realtornet-production.up.railway.app"
+BASE_URL = os.getenv("SMOKE_BASE_URL", "http://localhost:8000")
 API_URL = f"{BASE_URL}/api/v1"
 
 
@@ -124,6 +125,8 @@ def _register(client: httpx.Client, email: str, password: str, first_name: str) 
 
 
 def main() -> None:
+    if os.getenv("ENV", "").lower() == "production":
+        raise SystemExit("ERROR: Smoke runner cannot execute against production. Use staging.")
     admin = _fetch_user("apineorbeenga@gmail.com")
     owner = _fetch_user("apineorbeenga@outlook.com")
     seeker = _fetch_user("apineterngu19@gmail.com")
@@ -304,6 +307,7 @@ def main() -> None:
             },
         )
         assert int(inquiry["property_id"]) == property_id
+        inquiry_id = int(inquiry["inquiry_id"])  # capture for teardown
 
         received_after = _request(
             client,
@@ -316,8 +320,41 @@ def main() -> None:
     print(f"12/12 production checks passed: {', '.join(checks)}")
     print(
         "New agency journey passed: "
-        f"agency_id={agency_id}, property_id={property_id}, inquiry_id={inquiry['inquiry_id']}"
+        f"agency_id={agency_id}, property_id={property_id}, inquiry_id={inquiry_id}"
     )
+
+    # Auto-teardown: soft-delete created smoke data in reverse dependency order
+    engine = create_engine(settings.DATABASE_URI)
+    with engine.begin() as conn:
+        # Inquiries
+        try:
+            conn.execute(text("update inquiries set deleted_at = now() where inquiry_id = :i"), {"i": inquiry_id})
+        except Exception:
+            pass
+        # Properties
+        try:
+            conn.execute(text("update properties set deleted_at = now() where property_id = :p"), {"p": property_id})
+        except Exception:
+            pass
+        # Memberships and agency
+        try:
+            conn.execute(text("""
+                update agency_agent_memberships
+                set deleted_at = now(), status = 'inactive'
+                where agency_id = :a and deleted_at is null
+            """), {"a": agency_id})
+            conn.execute(text("update agencies set deleted_at = now() where agency_id = :a"), {"a": agency_id})
+        except Exception:
+            pass
+        # Soft-delete smoke users by domain pattern and their profiles
+        try:
+            conn.execute(text("update users set deleted_at = now() where email like :smoke"), {"smoke": "%@smoke.realtornetapp.com"})
+            conn.execute(text("""
+                update agent_profiles set deleted_at = now()
+                where user_id in (select user_id from users where deleted_at is not null)
+            """))
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
