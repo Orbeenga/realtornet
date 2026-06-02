@@ -45,6 +45,15 @@
 - Railway backend service `imaginative-peace` must run with `ENV=production`
 - Railway backend service `imaginative-peace` must include `RESEND_API_KEY` for transactional email delivery
 
+### Staging environment
+- Staging Supabase project ref: `avkhpachzsbgmbnkfnhu` (promoted from retiring project)
+- Staging Railway service should target the staging Supabase project; all smoke and integration runs must hit staging, not production
+- Smoke runner safeguards:
+  - Script refuses to run when `ENV=production`
+  - Default `SMOKE_BASE_URL` points to a safe non-production URL; set this explicitly to the staging Railway URL
+  - Auto-teardown soft-deletes all smoke-created data (users, profiles, memberships, agencies, properties, inquiries)
+- Operator action: run `alembic upgrade head` against `avkhpachzsbgmbnkfnhu`, confirm all migrations apply, then publish the staging Railway URL to agents for all test runs
+
 ## Production accounts (new project fobvnshrqxduuhzgflvd)
 
 | user_id | first_name | last_name | email | is_verified |

@@ -76,6 +76,27 @@ def _get_preapproved_agency_for_owner_email(db: Session, email: str) -> Agency |
     ).scalars().first()
 
 
+BLOCKED_EMAIL_DOMAINS: set[str] = {
+    # Prevent accidental smoke/staging runs from registering in production
+    "smoke.realtornetapp.com",
+    # Prevent Resend test-sink addresses from registering
+    "resend.dev",
+}
+
+
+def _validate_registration_email_domain(email: str) -> None:
+    """Block registrations from known test/sink domains.
+
+    This is a durable control that prevents smoke data and audit bloat in production.
+    """
+    domain = email.split("@")[-1].lower()
+    if domain in BLOCKED_EMAIL_DOMAINS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This email domain is not permitted for registration.",
+        )
+
+
 @router.post("/login", response_model=Token)
 def login_access_token(
     db: Session = Depends(get_db),
@@ -245,6 +266,9 @@ def register_user(
     - User data meets schema requirements
     - Supabase Auth identity is created before local domain records
     """
+    # Block smoke/test email domains up front
+    _validate_registration_email_domain(user_in.email)
+
     # Public registration defaults to seeker. Higher-trust roles are granted only
     # from server-owned workflows, such as an admin-approved agency application.
     user_in = _normalize_public_registration(user_in)
