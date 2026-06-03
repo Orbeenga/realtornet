@@ -35,6 +35,7 @@ from app.models.favorites import Favorite
 from app.models.saved_searches import SavedSearch
 from app.models.agent_membership_audit import AgentMembershipAudit
 from app.models.review_requests import ReviewRequest
+from app.models.listing_events import ListingEvent
 
 # Import PostGIS types for custom rendering
 from geoalchemy2 import Geography
