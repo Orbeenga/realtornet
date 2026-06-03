@@ -30,7 +30,21 @@ class ListingStatus(str, Enum):
 
 
 class ModerationStatus(str, Enum):
-    """Schema enum - values match moderation_status_enum exactly"""
+    """Schema enum - values match moderation_status_enum exactly.
+
+    Phase M expands the moderation lifecycle with new governance states while
+    retaining legacy values for safe migrations against existing data.
+    """
+
+    # New Phase M states
+    draft = "draft"
+    agency_review = "agency_review"
+    agency_rejected = "agency_rejected"
+    admin_review = "admin_review"
+    admin_rejected = "admin_rejected"
+    live = "live"
+
+    # Legacy Phase L states (remain valid at the DB level for now)
     pending_review = "pending_review"
     agency_approved = "agency_approved"
     verified = "verified"
@@ -232,7 +246,7 @@ class PropertyResponse(PropertyBase):
     is_featured: bool
     listing_status: ListingStatus
     is_verified: bool
-    moderation_status: ModerationStatus = ModerationStatus.pending_review
+    moderation_status: ModerationStatus = ModerationStatus.draft
     moderation_reason: Optional[str] = None
     verification_date: Optional[datetime] = None
     created_at: datetime

@@ -28,7 +28,18 @@ class ListingStatus(str, enum.Enum):
 
 
 class ModerationStatus(str, enum.Enum):
-    # Listing moderation lifecycle for admin review.
+    # Phase M listing governance state machine (superset of legacy values).
+    # New Phase M states
+    draft = "draft"
+    agency_review = "agency_review"
+    agency_rejected = "agency_rejected"
+    admin_review = "admin_review"
+    admin_rejected = "admin_rejected"
+    live = "live"
+
+    # Legacy Phase L states retained for backwards compatibility and safe
+    # migrations against existing data. These remain valid enum values at the
+    # DB level and will be mapped/retired in a later data migration.
     pending_review = "pending_review"
     agency_approved = "agency_approved"
     verified = "verified"
@@ -69,7 +80,7 @@ class Property(Base, AuditMixin, SoftDeleteMixin):
     moderation_status = Column(
         ENUM(ModerationStatus, name="moderation_status_enum", create_type=False),
         nullable=False,
-        server_default=text("'pending_review'::moderation_status_enum"),
+        server_default=text("'draft'::moderation_status_enum"),
     )
     moderation_reason = Column(Text, nullable=True)
     verification_date = Column(DateTime(timezone=True), nullable=True)

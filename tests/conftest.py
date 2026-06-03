@@ -20,6 +20,7 @@ from app.main import app
 from app.models.users import User, UserRole
 from app.core.security import get_password_hash, generate_access_token
 from app.models.properties import Property, ListingType, ListingStatus, ModerationStatus
+from app.models.listing_events import ListingEvent
 from app.models.property_types import PropertyType
 from app.models.locations import Location
 from app.models.agencies import Agency
@@ -66,10 +67,43 @@ with engine.connect() as conn:
         END $$;
     """))
     conn.execute(text("""
-        DO $$ BEGIN
-            CREATE TYPE moderation_status_enum AS ENUM ('pending_review', 'agency_approved', 'verified', 'rejected', 'revoked');
-        EXCEPTION WHEN duplicate_object THEN null;
-        END $$;
+        DO $$
+        BEGIN
+            -- Test database only: ensure moderation_status_enum exists and matches Phase M superset
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_type t
+                JOIN pg_namespace n ON n.oid = t.typnamespace
+                WHERE t.typname = 'moderation_status_enum' AND n.nspname = 'public'
+            ) THEN
+                CREATE TYPE moderation_status_enum AS ENUM (
+                    'draft',
+                    'agency_review',
+                    'agency_rejected',
+                    'admin_review',
+                    'admin_rejected',
+                    'live',
+                    'pending_review',
+                    'agency_approved',
+                    'verified',
+                    'rejected',
+                    'revoked'
+                );
+            ELSE
+                -- Upgrade existing enum in-place to include any missing values
+                ALTER TYPE moderation_status_enum ADD VALUE IF NOT EXISTS 'draft';
+                ALTER TYPE moderation_status_enum ADD VALUE IF NOT EXISTS 'agency_review';
+                ALTER TYPE moderation_status_enum ADD VALUE IF NOT EXISTS 'agency_rejected';
+                ALTER TYPE moderation_status_enum ADD VALUE IF NOT EXISTS 'admin_review';
+                ALTER TYPE moderation_status_enum ADD VALUE IF NOT EXISTS 'admin_rejected';
+                ALTER TYPE moderation_status_enum ADD VALUE IF NOT EXISTS 'live';
+                ALTER TYPE moderation_status_enum ADD VALUE IF NOT EXISTS 'pending_review';
+                ALTER TYPE moderation_status_enum ADD VALUE IF NOT EXISTS 'agency_approved';
+                ALTER TYPE moderation_status_enum ADD VALUE IF NOT EXISTS 'verified';
+                ALTER TYPE moderation_status_enum ADD VALUE IF NOT EXISTS 'rejected';
+                ALTER TYPE moderation_status_enum ADD VALUE IF NOT EXISTS 'revoked';
+            END IF;
+        END;
+        $$;
     """))
     conn.execute(text("""
         DO $$ BEGIN
@@ -93,7 +127,7 @@ def db():
         schema_conn.execute(text("""
             ALTER TABLE properties
             ADD COLUMN IF NOT EXISTS moderation_status moderation_status_enum
-            DEFAULT 'pending_review'::moderation_status_enum
+            DEFAULT 'draft'::moderation_status_enum
             NOT NULL;
         """))
         schema_conn.execute(text("""
