@@ -252,3 +252,21 @@ The following items remain open as Phase L closes and are explicitly carried int
 
 - **Agency list `property_count` UI follow-up**
   - Backend work from B.3/L.5 is complete: `property_count` is present on the agencies list response via canonical aggregates. Frontend still shows some agencies with 0 until real inventory exists. After Phase M listings are live, run `pnpm gen:types` and confirm the agency card component renders non-zero counts correctly.
+
+## DEF-M-NOTIF-001: In-platform notification centre — bell icon, notifications table, read/unread state
+
+**Status: DEFERRED → Phase N**
+
+For a marketplace with multiple actor types (agent, agency owner, admin), the notification convention is:
+- **Email**: durable, actor-actionable events (inquiry received, listing approved/rejected/revoked, role changed, agency application outcome). Already implemented in Phase M.
+- **In-platform notifications**: ambient awareness layer ("Your listing moved to admin review", "Agency queue has 3 pending listings", "A new agent joined your agency"). Low-urgency status signals for the dashboard.
+
+The rule: anything requiring the recipient to take action gets email. Anything informational gets in-platform. High-stakes events (revocation, rejection) get both.
+
+Email is sufficient for Phase M. In-platform notifications require:
+- `notifications` table (id, user_id, type, title, body, read_at, created_at)
+- Read/unread state model and API endpoints
+- Bell icon component with dropdown on the frontend
+- WebSocket or polling for real-time updates (optional, polling sufficient for MVP)
+
+Trigger for implementation: post-launch when user count justifies the UI complexity, or Phase N when the frontend architecture supports a global notification layer.
