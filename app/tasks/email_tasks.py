@@ -481,6 +481,7 @@ def send_property_moderation_email(
     normalized_status = moderation_status.lower()
     status_labels = {
         "verified": "Your listing is live",
+        "live": "Your listing is live",
         "rejected": "Listing update",
         "revoked": "Listing access change",
         "pending_review": "Listing returned to review",
@@ -490,7 +491,7 @@ def send_property_moderation_email(
     dashboard_url = _frontend_url("/account/listings")
     reason_text = f"\n\nReason: {reason}" if reason else ""
     reason_html = f"<p><strong>Reason:</strong> {escape(reason)}</p>" if reason else ""
-    if normalized_status == "verified":
+    if normalized_status in {"verified", "live"}:
         next_step = f"Your listing is now visible publicly: {property_url}"
         next_step_html = f'<p>Your listing is now visible publicly: <a href="{property_url}">View listing</a></p>'
     elif normalized_status == "rejected":

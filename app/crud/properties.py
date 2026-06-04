@@ -14,6 +14,7 @@ from geoalchemy2.functions import ST_DWithin, ST_Distance, ST_MakeEnvelope, ST_S
 from geoalchemy2.elements import WKTElement
 
 from app.models.properties import Property, ListingType, ListingStatus, ModerationStatus
+from app.models.listing_events import ListingEvent
 from app.models.locations import Location
 from app.schemas.properties import PropertyCreate, PropertyUpdate, PropertyFilter
 from app.models.property_types import PropertyType
@@ -23,11 +24,48 @@ class PropertyCRUD:
     """CRUD operations for Property model - DB-first canonical implementation"""
 
     def _verified_visibility_filter(self) -> Any:
-        """Return the public visibility predicate during the enum transition."""
+        """Return the public visibility predicate during the enum transition.
+
+        Phase M: treat `live` as the canonical published state while honoring
+        legacy `verified` and the historical is_verified flag. This ensures
+        new moderation states are hidden from public views by default until
+        explicitly whitelisted here.
+        """
         return or_(
-            Property.moderation_status == ModerationStatus.verified,
+            Property.moderation_status.in_([ModerationStatus.live, ModerationStatus.verified]),
             Property.is_verified.is_(True),
         )
+
+    def _append_listing_event(
+        self,
+        db: Session,
+        *,
+        property_obj: Property,
+        actor_user_id: Optional[int],
+        from_status: Optional[str],
+        to_status: str,
+        reason: Optional[str],
+    ) -> None:
+        """Append a listing_events row for a moderation transition.
+
+        This helper is intentionally side-effect-only (no commit) and is
+        called from moderation paths that know the acting user and the
+        from/to states. If actor_user_id is omitted, no event is recorded;
+        this preserves behavior for legacy internal callers and unit tests
+        that don't provide an actor.
+        """
+        if actor_user_id is None:
+            return
+
+        listing_id = type_cast(int, property_obj.property_id)
+        event = ListingEvent(
+            listing_id=listing_id,
+            actor_id=actor_user_id,
+            from_status=from_status,
+            to_status=to_status,
+            reason=reason,
+        )
+        db.add(event)
     
     
     # READ OPERATIONS
@@ -310,11 +348,13 @@ class PropertyCRUD:
             db.execute(
                 select(func.count(Property.property_id)).where(
                     Property.deleted_at.is_(None),
-                    or_(
-                        Property.moderation_status != ModerationStatus.verified,
-                        Property.is_verified.is_(False),
-                        Property.is_verified.is_(None),
-                    )
+                    and_(
+                        Property.moderation_status.notin_([ModerationStatus.live, ModerationStatus.verified]),
+                        or_(
+                            Property.is_verified.is_(False),
+                            Property.is_verified.is_(None),
+                        ),
+                    ),
                 )
             ).scalar() or 0
         )
@@ -633,7 +673,7 @@ class PropertyCRUD:
         actor_supabase_id = updated_by if updated_by is not None else updated_by_supabase_id
         if actor_supabase_id:
             db_obj.updated_by = actor_supabase_id
-        
+
         db.add(db_obj)
         db.flush()
         db.refresh(db_obj)
@@ -673,7 +713,8 @@ class PropertyCRUD:
         moderation_status: Optional[str] = None,
         moderation_reason: Optional[str] = None,
         updated_by_supabase_id: Optional[str] = None,
-        updated_by: Optional[str] = None
+        updated_by: Optional[str] = None,
+        actor_user_id: Optional[int] = None,
     ) -> Optional[Property]:
         """Verify property (admin operation)"""
         db_obj = self.get(db, property_id=property_id)
@@ -683,7 +724,10 @@ class PropertyCRUD:
         status_value = moderation_status or (
             ModerationStatus.verified.value if is_verified else ModerationStatus.pending_review.value
         )
-        next_is_verified = status_value == ModerationStatus.verified.value
+        next_is_verified = status_value in {
+            ModerationStatus.verified.value,
+            ModerationStatus.live.value,
+        }
 
         # FIX: Idempotent verify/unverify to avoid timestamp churn on no-op calls.
         current_status = getattr(
@@ -704,6 +748,9 @@ class PropertyCRUD:
                 db.refresh(db_obj)
             return db_obj
 
+        # Record the previous moderation status before applying the transition.
+        previous_status = current_status
+
         type_cast(Any, db_obj).is_verified = next_is_verified  # Narrow ORM instance attribute assignment to its runtime bool field.
         type_cast(Any, db_obj).moderation_status = status_value
         type_cast(Any, db_obj).moderation_reason = moderation_reason
@@ -716,7 +763,17 @@ class PropertyCRUD:
         actor_supabase_id = updated_by if updated_by is not None else updated_by_supabase_id
         if actor_supabase_id:
             db_obj.updated_by = actor_supabase_id
-        
+
+        # Append listing_events row reflecting the moderation transition.
+        self._append_listing_event(
+            db,
+            property_obj=db_obj,
+            actor_user_id=actor_user_id,
+            from_status=str(previous_status) if previous_status is not None else None,
+            to_status=str(status_value),
+            reason=moderation_reason,
+        )
+
         db.add(db_obj)
         db.flush()
         db.refresh(db_obj)

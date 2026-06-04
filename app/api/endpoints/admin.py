@@ -730,21 +730,32 @@ def verify_property(
     requested_status = moderation_update.resolved_moderation_status
     previous_status = str(getattr(prop.moderation_status, "value", prop.moderation_status))
 
-    # Three-tier moderation: admin can only verify from agency_approved.
-    if requested_status.value == "verified" and previous_status not in {"agency_approved", "verified"}:
+    # Normalize publish target: treat both 'verified' and 'live' inputs as a
+    # request to move the listing into the Phase M `live` state.
+    is_publish = requested_status in {ModerationStatus.verified, ModerationStatus.live}
+    target_status = ModerationStatus.live if is_publish else requested_status
+
+    # Three-tier moderation: admin can only publish from business-legal states.
+    # For backward compatibility we allow:
+    # - agency_approved (Phase L),
+    # - admin_review (Phase M),
+    # - verified/live (idempotent).
+    if target_status.value == "live" and previous_status not in {"agency_approved", "admin_review", "verified", "live"}:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Admin can only verify listings that have been approved by the agency",
+            detail="Admin can only verify listings that have been approved by the agency or are under admin review",
         )
 
     # Use CRUD method with audit tracking
+    is_published = target_status.value == "live"
     prop = property_crud.verify_property(
         db,
         property_id=property_id,
-        is_verified=requested_status.value == "verified",
-        moderation_status=requested_status.value,
+        is_verified=is_published,
+        moderation_status=target_status.value,
         moderation_reason=moderation_update.moderation_reason,
-        updated_by=str(current_user.supabase_id)  # Normalize the admin Supabase UUID to the CRUD audit string type at the call site.
+        updated_by=str(current_user.supabase_id),  # Normalize the admin Supabase UUID to the CRUD audit string type at the call site.
+        actor_user_id=current_user.user_id,
     )
 
     if prop is not None:
@@ -757,12 +768,15 @@ def verify_property(
                     send_property_moderation_email,
                     owner_email,
                     str(prop.title),
-                    requested_status.value,
+                    target_status.value,
                     typing_cast(int, prop.property_id),
                     moderation_update.moderation_reason,
                 )
 
-        if previous_status != "verified" and requested_status.value == "verified":
+        # Only send saved-search match emails the first time a listing becomes
+        # publicly visible. Treat both legacy `verified` and new `live` as
+        # published states, but only transition into `live` triggers matches.
+        if target_status.value == "live" and previous_status not in {"verified", "live"}:
             notify_saved_search_matches_for_property(db, property_obj=prop)
     
     logger.info(f"Property verified: {property_id} by admin {current_user.user_id}")
