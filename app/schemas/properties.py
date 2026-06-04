@@ -221,14 +221,20 @@ class PropertyVerificationUpdate(BaseModel):
     @model_validator(mode="after")
     def require_status_or_legacy_flag(self) -> "PropertyVerificationUpdate":
         if self.is_verified is None and self.moderation_status is None:
-            self.moderation_status = ModerationStatus.verified
+            # Phase M: default publish target is the new `live` state while
+            # keeping backward compatibility for legacy callers that omit
+            # both fields.
+            self.moderation_status = ModerationStatus.live
         return self
 
     @property
     def resolved_moderation_status(self) -> ModerationStatus:
         if self.moderation_status is not None:
             return ModerationStatus(self.moderation_status)
-        return ModerationStatus.verified if self.is_verified else ModerationStatus.pending_review
+        # Phase M: interpret is_verified=True as a request to move the listing
+        # into the `live` state, but preserve the legacy unpublish target of
+        # pending_review when is_verified=False.
+        return ModerationStatus.live if self.is_verified else ModerationStatus.pending_review
 
 
 class PropertyAgencyActionUpdate(BaseModel):

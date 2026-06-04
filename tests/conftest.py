@@ -117,11 +117,16 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=True, bind=engine
 
 
 # ---------------------------------------------------------------------------
-# Core fixtures
+# Schema setup (session-scoped — runs once before all tests)
 # ---------------------------------------------------------------------------
 
-@pytest.fixture(scope="function")
-def db():
+@pytest.fixture(scope="session", autouse=True)
+def setup_test_schema():
+    """Create tables, types, and apply DDL patches once per test session.
+
+    Moving DDL out of the per-test ``db`` fixture prevents concurrent ALTER
+    TABLE statements from deadlocking under heavy test-suite load.
+    """
     Base.metadata.create_all(bind=engine)
     with engine.begin() as schema_conn:
         schema_conn.execute(text("""
@@ -129,6 +134,11 @@ def db():
             ADD COLUMN IF NOT EXISTS moderation_status moderation_status_enum
             DEFAULT 'draft'::moderation_status_enum
             NOT NULL;
+        """))
+        schema_conn.execute(text("""
+            ALTER TABLE properties
+            ALTER COLUMN moderation_status
+            SET DEFAULT 'draft'::moderation_status_enum;
         """))
         schema_conn.execute(text("""
             ALTER TABLE properties
@@ -327,13 +337,21 @@ def db():
             LEFT JOIN users u ON u.supabase_id = base._actor_id
             ORDER BY base.updated_at DESC NULLS LAST;
         """))
+
+
+# ---------------------------------------------------------------------------
+# Core fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="function")
+def db():
     connection = engine.connect()
     transaction = connection.begin()
     db = TestingSessionLocal(bind=connection)
-    
+
     # CRITICAL FIX: Start a nested transaction (Savepoint)
     # This intercepts the .commit() calls in your CRUD methods
-    db.begin_nested() 
+    db.begin_nested()
 
     try:
         yield db
