@@ -242,6 +242,19 @@ class PropertyAgencyActionUpdate(BaseModel):
     moderation_reason: Optional[str] = None
 
 
+class ListingEventResponse(BaseModel):
+    """Schema for listing moderation transition events (Phase M audit)."""
+    event_id: int
+    listing_id: int
+    actor_id: int
+    from_status: Optional[str] = None
+    to_status: str
+    reason: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 # Response Schema (includes DB-controlled fields)
 class PropertyResponse(PropertyBase):
     """Schema for property responses (includes DB-generated fields)"""

@@ -1513,6 +1513,63 @@ class TestPhaseM2Lifecycle:
         assert len(events) >= 5
 
 
+class TestListingEventsReadEndpoint:
+    """GET /properties/{id}/events — role-gated listing event history."""
+
+    def test_agent_can_read_own_listing_events(
+        self, client: TestClient, owner_token_headers, agency_owner_token_headers, admin_token_headers, unverified_property_owned_by_agent
+    ):
+        listing_id = unverified_property_owned_by_agent.property_id
+        # Walk through some transitions to create events
+        client.patch(f"/api/v1/properties/{listing_id}/submit-for-review", headers=owner_token_headers)
+        client.patch(f"/api/v1/properties/{listing_id}/agency-approve", headers=agency_owner_token_headers)
+
+        resp = client.get(f"/api/v1/properties/{listing_id}/events", headers=owner_token_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+        assert len(data) >= 2
+        assert all("event_id" in e and "to_status" in e for e in data)
+        # Events are ordered oldest first
+        statuses = [e["to_status"] for e in data]
+        assert statuses == sorted(statuses, key=lambda s: data[statuses.index(s)]["event_id"])
+
+    def test_agency_owner_can_read_agency_listing_events(
+        self, client: TestClient, owner_token_headers, agency_owner_token_headers, unverified_property_owned_by_agent
+    ):
+        listing_id = unverified_property_owned_by_agent.property_id
+        client.patch(f"/api/v1/properties/{listing_id}/submit-for-review", headers=owner_token_headers)
+
+        resp = client.get(f"/api/v1/properties/{listing_id}/events", headers=agency_owner_token_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+        assert len(data) >= 1
+
+    def test_admin_can_read_any_listing_events(
+        self, client: TestClient, owner_token_headers, admin_token_headers, unverified_property_owned_by_agent
+    ):
+        listing_id = unverified_property_owned_by_agent.property_id
+        client.patch(f"/api/v1/properties/{listing_id}/submit-for-review", headers=owner_token_headers)
+
+        resp = client.get(f"/api/v1/properties/{listing_id}/events", headers=admin_token_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+
+    def test_unauthorized_user_cannot_read_events(
+        self, client: TestClient, normal_user_token_headers, unverified_property_owned_by_agent
+    ):
+        """A non-agent, non-agency-owner, non-admin user gets 403."""
+        listing_id = unverified_property_owned_by_agent.property_id
+        resp = client.get(f"/api/v1/properties/{listing_id}/events", headers=normal_user_token_headers)
+        assert resp.status_code == 403
+
+    def test_nonexistent_property_returns_404(self, client: TestClient, admin_token_headers):
+        resp = client.get("/api/v1/properties/999999/events", headers=admin_token_headers)
+        assert resp.status_code == 404
+
+
 # ===========================================================================
 # DELETE /{property_id}  —  soft delete
 # ===========================================================================

@@ -66,8 +66,25 @@ class PropertyCRUD:
             reason=reason,
         )
         db.add(event)
-    
-    
+
+    def get_listing_events(
+        self,
+        db: Session,
+        *,
+        property_id: int,
+    ) -> List[ListingEvent]:
+        """Get ordered listing_events for a property (oldest first).
+
+        Returns an empty list if the property has no recorded transitions.
+        Callers are responsible for access control.
+        """
+        stmt = (
+            select(ListingEvent)
+            .where(ListingEvent.listing_id == property_id)
+            .order_by(ListingEvent.created_at.asc())
+        )
+        return list(db.execute(stmt).scalars().all())
+
     # READ OPERATIONS
         
     def get(self, db: Session, property_id: int) -> Optional[Property]:
