@@ -239,3 +239,16 @@ Agent `/account/inquiries` cards are backed by received-inquiry responses that i
 Resolved status:
 - `GET /api/v1/inquiries/received` serializes the related property payload.
 - Production G.7 smoke confirmed the agent received-inquiries endpoint returns successfully after a seeker inquiry.
+
+## Phase L → Phase M carryover (June 2026)
+
+The following items remain open as Phase L closes and are explicitly carried into Phase M:
+
+- **L.7 — 12-journey integration sweep**
+  - Structurally blocked in Phase L because no real verified listings exist in production yet. Journeys 3, 4, 5, and 10 depend on live inventory. These are expected to close once the Phase M listing governance system is live and there are real properties in production.
+
+- **DEF-J-EMAIL-DOMAIN-001 — Email domain verification**
+  - Operator action only. A verified MAIL_FROM sender domain is still required in Resend. Once a domain is registered and verified in Resend, Railway MAIL_FROM must be updated and a production inquiry email confirmed. This remains independent of Phase M code work but is a prerequisite for real-user email delivery.
+
+- **Agency list `property_count` UI follow-up**
+  - Backend work from B.3/L.5 is complete: `property_count` is present on the agencies list response via canonical aggregates. Frontend still shows some agencies with 0 until real inventory exists. After Phase M listings are live, run `pnpm gen:types` and confirm the agency card component renders non-zero counts correctly.

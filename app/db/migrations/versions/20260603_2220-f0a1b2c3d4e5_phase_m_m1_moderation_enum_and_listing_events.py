@@ -40,6 +40,9 @@ def upgrade() -> None:
     op.execute("ALTER TYPE moderation_status_enum ADD VALUE IF NOT EXISTS 'admin_rejected' AFTER 'admin_review'")
     op.execute("ALTER TYPE moderation_status_enum ADD VALUE IF NOT EXISTS 'live'")
 
+    # Commit so the newly added enum values are visible to subsequent DDL.
+    op.execute("COMMIT")
+
     # Change default moderation_status for new properties to draft.
     op.execute(
         "ALTER TABLE properties ALTER COLUMN moderation_status SET DEFAULT 'draft'::moderation_status_enum"
