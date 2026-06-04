@@ -38,6 +38,7 @@ from app.schemas.properties import (
     ListingStatus as PropertyListingStatus,
     ListingType as PropertyListingType,
     ModerationStatus,
+    ListingEventResponse,
 )
 
 # --- DIRECT MODEL ENUM IMPORTS ---
@@ -300,6 +301,53 @@ def read_property(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Property not found"
             )
+
+
+@router.get("/{property_id}/events", response_model=List[ListingEventResponse])
+def read_property_listing_events(
+    *,
+    db: Session = Depends(get_db),
+    property_id: int,
+    current_user: UserResponse = Depends(get_current_active_user),
+) -> Any:
+    """Get ordered listing event history for a property.
+
+    Access:
+    - Admin: any listing
+    - Agent: their own listings
+    - Agency owner: listings in their agency
+    """
+    property = property_crud.get(db=db, property_id=property_id)
+    if not property:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Property not found",
+        )
+
+    current_user_model: User = typing_cast(User, current_user)
+    property_user_id: int = typing_cast(int, property.user_id)
+    property_agency_id: int | None = typing_cast(int | None, property.agency_id)
+    current_user_agency_id: int | None = typing_cast(int | None, current_user_model.agency_id)
+
+    is_admin = user_crud.is_admin(current_user_model)
+    is_owning_agent = (
+        property_user_id == current_user.user_id
+        and user_crud.is_agent(current_user_model)
+    )
+    is_agency_owner_for_listing = (
+        user_crud.is_agency_owner(current_user_model)
+        and property_agency_id is not None
+        and property_agency_id == current_user_agency_id
+    )
+
+    if not is_admin and not is_owning_agent and not is_agency_owner_for_listing:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough permissions to view this listing's event history",
+        )
+
+    events = property_crud.get_listing_events(db=db, property_id=property_id)
+    return events
 
 
 @router.put("/{property_id}", response_model=PropertyResponse)
