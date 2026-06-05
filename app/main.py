@@ -5,7 +5,7 @@ from typing import Any
 import importlib
 import importlib.util
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
@@ -112,6 +112,16 @@ app.add_exception_handler(Exception, ErrorHandler.global_exception_handler)
 
 # Include API router
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
+
+@app.middleware("http")
+async def add_no_transform_header(request: Request, call_next):
+    """Tell all intermediate proxies (including Vercel's edge) not to transform
+    the response body. Prevents proxy-level compression/decompression issues.
+    """
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-transform"
+    return response
 
 
 @app.get("/")
