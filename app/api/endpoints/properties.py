@@ -78,6 +78,7 @@ def read_properties(
         current_user is None
         or not (
             user_crud.is_agent(typing_cast(User, current_user))
+            or user_crud.is_agency_owner(typing_cast(User, current_user))
             or user_crud.is_admin(typing_cast(User, current_user))
         )
     ):
@@ -115,6 +116,14 @@ def read_properties(
                 **pagination, 
                 params=search_params
             )
+        elif user_crud.is_agency_owner(current_user_model):
+            # Agency owners see all properties in their agency (any status)
+            properties = property_crud.get_multi_by_params_for_agency_owner(
+                db,
+                **pagination,
+                params=search_params,
+                agency_owner_user_id=current_user.user_id
+            )
         elif user_crud.is_agent(current_user_model):
             # Agents see approved + their own properties
             properties = property_crud.get_multi_by_params_for_agent(
@@ -126,8 +135,8 @@ def read_properties(
         else:
             # Regular users see only approved
             properties = property_crud.get_multi_by_params_approved(
-                db, 
-                **pagination, 
+                db,
+                **pagination,
                 params=search_params
             )
     else:
@@ -805,7 +814,11 @@ def recall_property_from_admin_review(
     current_user: UserResponse = Depends(get_current_active_user),
     _: None = Depends(validate_request_size),
 ) -> Any:
-    """Agency owner recalls a listing from admin review (admin_review → agency_review)."""
+    """Agency owner recalls a listing from admin review.
+
+    - Own listing: admin_review → draft (bypass agency_review)
+    - Agent's listing: admin_review → agency_review
+    """
     property = property_crud.get(db=db, property_id=property_id)
 
     if not property:
@@ -814,7 +827,12 @@ def recall_property_from_admin_review(
             detail="Property not found",
         )
 
-    target_status = ModerationStatus.agency_review
+    property_user_id: int = typing_cast(int, property.user_id)
+    if property_user_id == current_user.user_id:
+        target_status = ModerationStatus.draft  # Own listing → draft
+    else:
+        target_status = ModerationStatus.agency_review  # Agent's listing → agency_review
+
     ensure_legal_moderation_transition(
         property_obj=property,
         target_status=target_status,
