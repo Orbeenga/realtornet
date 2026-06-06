@@ -20,6 +20,7 @@ TransitionKey = Tuple[str, str]
 
 ROLE_AGENT_OWNS = "agent_owns"
 ROLE_AGENCY_OWNER_OF_LISTING = "agency_owner_of_listing"
+ROLE_AGENCY_OWNER_OWNS = "agency_owner_owns"
 ROLE_ADMIN = "admin"
 
 
@@ -32,7 +33,8 @@ LEGAL_TRANSITIONS: Dict[TransitionKey, str] = {
     ("agency_review", "agency_rejected"): ROLE_AGENCY_OWNER_OF_LISTING,
     ("agency_review", "draft"): ROLE_AGENT_OWNS,  # withdraw
     ("agency_rejected", "agency_review"): ROLE_AGENT_OWNS,  # resubmit
-    ("admin_review", "agency_review"): ROLE_AGENCY_OWNER_OF_LISTING,  # recall
+    ("admin_review", "agency_review"): ROLE_AGENCY_OWNER_OF_LISTING,  # recall agent's listing
+    ("admin_review", "draft"): ROLE_AGENCY_OWNER_OWNS,  # recall own listing
     ("admin_review", "live"): ROLE_ADMIN,
     ("admin_review", "admin_rejected"): ROLE_ADMIN,
     ("admin_rejected", "admin_review"): ROLE_ADMIN,  # reinstate
@@ -95,7 +97,7 @@ def ensure_legal_moderation_transition(
             )
         return
 
-    # Agency-owner-of-listing transitions.
+    # Agency-owner-of-listing transitions (recalling an agent's listing).
     if required_role == ROLE_AGENCY_OWNER_OF_LISTING:
         if current_user.user_role != UserRole.AGENCY_OWNER:
             raise HTTPException(
@@ -108,6 +110,20 @@ def ensure_legal_moderation_transition(
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only the owner of the listing's agency can perform this transition",
+            )
+        return
+
+    # Agency-owner recalling their own listing (→ draft).
+    if required_role == ROLE_AGENCY_OWNER_OWNS:
+        if current_user.user_role != UserRole.AGENCY_OWNER:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only an agency owner can perform this transition",
+            )
+        if getattr(property_obj, "user_id", None) != current_user.user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the owner can recall their own listing",
             )
         return
 

@@ -1310,6 +1310,23 @@ class PropertyCRUD:
                         object.__setattr__(obj, "location_name", name)
         return results  # Normalize SQLAlchemy's sequence result to the declared list return type.
 
+    def get_multi_by_params_for_agency_owner(
+        self,
+        db: Session,
+        *,
+        skip: int = 0,
+        limit: int = 100,
+        params: Optional[PropertyFilter] = None,
+        agency_owner_user_id: int,
+    ) -> List[Property]:
+        """Agency owner view — all non-deleted properties matching params.
+
+        Does NOT force is_verified=True so the owner can see drafts,
+        agency_review, admin_review, etc. for their agency's listings.
+        """
+        filters = params.model_dump(exclude_unset=True) if params else {}
+        return self.get_multi(db, skip=skip, limit=limit, filters=filters)
+
 
     # GET /by-LocationResponse/{location_id}  —  location visibility variants
 

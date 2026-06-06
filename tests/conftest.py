@@ -707,6 +707,13 @@ def agency_approved_property(db, agent_user, location, property_type, agency):
     return prop
 
 
+@pytest.fixture
+def unverified_property_owned_by_agency_owner(db, agency_owner_user, location, property_type, agency):
+    """Owned by agency_owner_user — for testing owner-specific agency transitions."""
+    return _make_property(db, agency_owner_user.user_id, location, property_type, agency,
+                          title="Agency Owner Owned Unverified", is_verified=False)
+
+
 # ---------------------------------------------------------------------------
 # sample_property + multiple_properties (existing, preserved)
 # ---------------------------------------------------------------------------

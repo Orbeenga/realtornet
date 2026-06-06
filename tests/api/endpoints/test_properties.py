@@ -1463,6 +1463,70 @@ class TestPhaseM2Lifecycle:
         assert recall_resp.status_code == 200
         assert recall_resp.json()["moderation_status"] == "agency_review"
 
+    def test_agency_owner_recall_own_listing_goes_to_draft(
+        self, client: TestClient, agency_owner_token_headers, unverified_property_owned_by_agency_owner
+    ):
+        """Agency owner recalling their own listing from admin_review → draft."""
+        listing_id = unverified_property_owned_by_agency_owner.property_id
+
+        # Submit own listing directly to admin_review (bypass)
+        client.patch(
+            f"/api/v1/properties/{listing_id}/submit-to-admin",
+            headers=agency_owner_token_headers,
+        )
+
+        # Recall own listing → draft
+        recall_resp = client.patch(
+            f"/api/v1/properties/{listing_id}/recall",
+            headers=agency_owner_token_headers,
+        )
+        assert recall_resp.status_code == 200
+        assert recall_resp.json()["moderation_status"] == "draft"
+
+    def test_agency_owner_can_filter_agency_listings_by_moderation_status(
+        self, client: TestClient, owner_token_headers, agency_owner_token_headers, unverified_property_owned_by_agent, agency
+    ):
+        """Agency owner calling GET /properties/?moderation_status=agency_review&agency_id={id}
+        should see agent listings in agency_review."""
+        listing_id = unverified_property_owned_by_agent.property_id
+        agency_id = agency.agency_id
+
+        # Submit agent's listing to agency_review
+        client.patch(
+            f"/api/v1/properties/{listing_id}/submit-for-review",
+            headers=owner_token_headers,
+        )
+
+        # Agency owner filters by moderation_status and agency_id
+        resp = client.get(
+            f"/api/v1/properties/?moderation_status=agency_review&agency_id={agency_id}",
+            headers=agency_owner_token_headers,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+        assert any(p["property_id"] == listing_id for p in data), \
+            "Expected agency_review listing to appear in agency owner's filtered results"
+
+    def test_agency_owner_can_see_drafts_in_inventory(
+        self, client: TestClient, owner_token_headers, agency_owner_token_headers, unverified_property_owned_by_agent, agency
+    ):
+        """Agency owner calling GET /properties/?moderation_status=draft&agency_id={id}
+        should see draft listings in their agency."""
+        listing_id = unverified_property_owned_by_agent.property_id
+        agency_id = agency.agency_id
+
+        # Listing starts as draft by default
+        resp = client.get(
+            f"/api/v1/properties/?moderation_status=draft&agency_id={agency_id}",
+            headers=agency_owner_token_headers,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+        assert any(p["property_id"] == listing_id for p in data), \
+            "Expected draft listing to appear in agency owner's inventory"
+
     def test_reinstate_from_admin_rejected(self, client: TestClient, owner_token_headers, agency_owner_token_headers, admin_token_headers, unverified_property_owned_by_agent):
         """Admin reinstates an admin_rejected listing back to admin_review."""
         listing_id = unverified_property_owned_by_agent.property_id
