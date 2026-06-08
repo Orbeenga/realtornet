@@ -1319,13 +1319,85 @@ class PropertyCRUD:
         params: Optional[PropertyFilter] = None,
         agency_owner_user_id: int,
     ) -> List[Property]:
-        """Agency owner view — all non-deleted properties matching params.
+        """Agency owner view — non-deleted properties with draft isolation.
 
-        Does NOT force is_verified=True so the owner can see drafts,
-        agency_review, admin_review, etc. for their agency's listings.
+        Draft listings are only visible to the creating user. Non-draft
+        listings follow normal param filtering (agency_id scoping comes
+        from the caller-supplied params).
         """
         filters = params.model_dump(exclude_unset=True) if params else {}
-        return self.get_multi(db, skip=skip, limit=limit, filters=filters)
+        query = select(Property).options(
+            joinedload(Property.agency),
+            joinedload(Property.location),
+        ).where(
+            Property.deleted_at.is_(None),
+            or_(
+                Property.moderation_status != ModerationStatus.draft,
+                and_(
+                    Property.moderation_status == ModerationStatus.draft,
+                    Property.user_id == agency_owner_user_id,
+                ),
+            ),
+        )
+
+        if filters.get("search"):
+            search_pattern = f"%{filters['search']}%"
+            query = query.where(
+                or_(
+                    Property.title.ilike(search_pattern),
+                    Property.description.ilike(search_pattern)
+                )
+            )
+
+        if filters.get("min_price") is not None:
+            query = query.where(Property.price >= filters["min_price"])
+        if filters.get("max_price") is not None:
+            query = query.where(Property.price <= filters["max_price"])
+        if filters.get("bedrooms") is not None:
+            query = query.where(Property.bedrooms == filters["bedrooms"])
+        if filters.get("min_bedrooms") is not None:
+            query = query.where(Property.bedrooms >= filters["min_bedrooms"])
+        if filters.get("bathrooms") is not None:
+            query = query.where(Property.bathrooms == filters["bathrooms"])
+        if filters.get("property_type_id") is not None:
+            query = query.where(Property.property_type_id == filters["property_type_id"])
+        if filters.get("agency_id") is not None:
+            query = query.where(Property.agency_id == filters["agency_id"])
+        if filters.get("location_id") is not None:
+            query = query.where(Property.location_id == filters["location_id"])
+        if filters.get("listing_type") is not None:
+            query = query.where(
+                func.lower(cast(Property.listing_type, String)) == str(filters["listing_type"]).lower()
+            )
+        if filters.get("listing_status") is not None:
+            query = query.where(
+                func.lower(cast(Property.listing_status, String)) == str(filters["listing_status"]).lower()
+            )
+        if filters.get("moderation_status") is not None:
+            query = query.where(
+                func.lower(cast(Property.moderation_status, String)) == str(filters["moderation_status"]).lower()
+            )
+        if filters.get("is_featured") is not None:
+            query = query.where(Property.is_featured == filters["is_featured"])
+        if filters.get("has_swimming_pool") is not None:
+            query = query.where(Property.has_swimming_pool == filters["has_swimming_pool"])
+        if filters.get("has_garden") is not None:
+            query = query.where(Property.has_garden == filters["has_garden"])
+        if filters.get("has_security") is not None:
+            query = query.where(Property.has_security == filters["has_security"])
+
+        query = query.order_by(Property.created_at.desc(), Property.property_id.desc()).offset(skip).limit(limit)
+        results = list(db.execute(query).scalars().all())
+        for obj in results:
+            if getattr(obj, "location_name", None) in (None, ""):
+                loc = getattr(obj, "location", None)
+                if loc is not None:
+                    city = getattr(loc, "city", None)
+                    neighborhood = getattr(loc, "neighborhood", None)
+                    name = (f"{neighborhood}, {city}" if neighborhood else city) or None
+                    if name:
+                        object.__setattr__(obj, "location_name", name)
+        return results
 
 
     # GET /by-LocationResponse/{location_id}  —  location visibility variants
