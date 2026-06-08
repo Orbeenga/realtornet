@@ -656,6 +656,11 @@ def get_properties(
     filters: Dict[str, Any] = {}
     if moderation_status is not None:
         filters["moderation_status"] = moderation_status.value
+    else:
+        # Admin 'All' tab: exclude drafts by default so the All view mirrors the
+        # UI expectation of showing all visible listings but not private drafts.
+        # This avoids returning owner-only draft listings in a global admin list.
+        filters["exclude_moderation_status"] = "draft"
 
     properties = property_crud.get_multi(db, **pagination, filters=filters if filters else None)
 
