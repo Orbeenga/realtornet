@@ -205,11 +205,23 @@ class PropertyCRUD:
             # Boolean filters
             if filters.get("is_verified") is not None:
                 query = query.where(Property.is_verified == filters["is_verified"])
+            # Support excluding moderation statuses (e.g. admin 'All' should often hide drafts).
+            # NOTE: If an explicit moderation_status filter is provided, it takes precedence
+            # and we must not apply the exclude. This avoids a caller passing moderation_status=draft
+            # and having it unintentionally filtered out by exclude_moderation_status.
+            if filters.get("moderation_status") is None:
+                if filters.get("exclude_moderation_status") is not None:
+                    exclude_val = filters["exclude_moderation_status"]
+                    if isinstance(exclude_val, (list, tuple)):
+                        query = query.where(Property.moderation_status.notin_(exclude_val))
+                    else:
+                        query = query.where(Property.moderation_status != exclude_val)
+            # Apply explicit moderation_status filter if provided.
             if filters.get("moderation_status") is not None:
                 query = query.where(
                     func.lower(cast(Property.moderation_status, String)) == str(filters["moderation_status"]).lower()
                 )
-            if filters.get("is_featured") is not None:
+
                 query = query.where(Property.is_featured == filters["is_featured"])
 
             # Amenity filters
