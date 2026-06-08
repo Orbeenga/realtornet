@@ -658,6 +658,11 @@ def get_properties(
         filters["moderation_status"] = moderation_status.value
 
     properties = property_crud.get_multi(db, **pagination, filters=filters if filters else None)
+
+    # Admin "All" view excludes agent drafts — drafts are pre-submission
+    # and irrelevant to admin governance.
+    if moderation_status is None:
+        properties = [p for p in properties if str(p.moderation_status) != ModerationStatus.draft.value]
     total = property_crud.count_active(db)  # Use CRUD method that filters deleted_at
 
     return {
