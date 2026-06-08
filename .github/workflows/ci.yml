@@ -69,6 +69,59 @@ jobs:
         run: |
           python -m pyright app/
 
+      - name: Prepare Supabase-compatible roles and schema
+        run: |
+          python - <<'PY'
+          import os
+
+          import psycopg
+
+          database_url = os.environ["DATABASE_URL"].replace(
+              "postgresql+psycopg://",
+              "postgresql://",
+              1,
+          )
+
+          statements = [
+              "CREATE SCHEMA IF NOT EXISTS auth",
+              """
+              CREATE TABLE IF NOT EXISTS auth.users (
+                  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+                  email text
+              );
+              """,
+              """
+              CREATE OR REPLACE FUNCTION auth.uid()
+              RETURNS uuid
+              LANGUAGE sql STABLE
+              AS $$ SELECT '00000000-0000-0000-0000-000000000000'::uuid; $$;
+              """,
+              """
+              DO $$
+              BEGIN
+                  CREATE ROLE anon NOLOGIN;
+              EXCEPTION WHEN duplicate_object THEN
+                  NULL;
+              END
+              $$;
+              """,
+              """
+              DO $$
+              BEGIN
+                  CREATE ROLE authenticated NOLOGIN;
+              EXCEPTION WHEN duplicate_object THEN
+                  NULL;
+              END
+              $$;
+              """,
+          ]
+
+          with psycopg.connect(database_url, autocommit=True) as conn:
+              with conn.cursor() as cur:
+                  for statement in statements:
+                      cur.execute(statement)
+          PY
+
       - name: Verify migration state
         run: |
           python -m alembic upgrade head
