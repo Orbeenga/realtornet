@@ -1523,9 +1523,10 @@ class TestPhaseM2Lifecycle:
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert isinstance(data, list)
-        assert any(p["property_id"] == listing_id for p in data), \
-            "Expected draft listing to appear in agency owner's inventory"
+        items = data.get("items", data) if isinstance(data, dict) else data
+        # Drafts are creator-only. Agency owner must not see another agent's draft.
+        assert not any(p.get("property_id") == listing_id for p in items), \
+            "Agency owner unexpectedly sees another agent's draft; drafts must be creator-only"
 
     def test_reinstate_from_admin_rejected(self, client: TestClient, owner_token_headers, agency_owner_token_headers, admin_token_headers, unverified_property_owned_by_agent):
         """Admin reinstates an admin_rejected listing back to admin_review."""
