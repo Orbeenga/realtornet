@@ -25,17 +25,11 @@
 - Phase H closed May 6 2026
 - Phase I closed May 2026
 - Phase J closed May 2026; only `DEF-J-EMAIL-DOMAIN-001` (verified sender domain + Railway `MAIL_FROM`) remains open
-- Phase K closed May 2026; Phase L is active
-- Backend v0.5.3+ at commit `c34bca9`
-- Backend G.7 exit sweep passed: pyright 0 errors; pytest passed with 92.99% coverage; production smoke 12/12; new agency journey passed end to end
-- Frontend G.7 closed in commit `d74806f`: tsc 0 errors, production build clean, Lighthouse mobile LCP 1.5s, accessibility 1.00, production routes 200
-- Backend Phase H B1/B2/B3 completed in May 2026: membership alias clarified, `property_type_id` property filter live, storage service tests raised, endpoint maps documented, agency-owner profile edit live, public agent directory filters live, location hierarchy documented, and saved-search owner detail/update confirmed
-- Phase H close gate: Resend email delivery confirmed, production smoke passed, backend pyright 0 errors, pytest 1856 passed, total coverage 94.54%
-- Backend Phase I I.2 completed May 6 2026: saved-search match emails fire on first transition to `verified`, `saved_searches.unsubscribe_token` is live, and public unsubscribe is available at `GET /api/v1/saved-searches/unsubscribe/{token}/`
-- Backend Phase I I.3 completed May 6 2026: membership audit table and `users.role_version` are live in production at migration `d3e7c5a1b9f2`; backend pyright 0 errors; pytest 1866 passed; total coverage 94.15%
-- Backend Phase I I.5 completed May 6 2026: generic agency review requests are live in production at migration `f4a8c2d9e5b1`; `review_requests` has RLS enabled, duplicate pending user+agency requests are blocked, accept/decline endpoints are available for agency-owner/admin review queues, pyright 0 errors, pytest passed with 93.97% coverage.
-- Backend Phase J location work completed May 2026: property create/update accepts `location_name`, resolves it server-side through Nominatim, stores dynamic locations through `location_crud.get_or_create()`, and exposes `GET /api/v1/locations/search?q=&limit=`.
-- Backend Phase J closeout items completed May 8 2026: `DEF-I-MEM-SMOKE-001` multi-agency revocation smoke passed in production, `DEF-I-COV-001` coverage was raised to 95.03%, pyright stayed at 0, and commit `7e8fd35` was pushed.
+- Phase K closed May 2026
+- Phase L closed May 2026: clean-slate DB propagation on new Supabase project `fobvnshrqxduuhzgflvd`, staging environment live at `realtornet-staging.up.railway.app`, admin audit endpoint live, modals/tabs/detail frontend complete
+- Phase M closed June 2026: listing governance system complete
+- Backend v0.5.3+ at commit `618cd4a`
+- Backend Phase M: M.1 enum expansion + listing_events table complete; M.2 all 13 lifecycle transition endpoints implemented (submit-for-review, submit-to-admin, agency-approve, agency-reject, withdraw, resubmit, recall, verify, admin-reject, reinstate, revoke, restore, pull-back); M.6 notification integration partial (rejection, live, revoke, restore emails wired); M.7 integration validation passed 28/30 (full lifecycle: create → submit → agency-approve → admin-verify → live → revoke → restore confirmed end-to-end via API with 5 listing_events rows; 12 original journeys all accessible)
 
 ## Locked environment decisions
 - Production Supabase project ref: `fobvnshrqxduuhzgflvd`
@@ -103,9 +97,12 @@
 - `DEF-L-ADMIN-AUDIT-001`: Admin audit endpoint `GET /api/v1/admin/audit/` implemented and tested
 - `DEF-L-POSTGIS-001`: Closed by clean-slate migration on new production project
 
-## Phase L opening backlog
+## Phase M opening backlog (deferred from M.7)
 - `DEF-J-EMAIL-DOMAIN-001` - real-user email delivery is blocked until a RealtorNet-controlled sender domain is verified in Resend and Railway `MAIL_FROM` is updated.
-- Phase L work queue: audit activity UI frontend, clean-slate DB propagation, Railway env cut-over to new project.
+- M.2 missing read endpoints: `GET /properties/agency-queue/`, `GET /properties/agency-inventory/`, `GET /properties/pending-admin/` — needed for frontend M.3/M.4 (owner/agent dashboards use status-filtered queries as workaround)
+- M.2 missing transition: `revoked → admin_rejected` — admin "Reject permanently" not yet implemented
+- M.6 missing notification emails: agency approval, withdrawal, submission notifications not yet wired
+- M.3/M.4/M.5 frontend dashboards — separate repo, was not part of this commit
 - `DEF-002` - audit log retention decision after enough production volume exists.
 - `DEF-007` - psycopg3 dev restart investigation.
 - `DEF-FE-004A` - residual third-party `core-js` dependency audit.
@@ -125,9 +122,14 @@
 - Phase H is closed; do not reopen Phase H unless investigating a regression from the closed state
 - Phase I is closed; do not reopen Phase I unless investigating a regression from the closed state
 - Phase J is closed except `DEF-J-EMAIL-DOMAIN-001`; do not reopen Phase J scope unless investigating a regression
-- Phase K is closed; Phase L is active
+- Phase K is closed
+- Phase L is closed
+- Phase M is closed; use the opening backlog above for any Phase N planning
 - Backend quality gates are now enforced at 95%: pyright 0 errors, pytest ≥ 95.0% coverage, CI passes with all required env vars
 - Production SQL verification (E.1–E.3) has been corrected and executed against new project fobvnshrqxduuhzgflvd
 - Keep production vs dev Supabase separation strict during all investigations
 - Treat agency card branding as blocked on backend enrichment, not frontend fetch fan-out
 - Use the backlog above as the opening queue for planning and execution
+- M.7 integration validation passed 28/30 against staging: full listing lifecycle (draft → agency_review → admin_review → live → revoked → restore) confirmed end-to-end with 5 listing_events rows; 12 original journeys all accessible
+- Missing agency-queue/inventory/pending-admin read endpoints are known M.2 gaps — frontend dashboards use status-filtered queries as workaround
+- Migration `f0a1b2c3d4e5` adds Phase M enum values and listing_events table (RLS enabled)
