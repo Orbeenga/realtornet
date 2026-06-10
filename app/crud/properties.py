@@ -222,8 +222,7 @@ class PropertyCRUD:
                     func.lower(cast(Property.moderation_status, String)) == str(filters["moderation_status"]).lower()
                 )
 
-            if filters.get("is_featured") is not None:
-                query = query.where(Property.is_featured == filters.get("is_featured"))
+                query = query.where(Property.is_featured == filters["is_featured"])
 
             # Amenity filters
             if filters.get("has_swimming_pool") is not None:
@@ -1302,7 +1301,7 @@ class PropertyCRUD:
                 func.lower(cast(Property.moderation_status, String)) == str(filters["moderation_status"]).lower()
             )
         if filters.get("is_featured") is not None:
-            query = query.where(Property.is_featured == filters.get("is_featured"))
+            query = query.where(Property.is_featured == filters["is_featured"])
         if filters.get("has_swimming_pool") is not None:
             query = query.where(Property.has_swimming_pool == filters["has_swimming_pool"])
         if filters.get("has_garden") is not None:
@@ -1391,7 +1390,7 @@ class PropertyCRUD:
                 func.lower(cast(Property.moderation_status, String)) == str(filters["moderation_status"]).lower()
             )
         if filters.get("is_featured") is not None:
-            query = query.where(Property.is_featured == filters.get("is_featured"))
+            query = query.where(Property.is_featured == filters["is_featured"])
         if filters.get("has_swimming_pool") is not None:
             query = query.where(Property.has_swimming_pool == filters["has_swimming_pool"])
         if filters.get("has_garden") is not None:
