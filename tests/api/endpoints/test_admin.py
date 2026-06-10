@@ -824,8 +824,15 @@ class TestAdminGetProperties:
 
         This validates system-wide visibility for moderation.
         """
-        _create_property(
+        created = _create_property(
             db, normal_user.user_id, location, property_type, agency, "Admin List Property"
+        )
+        property_crud.verify_property(
+            db,
+            property_id=created.property_id,
+            is_verified=True,
+            moderation_status="verified",
+            updated_by_supabase_id="00000000-0000-0000-0000-000000000000",
         )
         response = client.get("/api/v1/admin/properties", headers=admin_token_headers)
         assert response.status_code == 200

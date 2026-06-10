@@ -1,0 +1,12 @@
+[run]
+omit =
+    */tests/*
+    */venv/*
+    app/core/config.py
+    app/main.py
+    app/db/migrations/*
+    app/__init__.py
+    app/core/__init__.py
+    app/celery_worker.py
+    app/views.py
+    */__pycache__/*
