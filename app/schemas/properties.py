@@ -262,6 +262,7 @@ class PropertyResponse(PropertyBase):
     user_id: int
     agency_id: Optional[int] = None
     agency_name: Optional[str] = None
+    owner_display_name: Optional[str] = None
     is_featured: bool
     listing_status: ListingStatus
     is_verified: bool

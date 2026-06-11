@@ -127,3 +127,11 @@ class Property(Base, AuditMixin, SoftDeleteMixin):
         if agency_obj is None:
             return None
         return getattr(agency_obj, "name", None)
+
+    @property
+    def owner_display_name(self) -> str | None:
+        """Expose the creating user's display name for response serializers."""
+        owner_obj = self.__dict__.get("owner")
+        if owner_obj is None:
+            return None
+        return getattr(owner_obj, "full_name", None)
