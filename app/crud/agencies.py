@@ -120,7 +120,7 @@ class AgencyCRUD:
             ).all()
             agent_counts = {row[0]: int(row[1] or 0) for row in agent_counts_rows}
 
-            # Verified property counts per agency
+            # Live property counts per agency
             property_counts_rows = db.execute(
                 select(
                     Property.agency_id,
@@ -128,7 +128,7 @@ class AgencyCRUD:
                 )
                 .where(
                     Property.agency_id.in_(agency_ids),
-                    Property.moderation_status == ModerationStatus.verified,
+                    Property.moderation_status == ModerationStatus.live,
                     Property.deleted_at.is_(None),
                 )
                 .group_by(Property.agency_id)
