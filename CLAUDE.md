@@ -27,9 +27,12 @@
 - Phase J closed May 2026; only `DEF-J-EMAIL-DOMAIN-001` (verified sender domain + Railway `MAIL_FROM`) remains open
 - Phase K closed May 2026
 - Phase L closed May 2026: clean-slate DB propagation on new Supabase project `fobvnshrqxduuhzgflvd`, staging environment live at `realtornet-staging.up.railway.app`, admin audit endpoint live, modals/tabs/detail frontend complete
-- Phase M closed June 2026: listing governance system complete
-- Backend v0.5.3+ at commit `618cd4a`
+- Phase M closed June 2026: listing governance system complete, state machine live (draft → agency_review → agency_rejected → admin_review → admin_rejected → live → revoked)
+- Backend v0.5.3+ at commit `81ea2cef`
 - Backend Phase M: M.1 enum expansion + listing_events table complete; M.2 all 13 lifecycle transition endpoints implemented (submit-for-review, submit-to-admin, agency-approve, agency-reject, withdraw, resubmit, recall, verify, admin-reject, reinstate, revoke, restore, pull-back); M.6 notification integration partial (rejection, live, revoke, restore emails wired); M.7 integration validation passed 28/30 (full lifecycle: create → submit → agency-approve → admin-verify → live → revoke → restore confirmed end-to-end via API with 5 listing_events rows; 12 original journeys all accessible)
+- Coverage: 96.15%; `.coveragerc` legitimately omits: `env.py`, `main.py`, `config.py`, `celery_worker.py`
+- `owner_display_name` added to `PropertyResponse` (DEF-N-PROP-001 closed)
+- `listing_events` table append-only, RLS enabled
 
 ## Locked environment decisions
 - Production Supabase project ref: `fobvnshrqxduuhzgflvd`
@@ -98,6 +101,7 @@
 - `DEF-L-POSTGIS-001`: Closed by clean-slate migration on new production project
 
 ## Phase M opening backlog (deferred from M.7)
+See `DEFERRED.md` for current deferred items.
 - `DEF-J-EMAIL-DOMAIN-001` - real-user email delivery is blocked until a RealtorNet-controlled sender domain is verified in Resend and Railway `MAIL_FROM` is updated.
 - M.2 missing read endpoints: `GET /properties/agency-queue/`, `GET /properties/agency-inventory/`, `GET /properties/pending-admin/` — needed for frontend M.3/M.4 (owner/agent dashboards use status-filtered queries as workaround)
 - M.2 missing transition: `revoked → admin_rejected` — admin "Reject permanently" not yet implemented
@@ -107,6 +111,14 @@
 - `DEF-007` - psycopg3 dev restart investigation.
 - `DEF-FE-004A` - residual third-party `core-js` dependency audit.
 - Custom frontend/backend domain setup.
+
+## Root-level Phase M closed state
+- Current phase: M closed, N opening
+- Production Supabase: `fobvnshrqxduuhzgflvd`
+- Staging Supabase: `avkhpachzsbgmbnkfnhu`
+- Four roles live: seeker / agent / agency_owner / admin
+- Moderation enum: draft / agency_review / agency_rejected / admin_review / admin_rejected / live / revoked
+- Backend HEAD: `81ea2cef`, Frontend HEAD: `2743550`
 
 ## Review priorities
 1. DB to ORM alignment
