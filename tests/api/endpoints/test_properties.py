@@ -1117,7 +1117,7 @@ class TestAgencyApproveRejectProperty:
         )
 
         assert response.status_code == 422
-        assert "reason is required" in response.json()["detail"]
+        assert "Reason is required for rejection" in str(response.json()["detail"])
 
     def test_agent_cannot_access_agency_approve(
         self, client: TestClient, owner_token_headers, unverified_property_owned_by_agent

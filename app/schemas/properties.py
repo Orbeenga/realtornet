@@ -239,7 +239,14 @@ class PropertyVerificationUpdate(BaseModel):
 
 class PropertyAgencyActionUpdate(BaseModel):
     """Schema for agency owner approve/reject actions."""
-    moderation_reason: Optional[str] = None
+    moderation_reason: str
+
+    @field_validator("moderation_reason")
+    @classmethod
+    def reason_must_not_be_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Reason is required for rejection")
+        return v.strip()
 
 
 class ListingEventResponse(BaseModel):
