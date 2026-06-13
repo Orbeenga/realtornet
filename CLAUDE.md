@@ -28,11 +28,12 @@
 - Phase K closed May 2026
 - Phase L closed May 2026: clean-slate DB propagation on new Supabase project `fobvnshrqxduuhzgflvd`, staging environment live at `realtornet-staging.up.railway.app`, admin audit endpoint live, modals/tabs/detail frontend complete
 - Phase M closed June 2026: listing governance system complete, state machine live (draft → agency_review → agency_rejected → admin_review → admin_rejected → live → revoked)
-- Backend v0.5.3+ at commit `81ea2cef`
+- Backend v0.5.3+ at commit `94094cb`
 - Backend Phase M: M.1 enum expansion + listing_events table complete; M.2 all 13 lifecycle transition endpoints implemented (submit-for-review, submit-to-admin, agency-approve, agency-reject, withdraw, resubmit, recall, verify, admin-reject, reinstate, revoke, restore, pull-back); M.6 notification integration partial (rejection, live, revoke, restore emails wired); M.7 integration validation passed 28/30 (full lifecycle: create → submit → agency-approve → admin-verify → live → revoke → restore confirmed end-to-end via API with 5 listing_events rows; 12 original journeys all accessible)
 - Coverage: 96.15%; `.coveragerc` legitimately omits: `env.py`, `main.py`, `config.py`, `celery_worker.py`
 - `owner_display_name` added to `PropertyResponse` (DEF-N-PROP-001 closed)
 - `listing_events` table append-only, RLS enabled
+- Final Phase M housekeeping deployed 2026-06-14: `property_count` on agencies list, `moderation_reason` required on agency-reject endpoint, production verification passed
 
 ## Locked environment decisions
 - Production Supabase project ref: `fobvnshrqxduuhzgflvd`
@@ -118,7 +119,7 @@ See `DEFERRED.md` for current deferred items.
 - Staging Supabase: `avkhpachzsbgmbnkfnhu`
 - Four roles live: seeker / agent / agency_owner / admin
 - Moderation enum: draft / agency_review / agency_rejected / admin_review / admin_rejected / live / revoked
-- Backend HEAD: `81ea2cef`, Frontend HEAD: `2743550`
+- Backend HEAD: `94094cb`, Frontend HEAD: `f80dcc2`
 
 ## Review priorities
 1. DB to ORM alignment
