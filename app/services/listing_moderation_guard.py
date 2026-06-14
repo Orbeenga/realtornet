@@ -42,6 +42,7 @@ LEGAL_TRANSITIONS: Dict[TransitionKey, str] = {
     ("live", "revoked"): ROLE_ADMIN,
     ("revoked", "live"): ROLE_ADMIN,  # restore escape hatch
     ("revoked", "draft"): ROLE_AGENT_OWNS,  # agent pull-back to edit & resubmit
+    ("revoked", "admin_rejected"): ROLE_ADMIN,  # admin permanent rejection
 }
 
 

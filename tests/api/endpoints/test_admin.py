@@ -19,6 +19,8 @@ from app.schemas.inquiries import InquiryCreate
 from app.schemas.users import UserCreate
 from app.api.endpoints import admin as admin_api
 from app.models.properties import Property, ListingType, ListingStatus
+from app.models.listing_events import ListingEvent
+from app.models.listing_instructions import ListingInstruction
 
 
 def _create_property(db, user_id, location, property_type, agency, title):
@@ -1356,3 +1358,213 @@ class TestAdminAuditActivity:
         assert response.status_code == 200
         data = response.json()
         assert len(data["recent_changes"]) <= 5
+
+
+class TestAdminRevocationHistory:
+    """Tests for GET /api/v1/admin/properties/revocation-history/."""
+
+    def _create_listing_event(self, db, listing_id, actor_id, to_status, reason=None):
+        """Helper to create a ListingEvent row."""
+        event = ListingEvent(
+            listing_id=listing_id,
+            actor_id=actor_id,
+            from_status="draft",
+            to_status=to_status,
+            reason=reason,
+        )
+        db.add(event)
+        db.flush()
+        db.refresh(event)
+        return event
+
+    def test_revocation_history_returns_revoked_listings(
+        self, client: TestClient, admin_token_headers,
+        db, normal_user, location, property_type, agency, admin_user
+    ):
+        """Revoked listings appear in revocation-history."""
+        prop = _create_property(db, normal_user.user_id, location, property_type, agency,
+                                "Revoked Test Property")
+        prop.moderation_status = "revoked"
+        db.flush()
+        self._create_listing_event(db, prop.property_id, admin_user.user_id, "revoked",
+                                   reason="Violation of terms")
+
+        response = client.get(
+            "/api/v1/admin/properties/revocation-history",
+            headers=admin_token_headers,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        ids = [item["property_id"] for item in data]
+        assert prop.property_id in ids
+
+    def test_revoked_then_restored_listing_shows_live(
+        self, client: TestClient, admin_token_headers,
+        db, normal_user, location, property_type, agency, admin_user
+    ):
+        """A listing that was revoked then restored to live still appears with moderation_status: live."""
+        prop = _create_property(db, normal_user.user_id, location, property_type, agency,
+                                "Revoked Then Restored")
+        prop.moderation_status = "live"
+        db.flush()
+        event = self._create_listing_event(db, prop.property_id, admin_user.user_id, "revoked",
+                                           reason="Policy violation")
+        # Create a restore event so the listing moved back to live
+        restore_event = ListingEvent(
+            listing_id=prop.property_id,
+            actor_id=admin_user.user_id,
+            from_status="revoked",
+            to_status="live",
+            reason="Restored after review",
+        )
+        db.add(restore_event)
+        db.flush()
+
+        response = client.get(
+            "/api/v1/admin/properties/revocation-history",
+            headers=admin_token_headers,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        ids = [item["property_id"] for item in data]
+        assert prop.property_id in ids
+        matching = [item for item in data if item["property_id"] == prop.property_id][0]
+        assert matching["moderation_status"] == "live"
+
+    def test_revocation_history_tracks_has_instruction_true(
+        self, client: TestClient, admin_token_headers,
+        db, normal_user, location, property_type, agency, admin_user, agency_owner_user
+    ):
+        """has_instruction is true when a ListingInstruction references the revocation event."""
+        prop = _create_property(db, normal_user.user_id, location, property_type, agency,
+                                "Instructed Revoked Property")
+        prop.moderation_status = "revoked"
+        db.flush()
+        event = self._create_listing_event(db, prop.property_id, admin_user.user_id, "revoked",
+                                           reason="Terms violation")
+
+        instruction = ListingInstruction(
+            listing_id=prop.property_id,
+            agency_id=agency.agency_id,
+            actor_id=agency_owner_user.user_id,
+            triggered_by_event_id=event.event_id,
+            instruction_text="Please edit and resubmit.",
+        )
+        db.add(instruction)
+        db.flush()
+
+        response = client.get(
+            "/api/v1/admin/properties/revocation-history",
+            headers=admin_token_headers,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        matching = [item for item in data if item["property_id"] == prop.property_id]
+        assert len(matching) == 1
+        assert matching[0]["has_instruction"] is True
+        assert matching[0]["latest_event_reason"] == "Terms violation"
+
+    def test_revocation_history_admin_only(
+        self, client: TestClient, normal_user_token_headers
+    ):
+        """Non-admin users get 403."""
+        response = client.get(
+            "/api/v1/admin/properties/revocation-history",
+            headers=normal_user_token_headers,
+        )
+        assert response.status_code == 403
+
+    def test_revocation_history_unauthenticated(
+        self, client: TestClient
+    ):
+        """Unauthenticated requests get 401."""
+        response = client.get("/api/v1/admin/properties/revocation-history")
+        assert response.status_code == 401
+
+
+class TestAdminRejectionHistory:
+    """Tests for GET /api/v1/admin/properties/rejection-history/."""
+
+    def _create_listing_event(self, db, listing_id, actor_id, to_status, reason=None):
+        event = ListingEvent(
+            listing_id=listing_id,
+            actor_id=actor_id,
+            from_status="draft",
+            to_status=to_status,
+            reason=reason,
+        )
+        db.add(event)
+        db.flush()
+        db.refresh(event)
+        return event
+
+    def test_rejection_history_returns_admin_rejected_listings(
+        self, client: TestClient, admin_token_headers,
+        db, normal_user, location, property_type, agency, admin_user
+    ):
+        """Admin-rejected listings appear in rejection-history."""
+        prop = _create_property(db, normal_user.user_id, location, property_type, agency,
+                                "Rejected Test Property")
+        prop.moderation_status = "admin_rejected"
+        db.flush()
+        self._create_listing_event(db, prop.property_id, admin_user.user_id, "admin_rejected",
+                                   reason="Incomplete documentation")
+
+        response = client.get(
+            "/api/v1/admin/properties/rejection-history",
+            headers=admin_token_headers,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        ids = [item["property_id"] for item in data]
+        assert prop.property_id in ids
+
+    def test_rejection_history_tracks_has_instruction(
+        self, client: TestClient, admin_token_headers,
+        db, normal_user, location, property_type, agency, admin_user, agency_owner_user
+    ):
+        """has_instruction is tracked on rejection-history listings."""
+        prop = _create_property(db, normal_user.user_id, location, property_type, agency,
+                                "Instructed Rejected Property")
+        prop.moderation_status = "admin_rejected"
+        db.flush()
+        event = self._create_listing_event(db, prop.property_id, admin_user.user_id,
+                                           "admin_rejected", reason="Missing documents")
+
+        instruction = ListingInstruction(
+            listing_id=prop.property_id,
+            agency_id=agency.agency_id,
+            actor_id=agency_owner_user.user_id,
+            triggered_by_event_id=event.event_id,
+            instruction_text="Upload the missing documents.",
+        )
+        db.add(instruction)
+        db.flush()
+
+        response = client.get(
+            "/api/v1/admin/properties/rejection-history",
+            headers=admin_token_headers,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        matching = [item for item in data if item["property_id"] == prop.property_id]
+        assert len(matching) == 1
+        assert matching[0]["has_instruction"] is True
+        assert matching[0]["latest_event_reason"] == "Missing documents"
+
+    def test_rejection_history_admin_only(
+        self, client: TestClient, normal_user_token_headers
+    ):
+        """Non-admin users get 403 on rejection-history."""
+        response = client.get(
+            "/api/v1/admin/properties/rejection-history",
+            headers=normal_user_token_headers,
+        )
+        assert response.status_code == 403
+
+    def test_rejection_history_unauthenticated(
+        self, client: TestClient
+    ):
+        """Unauthenticated requests get 401 on rejection-history."""
+        response = client.get("/api/v1/admin/properties/rejection-history")
+        assert response.status_code == 401

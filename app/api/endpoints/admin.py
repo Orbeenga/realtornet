@@ -8,16 +8,20 @@ from typing import Any, Dict, List, Optional, cast as typing_cast  # Alias typin
 from decimal import Decimal
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy import text
+from sqlalchemy import text, func, and_
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import (
     get_db,
     get_current_admin_user,
+    get_current_active_user,
     validate_request_size,
     pagination_params,
 )
 from app.models.users import User as User
+from app.models.listing_events import ListingEvent
+from app.models.listing_instructions import ListingInstruction
+from app.models.properties import Property
 
 # --- DIRECT CRUD IMPORTS ---
 # We point directly to the files to avoid __init__.py circular/missing reference issues
@@ -1186,3 +1190,161 @@ def get_audit_activity(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Unable to retrieve audit activity. Please try again later.",
         )
+
+
+@router.get("/properties/revocation-history", response_model=List[PropertyResponse])
+def get_revocation_history(
+    *,
+    db: Session = Depends(get_db),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    current_user: UserResponse = Depends(get_current_active_user),
+) -> Any:
+    """Returns ALL listings that have EVER been revoked (to_status='revoked' in listing_events),
+    regardless of current moderation_status. Ordered by most recent revocation event descending.
+    Admin only."""
+    if current_user.user_role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    latest_revocation = (
+        db.query(
+            ListingEvent.listing_id,
+            func.max(ListingEvent.created_at).label("max_created_at"),
+        )
+        .filter(ListingEvent.to_status == "revoked")
+        .group_by(ListingEvent.listing_id)
+        .subquery()
+    )
+
+    most_recent_revocation_events = (
+        db.query(ListingEvent)
+        .join(
+            latest_revocation,
+            and_(
+                ListingEvent.listing_id == latest_revocation.c.listing_id,
+                ListingEvent.created_at == latest_revocation.c.max_created_at,
+                ListingEvent.to_status == "revoked",
+            ),
+        )
+        .subquery()
+    )
+
+    properties = (
+        db.query(Property)
+        .join(
+            most_recent_revocation_events,
+            Property.property_id == most_recent_revocation_events.c.listing_id,
+        )
+        .filter(Property.deleted_at.is_(None))
+        .order_by(most_recent_revocation_events.c.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+
+    for prop in properties:
+        most_recent_event = (
+            db.query(ListingEvent)
+            .filter(
+                ListingEvent.listing_id == prop.property_id,
+                ListingEvent.to_status == "revoked",
+            )
+            .order_by(ListingEvent.created_at.desc())
+            .first()
+        )
+
+        if most_recent_event:
+            instruction = (
+                db.query(ListingInstruction)
+                .filter(
+                    ListingInstruction.listing_id == prop.property_id,
+                    ListingInstruction.triggered_by_event_id == most_recent_event.event_id,
+                )
+                .first()
+            )
+            typing_cast(Any, prop).has_instruction = instruction is not None
+            typing_cast(Any, prop).latest_event_reason = most_recent_event.reason
+        else:
+            typing_cast(Any, prop).has_instruction = False
+            typing_cast(Any, prop).latest_event_reason = None
+
+    return properties
+
+
+@router.get("/properties/rejection-history", response_model=List[PropertyResponse])
+def get_rejection_history(
+    *,
+    db: Session = Depends(get_db),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    current_user: UserResponse = Depends(get_current_active_user),
+) -> Any:
+    """Returns ALL listings that have EVER been admin-rejected (to_status='admin_rejected' in listing_events),
+    regardless of current moderation_status. Ordered by most recent rejection event descending.
+    Admin only."""
+    if current_user.user_role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    latest_rejection = (
+        db.query(
+            ListingEvent.listing_id,
+            func.max(ListingEvent.created_at).label("max_created_at"),
+        )
+        .filter(ListingEvent.to_status == "admin_rejected")
+        .group_by(ListingEvent.listing_id)
+        .subquery()
+    )
+
+    most_recent_rejection_events = (
+        db.query(ListingEvent)
+        .join(
+            latest_rejection,
+            and_(
+                ListingEvent.listing_id == latest_rejection.c.listing_id,
+                ListingEvent.created_at == latest_rejection.c.max_created_at,
+                ListingEvent.to_status == "admin_rejected",
+            ),
+        )
+        .subquery()
+    )
+
+    properties = (
+        db.query(Property)
+        .join(
+            most_recent_rejection_events,
+            Property.property_id == most_recent_rejection_events.c.listing_id,
+        )
+        .filter(Property.deleted_at.is_(None))
+        .order_by(most_recent_rejection_events.c.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+
+    for prop in properties:
+        most_recent_event = (
+            db.query(ListingEvent)
+            .filter(
+                ListingEvent.listing_id == prop.property_id,
+                ListingEvent.to_status == "admin_rejected",
+            )
+            .order_by(ListingEvent.created_at.desc())
+            .first()
+        )
+
+        if most_recent_event:
+            instruction = (
+                db.query(ListingInstruction)
+                .filter(
+                    ListingInstruction.listing_id == prop.property_id,
+                    ListingInstruction.triggered_by_event_id == most_recent_event.event_id,
+                )
+                .first()
+            )
+            typing_cast(Any, prop).has_instruction = instruction is not None
+            typing_cast(Any, prop).latest_event_reason = most_recent_event.reason
+        else:
+            typing_cast(Any, prop).has_instruction = False
+            typing_cast(Any, prop).latest_event_reason = None
+
+    return properties

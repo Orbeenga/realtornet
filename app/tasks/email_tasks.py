@@ -688,6 +688,130 @@ def send_review_request_status_email(
         _retry_or_raise(self, exc, to_email=to_email, task_name="review request status")
 
 
+@celery_app.task(
+    name="app.tasks.email_tasks.send_submission_notification_email",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+)
+def send_submission_notification_email(
+    self,
+    to_email: str,
+    agent_name: str,
+    property_title: str,
+    property_id: int,
+    submission_timestamp: str,
+) -> str:
+    """Notify agency owner that an agent submitted a listing for review."""
+    subject = f"New listing submitted for review — {property_title}"
+    dashboard_url = _frontend_url("/account/agency")
+    text_body = (
+        f"Agent {agent_name} has submitted a new listing for your review.\n\n"
+        f"Property: {property_title}\n"
+        f"Submitted: {submission_timestamp}\n\n"
+        f"View in your agency queue: {dashboard_url}"
+    )
+    html_body = (
+        f"<p>Agent <strong>{escape(agent_name)}</strong> has submitted "
+        f"a new listing for your review.</p>"
+        f"<p><strong>Property:</strong> {escape(property_title)}<br>"
+        f"<strong>Submitted:</strong> {escape(submission_timestamp)}</p>"
+        f'<p><a href="{escape(dashboard_url)}">View in your agency queue</a></p>'
+    )
+    try:
+        return _run_send_email(
+            task_name="Submission notification",
+            to_email=to_email,
+            subject=subject,
+            text=text_body,
+            html=html_body,
+        )
+    except Exception as exc:
+        _retry_or_raise(self, exc, to_email=to_email, task_name="submission notification")
+
+
+@celery_app.task(
+    name="app.tasks.email_tasks.send_agency_approval_notification_email",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+)
+def send_agency_approval_notification_email(
+    self,
+    to_email: str,
+    agency_name: str,
+    property_title: str,
+    property_id: int,
+) -> str:
+    """Notify admin that an agency approved a listing for platform review."""
+    subject = f"Listing ready for platform review — {property_title}"
+    admin_url = _frontend_url("/account/admin/properties")
+    text_body = (
+        f"Agency {agency_name} has approved a listing for platform review.\n\n"
+        f"Property: {property_title}\n\n"
+        f"Review in admin queue: {admin_url}"
+    )
+    html_body = (
+        f"<p>Agency <strong>{escape(agency_name)}</strong> has approved "
+        f"a listing for platform review.</p>"
+        f"<p><strong>Property:</strong> {escape(property_title)}</p>"
+        f'<p><a href="{escape(admin_url)}">Review in admin queue</a></p>'
+    )
+    try:
+        return _run_send_email(
+            task_name="Agency approval notification",
+            to_email=to_email,
+            subject=subject,
+            text=text_body,
+            html=html_body,
+        )
+    except Exception as exc:
+        _retry_or_raise(self, exc, to_email=to_email, task_name="agency approval notification")
+
+
+@celery_app.task(
+    name="app.tasks.email_tasks.send_instruction_notification_email",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+)
+def send_instruction_notification_email(
+    self,
+    to_email: str,
+    agent_name: str,
+    property_title: str,
+    instruction_text: str,
+    property_id: int,
+) -> str:
+    """Notify agent that their agency owner wrote an instruction."""
+    subject = f"Agency instruction on your listing — {property_title}"
+    dashboard_url = _frontend_url("/account/listings")
+    text_body = (
+        f"Your agency has provided instructions on your listing.\n\n"
+        f"Property: {property_title}\n"
+        f"From your agency: {instruction_text}\n\n"
+        f"View in your listings: {dashboard_url}"
+    )
+    html_body = (
+        f"<p>{escape(agent_name)}, your agency has provided instructions "
+        f"on your listing.</p>"
+        f"<p><strong>Property:</strong> {escape(property_title)}</p>"
+        f"<blockquote style=\"border-left: 3px solid #ccc; padding-left: 12px; margin: 12px 0;\">"
+        f"{escape(instruction_text)}</blockquote>"
+        f'<p><a href="{escape(dashboard_url)}">View in your listings</a></p>'
+    )
+    try:
+        return _run_send_email(
+            task_name="Instruction notification",
+            to_email=to_email,
+            subject=subject,
+            text=text_body,
+            html=html_body,
+        )
+    except Exception as exc:
+        _retry_or_raise(self, exc, to_email=to_email, task_name="instruction notification")
+
+
 # Export task functions
 __all__ = [
     "dispatch_email_task",
@@ -702,4 +826,7 @@ __all__ = [
     "send_saved_search_match_email",
     "send_role_change_email",
     "send_review_request_status_email",
+    "send_submission_notification_email",
+    "send_agency_approval_notification_email",
+    "send_instruction_notification_email",
 ]

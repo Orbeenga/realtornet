@@ -262,6 +262,31 @@ class ListingEventResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class InstructionCreate(BaseModel):
+    """Schema for agency owner to write an instruction on a revoked/rejected listing."""
+    instruction_text: str
+
+    @field_validator("instruction_text")
+    @classmethod
+    def text_must_not_be_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Instruction text is required and cannot be empty")
+        return v.strip()
+
+
+class ListingInstructionResponse(BaseModel):
+    """Schema for listing_instructions read responses."""
+    instruction_id: int
+    listing_id: int
+    agency_id: int
+    actor_id: int
+    triggered_by_event_id: int
+    instruction_text: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 # Response Schema (includes DB-controlled fields)
 class PropertyResponse(PropertyBase):
     """Schema for property responses (includes DB-generated fields)"""
@@ -282,6 +307,9 @@ class PropertyResponse(PropertyBase):
     created_by: Optional[UUID] = None
     updated_by: Optional[UUID] = None
     deleted_by: Optional[UUID] = None
+    has_instruction: Optional[bool] = None
+    instruction_text: Optional[str] = None
+    latest_event_reason: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

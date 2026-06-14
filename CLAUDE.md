@@ -51,6 +51,7 @@
   - Default `SMOKE_BASE_URL` points to a safe non-production URL; set this explicitly to the staging Railway URL
   - Auto-teardown soft-deletes all smoke-created data (users, profiles, memberships, agencies, properties, inquiries)
 - Operator action: run `alembic upgrade head` against `avkhpachzsbgmbnkfnhu`, confirm all migrations apply, then publish the staging Railway URL to agents for all test runs
+- Staging accounts mirror production accounts (same emails and roles: admin apineorbeenga@gmail.com, agency_owner apineorbeenga@outlook.com, agent apineorbeenga@yahoo.com, seeker apineterngu19@gmail.com). The staging Supabase project may not have the exact same user_id values; identify staging users by email when running walkthroughs.
 
 ## Production accounts (new project fobvnshrqxduuhzgflvd)
 

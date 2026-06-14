@@ -6,6 +6,7 @@ Handles property CRUD with geography, multi-tenant enforcement, and soft delete
 from decimal import Decimal  # Narrow float query inputs to the Decimal-compatible type expected by the filter schema.
 from typing import Any, List, Optional, cast as typing_cast  # Alias typing.cast so endpoint-local narrowing never shadows SQLAlchemy helpers elsewhere.
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 # --- DIRECT CRUD IMPORTS ---
@@ -14,7 +15,14 @@ from app.crud.users import user as user_crud
 from app.services.location_resolution_service import resolve_location_name_to_record
 from app.services.saved_search_notification_service import notify_saved_search_matches_for_property
 from app.services.listing_moderation_guard import ensure_legal_moderation_transition
-from app.tasks.email_tasks import dispatch_email_task, send_property_moderation_email
+from app.core.config import settings
+from app.tasks.email_tasks import (
+    dispatch_email_task,
+    send_property_moderation_email,
+    send_submission_notification_email,
+    send_agency_approval_notification_email,
+    send_instruction_notification_email,
+)
 
 # --- DIRECT DEPENDENCY IMPORTS ---
 from app.api.dependencies import (
@@ -39,11 +47,14 @@ from app.schemas.properties import (
     ListingType as PropertyListingType,
     ModerationStatus,
     ListingEventResponse,
+    InstructionCreate,
+    ListingInstructionResponse,
 )
 
 # --- DIRECT MODEL ENUM IMPORTS ---
-from app.models.properties import ListingStatus, ListingType, ModerationStatus as PropertyModerationStatus
+from app.models.properties import Property, ListingStatus, ListingType, ModerationStatus as PropertyModerationStatus
 from app.models.users import User, UserRole
+from app.models.agencies import Agency
 
 router = APIRouter()
 
@@ -237,6 +248,99 @@ def create_property(
     return property
 
 
+@router.get("/agency-queue", response_model=List[PropertyResponse])
+def get_agency_queue(
+    *,
+    db: Session = Depends(get_db),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    current_user: UserResponse = Depends(get_current_active_user),
+) -> Any:
+    """Returns listings where moderation_status = 'agency_review' AND agency_id = current_user.agency_id.
+    Role gate: agency_owner only."""
+    if current_user.user_role != UserRole.AGENCY_OWNER:
+        raise HTTPException(status_code=403, detail="Only agency owners can view the agency queue")
+
+    if not current_user.agency_id:
+        raise HTTPException(status_code=400, detail="User does not belong to an agency")
+
+    properties = (
+        db.query(Property)
+        .filter(
+            Property.moderation_status == PropertyModerationStatus.agency_review,
+            Property.agency_id == current_user.agency_id,
+            Property.deleted_at.is_(None),
+        )
+        .order_by(desc(Property.created_at))
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+    return properties
+
+
+@router.get("/agency-inventory", response_model=List[PropertyResponse])
+def get_agency_inventory(
+    *,
+    db: Session = Depends(get_db),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    current_user: UserResponse = Depends(get_current_active_user),
+) -> Any:
+    """Returns listings where moderation_status = 'live' AND agency_id = current_user.agency_id.
+    Role gate: agent or agency_owner with active membership in that agency."""
+    if current_user.user_role not in [UserRole.AGENT, UserRole.AGENCY_OWNER]:
+        raise HTTPException(status_code=403, detail="Only agents and agency owners can view the agency inventory")
+
+    if not current_user.agency_id:
+        raise HTTPException(status_code=400, detail="User does not belong to an agency")
+
+    properties = (
+        db.query(Property)
+        .filter(
+            Property.moderation_status == PropertyModerationStatus.live,
+            Property.agency_id == current_user.agency_id,
+            Property.deleted_at.is_(None),
+        )
+        .order_by(desc(Property.created_at))
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+    return properties
+
+
+@router.get("/pending-admin", response_model=List[PropertyResponse])
+def get_pending_admin(
+    *,
+    db: Session = Depends(get_db),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    current_user: UserResponse = Depends(get_current_active_user),
+) -> Any:
+    """Returns listings where moderation_status = 'admin_review' AND agency_id = current_user.agency_id.
+    Role gate: agency_owner only."""
+    if current_user.user_role != UserRole.AGENCY_OWNER:
+        raise HTTPException(status_code=403, detail="Only agency owners can view pending admin listings")
+
+    if not current_user.agency_id:
+        raise HTTPException(status_code=400, detail="User does not belong to an agency")
+
+    properties = (
+        db.query(Property)
+        .filter(
+            Property.moderation_status == PropertyModerationStatus.admin_review,
+            Property.agency_id == current_user.agency_id,
+            Property.deleted_at.is_(None),
+        )
+        .order_by(desc(Property.created_at))
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+    return properties
+
+
 @router.get("/{property_id}", response_model=PropertyResponse)
 def read_property(
     *,
@@ -258,7 +362,17 @@ def read_property(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Property not found"
         )
-    
+
+    # Phase N N.1: enrich response with instruction fields for listing creator / agency_owner / admin
+    if current_user:
+        from app.services.listing_instruction_service import enrich_property_with_instruction_fields
+        enrich_property_with_instruction_fields(
+            db,
+            property_obj=property,
+            current_user_id=current_user.user_id,
+            current_user_role=getattr(current_user, "user_role", ""),
+        )
+
     # Visibility check
     if current_user:
         current_user_model: User = typing_cast(User, current_user)  # Narrow the optional dependency result before calling ORM-oriented role helpers.
@@ -413,7 +527,14 @@ def update_property(
         location_record = resolve_location_name_to_record(db, location_name=property_in.location_name)
         if location_record is not None:
             property_in.location_id = typing_cast(int, location_record.location_id)
-    
+
+    # Phase N N.1: instruction mediation gate — revoked/admin_rejected require agency instruction
+    from app.services.listing_instruction_service import (
+        check_instruction_gate,
+        enrich_property_with_instruction_fields,
+    )
+    check_instruction_gate(db, property_obj=property)
+
     # Update with audit tracking
     updated_by_supabase_id: str = str(current_user.supabase_id)  # Normalize the authenticated UUID to the string audit format expected by the CRUD layer.
     property = property_crud.update(
@@ -422,7 +543,14 @@ def update_property(
         obj_in=property_in,
         updated_by_supabase_id=updated_by_supabase_id
     )
-    
+
+    enrich_property_with_instruction_fields(
+        db,
+        property_obj=property,
+        current_user_id=current_user.user_id,
+        current_user_role=str(getattr(current_user, "user_role", "")),
+    )
+
     return property
 
 
@@ -590,6 +718,30 @@ def submit_property_for_review(
         actor_user_id=current_user.user_id,
     )
 
+    if property is not None and property.agency_id is not None:
+        agency = db.query(Agency).filter(Agency.agency_id == property.agency_id).first()
+        if agency:
+            agency_owner = (
+                db.query(User)
+                .filter(
+                    User.agency_id == property.agency_id,
+                    User.user_role == UserRole.AGENCY_OWNER,
+                )
+                .first()
+            )
+            if agency_owner is not None and typing_cast(Any, agency_owner).email:
+                agent_name = f"{current_user.first_name} {current_user.last_name}".strip() or current_user.email or "An agent"
+                from datetime import datetime, timezone
+                submission_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+                dispatch_email_task(
+                    send_submission_notification_email,
+                    agency_owner.email,
+                    agent_name,
+                    str(property.title),
+                    typing_cast(int, property.property_id),
+                    submission_time,
+                )
+
     return property
 
 
@@ -665,6 +817,22 @@ def agency_approve_property(
         updated_by=updated_by_supabase_id,
         actor_user_id=current_user.user_id,
     )
+
+    if property is not None:
+        admins = db.query(User).filter(User.user_role == UserRole.ADMIN).all()
+        admin_emails = [u.email for u in admins if typing_cast(Any, u).email]
+        if settings.ADMIN_NOTIFICATION_EMAIL:
+            admin_emails = [settings.ADMIN_NOTIFICATION_EMAIL]
+
+        agency_name = f"{current_user.first_name} {current_user.last_name}".strip() or "Your agency"
+        for admin_email in admin_emails:
+            dispatch_email_task(
+                send_agency_approval_notification_email,
+                admin_email,
+                agency_name,
+                str(property.title),
+                typing_cast(int, property.property_id),
+            )
 
     return property
 
@@ -911,6 +1079,29 @@ def admin_reject_property(
                     action_in.moderation_reason,
                 )
 
+        # Concurrently notify the agency owner
+        listing_agency_id: int | None = typing_cast(int | None, getattr(property, "agency_id", None))
+        if listing_agency_id is not None:
+            agency_owner = (
+                db.query(User)
+                .filter(
+                    User.agency_id == listing_agency_id,
+                    User.user_role == UserRole.AGENCY_OWNER,
+                    User.deleted_at.is_(None),
+                )
+                .first()
+            )
+            agency_owner_email = str(getattr(agency_owner, "email", "") or "").strip() if agency_owner is not None else ""
+            if agency_owner_email:
+                dispatch_email_task(
+                    send_property_moderation_email,
+                    agency_owner_email,
+                    str(property.title),
+                    target_status.value,
+                    property_id_value,
+                    action_in.moderation_reason,
+                )
+
     return property
 
 
@@ -1036,6 +1227,49 @@ def revoke_property(
     return property
 
 
+@router.patch("/{property_id}/reject-permanent", response_model=PropertyResponse)
+def reject_permanent(
+    *,
+    db: Session = Depends(get_db),
+    property_id: int,
+    action_in: PropertyAgencyActionUpdate,
+    current_user: UserResponse = Depends(get_current_active_user),
+    _: None = Depends(validate_request_size),
+) -> Any:
+    """Admin permanently rejects a revoked listing (revoked → admin_rejected).
+    After this, the standard admin_rejected mediation rules apply:
+    agency must instruct before agent can act."""
+    property = property_crud.get(db=db, property_id=property_id)
+    if not property:
+        raise HTTPException(status_code=404, detail="Property not found")
+
+    if not action_in.moderation_reason or not action_in.moderation_reason.strip():
+        raise HTTPException(
+            status_code=422,
+            detail="A reason is required for permanent rejection"
+        )
+
+    target_status = ModerationStatus.admin_rejected
+    ensure_legal_moderation_transition(
+        property_obj=property,
+        target_status=target_status,
+        current_user=current_user,
+    )
+
+    updated_by_supabase_id: str = str(current_user.supabase_id)
+    property = property_crud.verify_property(
+        db=db,
+        property_id=property_id,
+        is_verified=False,
+        moderation_status=target_status.value,
+        moderation_reason=action_in.moderation_reason,
+        updated_by=updated_by_supabase_id,
+        actor_user_id=current_user.user_id,
+    )
+
+    return property
+
+
 @router.patch("/{property_id}/restore", response_model=PropertyResponse)
 def restore_property_from_revoked(
     *,
@@ -1120,6 +1354,13 @@ def pull_back_property_to_draft(
         current_user=current_user,
     )
 
+    # Phase N N.1: instruction mediation gate — revoked/admin_rejected require agency instruction
+    from app.services.listing_instruction_service import (
+        check_instruction_gate,
+        enrich_property_with_instruction_fields,
+    )
+    check_instruction_gate(db, property_obj=property)
+
     updated_by_supabase_id: str = str(current_user.supabase_id)
     property = property_crud.verify_property(
         db=db,
@@ -1131,7 +1372,159 @@ def pull_back_property_to_draft(
         actor_user_id=current_user.user_id,
     )
 
+    if property is not None:
+        enrich_property_with_instruction_fields(
+            db,
+            property_obj=property,
+            current_user_id=current_user.user_id,
+            current_user_role=getattr(current_user, "user_role", ""),
+        )
+
     return property
+
+
+@router.patch("/{property_id}/instruct", response_model=PropertyResponse)
+def instruct_agent(
+    *,
+    db: Session = Depends(get_db),
+    property_id: int,
+    instruction_in: InstructionCreate,
+    current_user: UserResponse = Depends(get_current_active_user),
+    _: None = Depends(validate_request_size),
+) -> Any:
+    """Agency owner writes instruction to agent for a revoked/rejected listing.
+
+    The instruction is tied to the most recent revocation/rejection event so that
+    instructions from a prior lifecycle cycle do not unlock CTAs in a new cycle.
+    """
+    from app.services.listing_instruction_service import (
+        get_most_relevant_rejection_event,
+        write_instruction,
+        enrich_property_with_instruction_fields,
+    )
+
+    property = property_crud.get(db=db, property_id=property_id)
+    if not property:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Property not found",
+        )
+
+    current_user_model: User = typing_cast(User, current_user)
+    if current_user.user_role != UserRole.AGENCY_OWNER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only agency owners can write instructions",
+        )
+    property_agency_id: int | None = typing_cast(int | None, property.agency_id)
+    if property_agency_id is None or property_agency_id != current_user.agency_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not the owner of this listing's agency",
+        )
+
+    property_status = str(getattr(property.moderation_status, "value", property.moderation_status))
+    if property_status not in ("revoked", "admin_rejected"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Can only instruct on revoked or admin_rejected listings",
+        )
+
+    most_recent_event = get_most_relevant_rejection_event(db, listing_id=property_id)
+    if not most_recent_event:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="No revocation or rejection event found for this listing",
+        )
+
+    event_id_val: int = int(typing_cast(Any, most_recent_event).event_id)
+    write_instruction(
+        db=db,
+        listing_id=property_id,
+        agency_id=property_agency_id,
+        actor_id=typing_cast(int, current_user.user_id),
+        triggered_by_event_id=event_id_val,
+        instruction_text=instruction_in.instruction_text,
+    )
+
+    # Write a listing_events row (communication event, not a transition — status stays the same)
+    property_crud._append_listing_event(
+        db,
+        property_obj=property,
+        actor_user_id=typing_cast(int, current_user.user_id),
+        from_status=property_status,
+        to_status=property_status,
+        reason="Agency instruction written",
+    )
+
+    db.flush()
+
+    # Fire instruction notification to the listing agent
+    if property.user_id is not None:
+        agent = db.query(User).filter(User.user_id == property.user_id).first()
+        if agent is not None and typing_cast(Any, agent).email:
+            agency_owner_name = f"{current_user.first_name} {current_user.last_name}".strip() or "Your agency owner"
+            dispatch_email_task(
+                send_instruction_notification_email,
+                agent.email,
+                agency_owner_name,
+                str(property.title),
+                instruction_in.instruction_text,
+                typing_cast(int, property.property_id),
+            )
+
+    # Enrich response with instruction fields (force since actor is agency_owner, not creator)
+    enrich_property_with_instruction_fields(
+        db,
+        property_obj=property,
+        current_user_id=typing_cast(int, current_user.user_id),
+            current_user_role=current_user.user_role,
+        force_has_instruction=True,
+        force_instruction_text=instruction_in.instruction_text,
+    )
+
+    return property
+
+
+@router.get("/{property_id}/instructions", response_model=List[ListingInstructionResponse])
+def get_property_instructions(
+    *,
+    db: Session = Depends(get_db),
+    property_id: int,
+    current_user: UserResponse = Depends(get_current_active_user),
+) -> Any:
+    """Get all instructions for a listing, ordered by created_at ascending.
+
+    Role gate: creator (own listing), agency_owner (own agency), admin (all).
+    """
+    from app.services.listing_instruction_service import get_listing_instructions
+
+    property = property_crud.get(db=db, property_id=property_id)
+    if not property:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Property not found",
+        )
+
+    current_user_model: User = typing_cast(User, current_user)
+    is_creator = int(typing_cast(Any, property).user_id) == int(typing_cast(Any, current_user).user_id)
+    property_agency_id: int | None = typing_cast(int | None, property.agency_id)
+    current_user_agency_id: int | None = typing_cast(int | None, current_user_model.agency_id)
+    is_agency_owner = (
+        current_user.user_role == UserRole.AGENCY_OWNER
+        and property_agency_id is not None
+        and property_agency_id == current_user_agency_id
+    )
+    is_admin = current_user.user_role == UserRole.ADMIN
+
+    if not is_creator and not is_agency_owner and not is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to view instructions for this listing",
+        )
+
+    instructions = get_listing_instructions(db, listing_id=property_id)
+    return instructions
 
 
 @router.delete("/{property_id}", response_model=PropertyResponse)

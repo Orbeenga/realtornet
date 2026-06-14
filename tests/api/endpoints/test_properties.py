@@ -1240,6 +1240,13 @@ class TestPhaseM2Lifecycle:
         assert admin_reject_resp.status_code == 200
         assert admin_reject_resp.json()["moderation_status"] == "admin_rejected"
 
+        # Phase N N.1: agency owner must instruct before pull-back.
+        client.patch(
+            f"/api/v1/properties/{listing_id}/instruct",
+            json={"instruction_text": "Fix the photos"},
+            headers=agency_owner_token_headers,
+        )
+
         # Agent pulls back admin_rejected → draft.
         pull_back_resp = client.patch(
             f"/api/v1/properties/{listing_id}/pull-back",
@@ -1277,6 +1284,13 @@ class TestPhaseM2Lifecycle:
         )
         assert revoke_resp.status_code == 200
         assert revoke_resp.json()["moderation_status"] == "revoked"
+
+        # Phase N N.1: agency owner must instruct before pull-back.
+        client.patch(
+            f"/api/v1/properties/{listing_id}/instruct",
+            json={"instruction_text": "Fix policy violation"},
+            headers=agency_owner_token_headers,
+        )
 
         # Agent pulls back revoked → draft.
         pull_back_resp = client.patch(
@@ -1566,6 +1580,12 @@ class TestPhaseM2Lifecycle:
             json={"moderation_reason": "Policy"},
             headers=admin_token_headers,
         )
+        # Phase N N.1: agency owner must instruct before pull-back.
+        client.patch(
+            f"/api/v1/properties/{listing_id}/instruct",
+            json={"instruction_text": "Fix policy violation"},
+            headers=agency_owner_token_headers,
+        )
         client.patch(f"/api/v1/properties/{listing_id}/pull-back", headers=owner_token_headers)
 
         events = (
@@ -1574,8 +1594,9 @@ class TestPhaseM2Lifecycle:
             .order_by(ListingEvent.created_at.asc())
             .all()
         )
-        # At minimum we expect one event per state-changing call above.
-        assert len(events) >= 5
+        # At minimum we expect one event per state-changing call above (6 events:
+        # submit-for-review / agency-approve / verify / revoke / instruct / pull-back).
+        assert len(events) >= 6
 
 
 class TestListingEventsReadEndpoint:

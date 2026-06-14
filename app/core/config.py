@@ -129,6 +129,7 @@ class Settings(BaseSettings):
     EMAIL_DELIVERY_MODE: str = "sync"  # sync is reliable on single-process Railway deploys; celery remains available.
     FRONTEND_BASE_URL: str = "https://realtornet-web.vercel.app"
     BACKEND_BASE_URL: str = "https://realtornet-production.up.railway.app"
+    ADMIN_NOTIFICATION_EMAIL: str = ""
 
     # Server-side Nominatim integration for dynamic location resolution.
     NOMINATIM_BASE_URL: str = "https://nominatim.openstreetmap.org"
