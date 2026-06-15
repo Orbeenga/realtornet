@@ -537,6 +537,7 @@ def update_property(
         enrich_property_with_instruction_fields,
     )
     check_instruction_gate(db, property_obj=property)
+    pre_update_status: str = str(getattr(property.moderation_status, "value", property.moderation_status))
 
     # Update with audit tracking
     updated_by_supabase_id: str = str(current_user.supabase_id)  # Normalize the authenticated UUID to the string audit format expected by the CRUD layer.
@@ -546,6 +547,23 @@ def update_property(
         obj_in=property_in,
         updated_by_supabase_id=updated_by_supabase_id
     )
+
+    # Phase N N.1: transition revoked/admin_rejected back to draft after instruction-mediated edit
+    if pre_update_status in ("revoked", "admin_rejected"):
+        property = property_crud.verify_property(
+            db=db,
+            property_id=property_id,
+            is_verified=False,
+            moderation_status=PropertyModerationStatus.draft.value,
+            moderation_reason="Edited after agency instruction",
+            updated_by=updated_by_supabase_id,
+            actor_user_id=typing_cast(int, current_user.user_id),
+        )
+        if property is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Property not found after transition",
+            )
 
     enrich_property_with_instruction_fields(
         db,
