@@ -28,12 +28,16 @@
 - Phase K closed May 2026
 - Phase L closed May 2026: clean-slate DB propagation on new Supabase project `fobvnshrqxduuhzgflvd`, staging environment live at `realtornet-staging.up.railway.app`, admin audit endpoint live, modals/tabs/detail frontend complete
 - Phase M closed June 2026: listing governance system complete, state machine live (draft → agency_review → agency_rejected → admin_review → admin_rejected → live → revoked)
-- Backend v0.5.3+ at commit `94094cb`
-- Backend Phase M: M.1 enum expansion + listing_events table complete; M.2 all 13 lifecycle transition endpoints implemented (submit-for-review, submit-to-admin, agency-approve, agency-reject, withdraw, resubmit, recall, verify, admin-reject, reinstate, revoke, restore, pull-back); M.6 notification integration partial (rejection, live, revoke, restore emails wired); M.7 integration validation passed 28/30 (full lifecycle: create → submit → agency-approve → admin-verify → live → revoke → restore confirmed end-to-end via API with 5 listing_events rows; 12 original journeys all accessible)
-- Coverage: 96.15%; `.coveragerc` legitimately omits: `env.py`, `main.py`, `config.py`, `celery_worker.py`
+- Phase N closed June 2026: listing instruction mediation system complete, `listing_instructions` table with `triggered_by_event_id` FK gating, reject-permanent transition (`revoked → admin_rejected`), mediated governance read endpoints (revocation-history, rejection-history, agency-queue, inventory, pending-admin), email notification wiring for instruction, frontend mediation CTAs and admin historical views
+- Backend HEAD: `cb66f2c`
+- Frontend HEAD: `5c2975b`
+- Backend Phase N: N.1 `listing_instructions` table with `triggered_by_event_id` FK (RLS enabled); N.2 mediated governance read endpoints (revocation-history, rejection-history, agency-queue, inventory, pending-admin); N.3 reject-permanent transition (`revoked → admin_rejected`); N.4 email notification wiring for instruction; N.5-N.7 frontend mediation CTAs, admin historical views, instruct-agent hooks
+- Coverage: 96.07%; `.coveragerc` legitimately omits: `env.py`, `main.py`, `config.py`, `celery_worker.py`
 - `owner_display_name` added to `PropertyResponse` (DEF-N-PROP-001 closed)
 - `listing_events` table append-only, RLS enabled
-- Final Phase M housekeeping deployed 2026-06-14: `property_count` on agencies list, `moderation_reason` required on agency-reject endpoint, production verification passed
+- `listing_instructions` table append-only with `triggered_by_event_id` FK to listing_events, RLS enabled
+- `has_instruction`, `instruction_text`, `latest_event_reason` fields on PropertyResponse for mediation context
+- Final Phase N housekeeping deployed 2026-06-15: agency_owner visibility for non-public listings, edit-transition revoked→draft after instruction, N.9 walkthrough all 12 steps passed on staging, production deployment verified
 
 ## Locked environment decisions
 - Production Supabase project ref: `fobvnshrqxduuhzgflvd`
@@ -73,6 +77,7 @@
 - `agency_owner` role is active in the user role enum; all four roles are active: seeker, agent, agency_owner, admin
 - Multi-agency membership is represented by the `agency_agent_memberships` table; `users.agency_id` remains the legacy primary agency pointer
 - Property moderation status enum is active: pending_review / verified / rejected / revoked
+- Property moderation status enum updated (Phase M/N): draft / agency_review / agency_rejected / admin_review / admin_rejected / live / revoked
 - Seeker join-request flow is live
 - Agent invitation flow is live
 - Membership-role resolution is backend-authoritative: membership state changes append to `agent_membership_audit`, last active membership revocation/leave demotes agents to `seeker`, and stale JWTs are rejected by `role_version`
@@ -102,25 +107,24 @@
 - `DEF-L-ADMIN-AUDIT-001`: Admin audit endpoint `GET /api/v1/admin/audit/` implemented and tested
 - `DEF-L-POSTGIS-001`: Closed by clean-slate migration on new production project
 
-## Phase M opening backlog (deferred from M.7)
+## Phase N opening backlog
 See `DEFERRED.md` for current deferred items.
 - `DEF-J-EMAIL-DOMAIN-001` - real-user email delivery is blocked until a RealtorNet-controlled sender domain is verified in Resend and Railway `MAIL_FROM` is updated.
-- M.2 missing read endpoints: `GET /properties/agency-queue/`, `GET /properties/agency-inventory/`, `GET /properties/pending-admin/` — needed for frontend M.3/M.4 (owner/agent dashboards use status-filtered queries as workaround)
-- M.2 missing transition: `revoked → admin_rejected` — admin "Reject permanently" not yet implemented
-- M.6 missing notification emails: agency approval, withdrawal, submission notifications not yet wired
-- M.3/M.4/M.5 frontend dashboards — separate repo, was not part of this commit
 - `DEF-002` - audit log retention decision after enough production volume exists.
 - `DEF-007` - psycopg3 dev restart investigation.
 - `DEF-FE-004A` - residual third-party `core-js` dependency audit.
 - Custom frontend/backend domain setup.
+- Frontend agency-queue/inventory/pending-admin dashboards — user-facing dashboard views for ownership status tabs
 
-## Root-level Phase M closed state
-- Current phase: M closed, N opening
+## Root-level Phase N closed state
+- Current phase: N closed
 - Production Supabase: `fobvnshrqxduuhzgflvd`
+- Production Railway: `realtornet-production.up.railway.app`
 - Staging Supabase: `avkhpachzsbgmbnkfnhu`
+- Staging Railway: `realtornet-staging.up.railway.app`
 - Four roles live: seeker / agent / agency_owner / admin
 - Moderation enum: draft / agency_review / agency_rejected / admin_review / admin_rejected / live / revoked
-- Backend HEAD: `94094cb`, Frontend HEAD: `f80dcc2`
+- Backend HEAD: `cb66f2c`, Frontend HEAD: `5c2975b`
 
 ## Review priorities
 1. DB to ORM alignment
@@ -139,11 +143,12 @@ See `DEFERRED.md` for current deferred items.
 - Phase K is closed
 - Phase L is closed
 - Phase M is closed; use the opening backlog above for any Phase N planning
+- Phase N is closed; use the opening backlog above for future planning
 - Backend quality gates are now enforced at 95%: pyright 0 errors, pytest ≥ 95.0% coverage, CI passes with all required env vars
 - Production SQL verification (E.1–E.3) has been corrected and executed against new project fobvnshrqxduuhzgflvd
 - Keep production vs dev Supabase separation strict during all investigations
 - Treat agency card branding as blocked on backend enrichment, not frontend fetch fan-out
 - Use the backlog above as the opening queue for planning and execution
-- M.7 integration validation passed 28/30 against staging: full listing lifecycle (draft → agency_review → admin_review → live → revoked → restore) confirmed end-to-end with 5 listing_events rows; 12 original journeys all accessible
-- Missing agency-queue/inventory/pending-admin read endpoints are known M.2 gaps — frontend dashboards use status-filtered queries as workaround
+- N.9 integration validation passed all 12 steps against staging: full mediation lifecycle (create → submit → agency-approve → admin-verify → revoke → blocked-edit → owner-view → instruct → edit → resubmit → admin-history → listing-events) confirmed end-to-end via API with 9 listing_events rows
 - Migration `f0a1b2c3d4e5` adds Phase M enum values and listing_events table (RLS enabled)
+- Migration `a1b2c3d4e5f6` adds Phase N listing_instructions table with `triggered_by_event_id` FK (RLS enabled)
