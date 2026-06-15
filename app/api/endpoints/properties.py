@@ -389,13 +389,16 @@ def read_property(
             or typing_cast(bool, property.is_verified)
         )
         if user_crud.is_admin(current_user_model):
-            # Admins can see any property
             return property
         elif property_user_id == current_user.user_id:
-            # Owners can see their own properties
+            return property
+        elif (
+            getattr(current_user, 'agency_id', None) is not None
+            and getattr(property, 'agency_id', None) is not None
+            and int(typing_cast(int, current_user.agency_id)) == int(typing_cast(int, property.agency_id))
+        ):
             return property
         elif is_published_for_authenticated:
-            # Anyone can see verified properties
             return property
         else:
             raise HTTPException(
