@@ -141,6 +141,7 @@ class PropertyCRUD:
         query = select(Property).options(
             joinedload(Property.agency),
             joinedload(Property.location),
+            joinedload(Property.owner),
         )
 
         if filters:
@@ -1255,6 +1256,7 @@ class PropertyCRUD:
         query = select(Property).options(
             joinedload(Property.agency),
             joinedload(Property.location),
+            joinedload(Property.owner),
         ).where(
             Property.deleted_at.is_(None),
             or_(
@@ -1341,6 +1343,7 @@ class PropertyCRUD:
         query = select(Property).options(
             joinedload(Property.agency),
             joinedload(Property.location),
+            joinedload(Property.owner),
         ).where(
             Property.deleted_at.is_(None),
             or_(

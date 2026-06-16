@@ -28,9 +28,9 @@
 - Phase K closed May 2026
 - Phase L closed May 2026: clean-slate DB propagation on new Supabase project `fobvnshrqxduuhzgflvd`, staging environment live at `realtornet-staging.up.railway.app`, admin audit endpoint live, modals/tabs/detail frontend complete
 - Phase M closed June 2026: listing governance system complete, state machine live (draft → agency_review → agency_rejected → admin_review → admin_rejected → live → revoked)
-- Phase N closed June 2026: listing instruction mediation system complete, `listing_instructions` table with `triggered_by_event_id` FK gating, reject-permanent transition (`revoked → admin_rejected`), mediated governance read endpoints (revocation-history, rejection-history, agency-queue, inventory, pending-admin), email notification wiring for instruction, frontend mediation CTAs and admin historical views
-- Backend HEAD: `cb66f2c`
-- Frontend HEAD: `5c2975b`
+- Phase N closed June 2026 with post-close fixes 2026-06-16: listing instruction mediation system complete, `listing_instructions` table with `triggered_by_event_id` FK gating, reject-permanent transition (`revoked → admin_rejected`), mediated governance read endpoints (revocation-history, rejection-history, agency-queue, inventory, pending-admin), email notification wiring for instruction, frontend mediation CTAs and admin historical views
+- Backend HEAD: `4dc6174` (fix: add joinedload for N.2 mediation endpoints)
+- Frontend HEAD: `231c6b2` (fix: name resolution rewrite + agent Revoked tab)
 - Backend Phase N: N.1 `listing_instructions` table with `triggered_by_event_id` FK (RLS enabled); N.2 mediated governance read endpoints (revocation-history, rejection-history, agency-queue, inventory, pending-admin); N.3 reject-permanent transition (`revoked → admin_rejected`); N.4 email notification wiring for instruction; N.5-N.7 frontend mediation CTAs, admin historical views, instruct-agent hooks
 - Coverage: 96.07%; `.coveragerc` legitimately omits: `env.py`, `main.py`, `config.py`, `celery_worker.py`
 - `owner_display_name` added to `PropertyResponse` (DEF-N-PROP-001 closed)
@@ -38,6 +38,7 @@
 - `listing_instructions` table append-only with `triggered_by_event_id` FK to listing_events, RLS enabled
 - `has_instruction`, `instruction_text`, `latest_event_reason` fields on PropertyResponse for mediation context
 - Final Phase N housekeeping deployed 2026-06-15: agency_owner visibility for non-public listings, edit-transition revoked→draft after instruction, N.9 walkthrough all 12 steps passed on staging, production deployment verified
+- Post-close fixes deployed 2026-06-16: backend N.2 join fix (4dc6174) adds joinedload(Property.owner/agency) to N.2 inline queries fixing null owner_display_name/agency_name; frontend rewrite (231c6b2) replaces AGENCY_NAME_STATES set with tabIsPublicContext parameter in resolveListingDisplayName, adds agent Revoked tab with mediation CTAs, sets staleTime:0 + refetchOnWindowFocus:true on all 5 listing tab hooks
 
 ## Locked environment decisions
 - Production Supabase project ref: `fobvnshrqxduuhzgflvd`
@@ -124,7 +125,7 @@ See `DEFERRED.md` for current deferred items.
 - Staging Railway: `realtornet-staging.up.railway.app`
 - Four roles live: seeker / agent / agency_owner / admin
 - Moderation enum: draft / agency_review / agency_rejected / admin_review / admin_rejected / live / revoked
-- Backend HEAD: `cb66f2c`, Frontend HEAD: `5c2975b`
+- Backend HEAD: `4dc6174`, Frontend HEAD: `231c6b2`
 
 ## Review priorities
 1. DB to ORM alignment
