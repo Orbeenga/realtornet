@@ -7,7 +7,7 @@ from decimal import Decimal  # Narrow float query inputs to the Decimal-compatib
 from typing import Any, List, Optional, cast as typing_cast  # Alias typing.cast so endpoint-local narrowing never shadows SQLAlchemy helpers elsewhere.
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import desc
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 # --- DIRECT CRUD IMPORTS ---
 from app.crud.properties import property as property_crud
@@ -266,6 +266,7 @@ def get_agency_queue(
 
     properties = (
         db.query(Property)
+        .options(joinedload(Property.owner), joinedload(Property.agency))
         .filter(
             Property.moderation_status == PropertyModerationStatus.agency_review,
             Property.agency_id == current_user.agency_id,
@@ -297,6 +298,7 @@ def get_agency_inventory(
 
     properties = (
         db.query(Property)
+        .options(joinedload(Property.owner), joinedload(Property.agency))
         .filter(
             Property.moderation_status == PropertyModerationStatus.live,
             Property.agency_id == current_user.agency_id,
@@ -328,6 +330,7 @@ def get_pending_admin(
 
     properties = (
         db.query(Property)
+        .options(joinedload(Property.owner), joinedload(Property.agency))
         .filter(
             Property.moderation_status == PropertyModerationStatus.admin_review,
             Property.agency_id == current_user.agency_id,
