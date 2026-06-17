@@ -23,6 +23,25 @@ from app.models.property_types import PropertyType
 class PropertyCRUD:
     """CRUD operations for Property model - DB-first canonical implementation"""
 
+    def _populate_latest_event_reason(self, db: Session, properties: List[Property]) -> None:
+        """Populate latest_event_reason on each property using a listing_events subquery.
+
+        Sets the reason from the most recent event where to_status is
+        revoked, admin_rejected, or agency_rejected.
+        """
+        for prop in properties:
+            latest_event = (
+                db.query(ListingEvent.reason)
+                .filter(
+                    ListingEvent.listing_id == prop.property_id,
+                    ListingEvent.to_status.in_(["revoked", "admin_rejected", "agency_rejected"]),
+                )
+                .order_by(ListingEvent.created_at.desc())
+                .first()
+            )
+            if latest_event and latest_event[0]:
+                type_cast(Any, prop).latest_event_reason = latest_event[0]
+
     def _verified_visibility_filter(self) -> Any:
         """Return the public visibility predicate during the enum transition.
 
@@ -1323,6 +1342,7 @@ class PropertyCRUD:
                     name = (f"{neighborhood}, {city}" if neighborhood else city) or None
                     if name:
                         object.__setattr__(obj, "location_name", name)
+        self._populate_latest_event_reason(db, results)
         return results  # Normalize SQLAlchemy's sequence result to the declared list return type.
 
     def get_multi_by_params_for_agency_owner(
@@ -1413,7 +1433,8 @@ class PropertyCRUD:
                     name = (f"{neighborhood}, {city}" if neighborhood else city) or None
                     if name:
                         object.__setattr__(obj, "location_name", name)
-        return results
+        self._populate_latest_event_reason(db, results)
+        return results  # Normalize SQLAlchemy's sequence result to the declared list return type.
 
 
     # GET /by-LocationResponse/{location_id}  —  location visibility variants

@@ -158,6 +158,28 @@ def read_properties(
             params=search_params
         )
     
+    # Phase N: enrich list properties with instruction/reason fields for creator and agency_owner
+    if current_user:
+        from app.services.listing_instruction_service import enrich_property_with_instruction_fields
+        for prop in properties:
+            prop_user_id = getattr(prop, "user_id", None)
+            prop_agency_id = getattr(prop, "agency_id", None)
+            is_creator_prop = prop_user_id == current_user.user_id
+            is_agency_owner_prop = (
+                getattr(current_user, "user_role", None) in (UserRole.AGENCY_OWNER, "agency_owner")
+                and prop_agency_id is not None
+                and getattr(current_user, "agency_id", None) is not None
+                and prop_agency_id == current_user.agency_id
+            )
+            if is_creator_prop or is_agency_owner_prop:
+                enrich_property_with_instruction_fields(
+                    db,
+                    property_obj=prop,
+                    current_user_id=current_user.user_id,
+                    current_user_role=getattr(current_user, "user_role", ""),
+                    current_user_agency_id=getattr(current_user, "agency_id", None),
+                )
+    
     return properties
 
 
@@ -277,6 +299,15 @@ def get_agency_queue(
         .limit(limit)
         .all()
     )
+    from app.services.listing_instruction_service import enrich_property_with_instruction_fields
+    for prop in properties:
+        enrich_property_with_instruction_fields(
+            db,
+            property_obj=prop,
+            current_user_id=current_user.user_id,
+            current_user_role=current_user.user_role,
+            current_user_agency_id=getattr(current_user, "agency_id", None),
+        )
     return properties
 
 
@@ -309,6 +340,15 @@ def get_agency_inventory(
         .limit(limit)
         .all()
     )
+    from app.services.listing_instruction_service import enrich_property_with_instruction_fields
+    for prop in properties:
+        enrich_property_with_instruction_fields(
+            db,
+            property_obj=prop,
+            current_user_id=current_user.user_id,
+            current_user_role=current_user.user_role,
+            current_user_agency_id=getattr(current_user, "agency_id", None),
+        )
     return properties
 
 
@@ -341,6 +381,15 @@ def get_pending_admin(
         .limit(limit)
         .all()
     )
+    from app.services.listing_instruction_service import enrich_property_with_instruction_fields
+    for prop in properties:
+        enrich_property_with_instruction_fields(
+            db,
+            property_obj=prop,
+            current_user_id=current_user.user_id,
+            current_user_role=current_user.user_role,
+            current_user_agency_id=getattr(current_user, "agency_id", None),
+        )
     return properties
 
 
@@ -374,6 +423,7 @@ def read_property(
             property_obj=property,
             current_user_id=current_user.user_id,
             current_user_role=getattr(current_user, "user_role", ""),
+            current_user_agency_id=getattr(current_user, "agency_id", None),
         )
 
     # Visibility check
@@ -578,6 +628,7 @@ def update_property(
         property_obj=property,
         current_user_id=current_user.user_id,
         current_user_role=str(getattr(current_user, "user_role", "")),
+        current_user_agency_id=getattr(current_user, "agency_id", None),
     )
 
     return property
@@ -1407,6 +1458,7 @@ def pull_back_property_to_draft(
             property_obj=property,
             current_user_id=current_user.user_id,
             current_user_role=getattr(current_user, "user_role", ""),
+            current_user_agency_id=getattr(current_user, "agency_id", None),
         )
 
     return property
@@ -1507,7 +1559,8 @@ def instruct_agent(
         db,
         property_obj=property,
         current_user_id=typing_cast(int, current_user.user_id),
-            current_user_role=current_user.user_role,
+        current_user_role=current_user.user_role,
+        current_user_agency_id=getattr(current_user, "agency_id", None),
         force_has_instruction=True,
         force_instruction_text=instruction_in.instruction_text,
     )

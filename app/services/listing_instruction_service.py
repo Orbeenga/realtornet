@@ -135,27 +135,22 @@ def enrich_property_with_instruction_fields(
     property_obj: Property,
     current_user_id: int,
     current_user_role: str | None = None,
+    current_user_agency_id: int | None = None,
     force_has_instruction: bool | None = None,
     force_instruction_text: str | None = None,
 ) -> None:
     """Populate has_instruction, instruction_text, and latest_event_reason on a Property ORM object.
 
     These fields are read by PropertyResponse (from_attributes=True) for response serialization.
-    - has_instruction / instruction_text: set for the listing creator, or via force_* params
+    - has_instruction / instruction_text: set for the listing creator, agency_owner of the listing,
+      or via force_* params
     - latest_event_reason: set for listing creator, agency_owner, and admin roles
 
     The force_* parameters are used by the instruct endpoint which needs to set
     these fields after writing a new instruction (the actor is agency_owner, not creator).
     """
     prop_id: int = int(type_cast(Any, property_obj).property_id)
-
-    if force_has_instruction is not None:
-        type_cast(Any, property_obj).has_instruction = force_has_instruction
-        type_cast(Any, property_obj).instruction_text = force_instruction_text
-    elif getattr(property_obj, "user_id", None) == current_user_id:
-        has_instruction, instruction_text = get_instruction_status(db, listing_id=prop_id)
-        type_cast(Any, property_obj).has_instruction = has_instruction
-        type_cast(Any, property_obj).instruction_text = instruction_text
+    prop_agency_id: int | None = getattr(property_obj, "agency_id", None)
 
     # Normalize current_user_role — Python 3.12+ str(enum) returns the name
     # (e.g. 'UserRole.AGENT'), not the value ('agent'), so extract .value.
@@ -165,6 +160,23 @@ def enrich_property_with_instruction_fields(
         if isinstance(current_user_role, _enum_mod.Enum)
         else (current_user_role or "")
     )
+
+    is_creator = getattr(property_obj, "user_id", None) == current_user_id
+    is_agency_owner_for_listing = (
+        role_value == "agency_owner"
+        and prop_agency_id is not None
+        and current_user_agency_id is not None
+        and prop_agency_id == current_user_agency_id
+    )
+
+    if force_has_instruction is not None:
+        type_cast(Any, property_obj).has_instruction = force_has_instruction
+        type_cast(Any, property_obj).instruction_text = force_instruction_text
+    elif is_creator or is_agency_owner_for_listing:
+        has_instruction, instruction_text = get_instruction_status(db, listing_id=prop_id)
+        type_cast(Any, property_obj).has_instruction = has_instruction
+        type_cast(Any, property_obj).instruction_text = instruction_text
+
     if role_value in ("agent", "agency_owner", "admin") or force_has_instruction is not None:
         reason = get_most_recent_event_reason(db, listing_id=prop_id)
         type_cast(Any, property_obj).latest_event_reason = reason
