@@ -9,7 +9,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import text, func, and_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.api.dependencies import (
     get_db,
@@ -1245,6 +1245,7 @@ def get_revocation_history(
     for prop in properties:
         most_recent_event = (
             db.query(ListingEvent)
+            .options(joinedload(ListingEvent.actor))
             .filter(
                 ListingEvent.listing_id == prop.property_id,
                 ListingEvent.to_status == "revoked",
@@ -1264,9 +1265,16 @@ def get_revocation_history(
             )
             typing_cast(Any, prop).has_instruction = instruction is not None
             typing_cast(Any, prop).latest_event_reason = most_recent_event.reason
+            typing_cast(Any, prop).revoked_by_actor_id = most_recent_event.actor_id
+            typing_cast(Any, prop).actor_display_name = (
+                f"{most_recent_event.actor.first_name} {most_recent_event.actor.last_name}".strip()
+                if most_recent_event.actor else None
+            )
         else:
             typing_cast(Any, prop).has_instruction = False
             typing_cast(Any, prop).latest_event_reason = None
+            typing_cast(Any, prop).revoked_by_actor_id = None
+            typing_cast(Any, prop).actor_display_name = None
 
     return properties
 
@@ -1324,6 +1332,7 @@ def get_rejection_history(
     for prop in properties:
         most_recent_event = (
             db.query(ListingEvent)
+            .options(joinedload(ListingEvent.actor))
             .filter(
                 ListingEvent.listing_id == prop.property_id,
                 ListingEvent.to_status == "admin_rejected",
@@ -1343,8 +1352,15 @@ def get_rejection_history(
             )
             typing_cast(Any, prop).has_instruction = instruction is not None
             typing_cast(Any, prop).latest_event_reason = most_recent_event.reason
+            typing_cast(Any, prop).revoked_by_actor_id = most_recent_event.actor_id
+            typing_cast(Any, prop).actor_display_name = (
+                f"{most_recent_event.actor.first_name} {most_recent_event.actor.last_name}".strip()
+                if most_recent_event.actor else None
+            )
         else:
             typing_cast(Any, prop).has_instruction = False
             typing_cast(Any, prop).latest_event_reason = None
+            typing_cast(Any, prop).revoked_by_actor_id = None
+            typing_cast(Any, prop).actor_display_name = None
 
     return properties

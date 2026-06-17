@@ -4,6 +4,8 @@ Authentication endpoints - Canonical compliant
 Handles login, registration, token refresh with proper soft delete and audit tracking
 """
 import logging
+import os
+import re
 from uuid import UUID
 from typing import Any, cast as typing_cast  # Alias typing.cast so endpoint-local narrowing stays explicit without affecting runtime token helpers.
 from fastapi import APIRouter, Depends, HTTPException, status, Body
@@ -83,6 +85,17 @@ BLOCKED_EMAIL_DOMAINS: set[str] = {
     "resend.dev",
 }
 
+BLOCKED_EMAIL_PATTERNS: list[str] = [
+    r'^preview[\.\-]',
+    r'\+test',
+    r'@example\.com$',
+    r'^smoke[\.\-]',
+]
+
+
+def is_test_email(email: str) -> bool:
+    return any(re.search(p, email, re.IGNORECASE) for p in BLOCKED_EMAIL_PATTERNS)
+
 
 def _validate_registration_email_domain(email: str) -> None:
     """Block registrations from known test/sink domains.
@@ -94,6 +107,11 @@ def _validate_registration_email_domain(email: str) -> None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="This email domain is not permitted for registration.",
+        )
+    if os.getenv("ENV") == "production" and is_test_email(email):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Test accounts cannot be created in production.",
         )
 
 

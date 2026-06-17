@@ -80,6 +80,7 @@ class PropertyCRUD:
         """
         stmt = (
             select(ListingEvent)
+            .options(joinedload(ListingEvent.actor))
             .where(ListingEvent.listing_id == property_id)
             .order_by(ListingEvent.created_at.asc())
         )

@@ -258,6 +258,7 @@ class ListingEventResponse(BaseModel):
     to_status: str
     reason: Optional[str] = None
     created_at: datetime
+    actor_display_name: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -283,6 +284,7 @@ class ListingInstructionResponse(BaseModel):
     triggered_by_event_id: int
     instruction_text: str
     created_at: datetime
+    actor_display_name: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -310,6 +312,8 @@ class PropertyResponse(PropertyBase):
     has_instruction: Optional[bool] = None
     instruction_text: Optional[str] = None
     latest_event_reason: Optional[str] = None
+    revoked_by_actor_id: Optional[int] = None
+    actor_display_name: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

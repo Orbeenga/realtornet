@@ -6,7 +6,7 @@ for determining instruction status for CTA gating on revoked/rejected listings.
 
 from typing import Any, cast as type_cast
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import desc, cast, func, or_, String
 
 from app.models.listing_instructions import ListingInstruction
@@ -122,6 +122,7 @@ def get_listing_instructions(
     """Get all instructions for a listing, ordered by created_at ascending."""
     return (
         db.query(ListingInstruction)
+        .options(joinedload(ListingInstruction.actor))
         .filter(ListingInstruction.listing_id == listing_id)
         .order_by(ListingInstruction.created_at.asc())
         .all()

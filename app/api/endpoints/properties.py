@@ -476,6 +476,11 @@ def read_property_listing_events(
         )
 
     events = property_crud.get_listing_events(db=db, property_id=property_id)
+    for event in events:
+        if event.actor:
+            typing_cast(Any, event).actor_display_name = (
+                f"{event.actor.first_name} {event.actor.last_name}".strip()
+            )
     return events
 
 
@@ -1548,6 +1553,11 @@ def get_property_instructions(
         )
 
     instructions = get_listing_instructions(db, listing_id=property_id)
+    for instruction in instructions:
+        if instruction.actor:
+            typing_cast(Any, instruction).actor_display_name = (
+                f"{instruction.actor.first_name} {instruction.actor.last_name}".strip()
+            )
     return instructions
 
 
