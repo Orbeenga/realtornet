@@ -121,8 +121,8 @@ All variables below are required in production. No defaults are safe to use.
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | JWT expiry | `15` |
 | `ENV` | Environment name | `production` |
 | `SUPABASE_URL` | Supabase project URL | `https://PROJECT_ID.supabase.co` |
-| `SUPABASE_ANON_KEY` | Supabase anon key | from Supabase dashboard |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key | from Supabase dashboard |
+| `SUPABASE_SECRET_KEY` | Supabase secret key (service role) | from Supabase dashboard |
+| `SUPABASE_JWT_SECRET` | Supabase JWT signing secret | from Supabase dashboard |
 | `BACKEND_CORS_ORIGINS` | Allowed frontend origins | `["https://yourdomain.com"]` |
 | `REDIS_URL` | Preferred Redis connection string for Railway backend service | `${{Redis.REDIS_URL}}` |
 | `REDISHOST` / `REDISPORT` / `REDISUSER` / `REDISPASSWORD` | Railway Redis component variables, also supported by backend config | Reference from the Railway Redis service when `REDIS_URL` is not shared |

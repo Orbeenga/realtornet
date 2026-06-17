@@ -5,7 +5,8 @@ from app.middleware.request_middleware import _redact_redis_url
 def _settings(**overrides: object) -> Settings:
     values: dict[str, object] = {
         "SUPABASE_URL": "https://example.supabase.co",
-        "SUPABASE_ANON_KEY": "anon",
+        "SUPABASE_SECRET_KEY": "secret",
+        "SUPABASE_JWT_SECRET": "jwt-secret",
         "POSTGRES_SERVER": "localhost",
         "POSTGRES_USER": "postgres",
         "POSTGRES_PASSWORD": "postgres",

@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     
     # Supabase configuration
     SUPABASE_URL: str
-    SUPABASE_ANON_KEY: str
-    SUPABASE_SERVICE_ROLE_KEY: str = ""  # Optional for admin operations
+    SUPABASE_SECRET_KEY: str
+    SUPABASE_JWT_SECRET: str
     
     # Database configuration (matches .env structure)
     POSTGRES_SERVER: str

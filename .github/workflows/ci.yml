@@ -45,8 +45,8 @@ jobs:
       ENV: testing
       PYTHONPATH: .
       SUPABASE_URL: https://placeholder.supabase.co
-      SUPABASE_ANON_KEY: placeholder
-      SUPABASE_SERVICE_ROLE_KEY: placeholder
+      SUPABASE_SECRET_KEY: placeholder
+      SUPABASE_JWT_SECRET: placeholder
       REDIS_HOST: localhost
       REDIS_PORT: 6379
       BACKEND_CORS_ORIGINS: '["http://localhost:3000"]'
