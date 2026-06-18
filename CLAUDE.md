@@ -18,6 +18,8 @@
 - No create_all in production code
 - Prefer migration-safe, dependency-ordered changes
 - Flag any ORM/schema/router drift from DB truth
+- **Never commit diagnostic scripts, one-off queries, or ad-hoc database checks to the repo.** Run them locally, read the output, delete the file. If a script is needed for reproducibility, it goes in `scripts/` with no hardcoded credentials and a corresponding `.env.example` entry.
+- **Never hardcode credentials in committed files.** Any file containing a connection string, API key, or password must be caught by detect-secrets before commit.
 
 ## Current phase state
 - Phase F closed April 25 2026
