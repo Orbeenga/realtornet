@@ -1741,6 +1741,18 @@ def read_properties_by_agent(
             **pagination,
         )
     
+    # Phase N: enrich with instruction/reason fields for the listing creator
+    if current_user and current_user.user_id == agent_user_id:
+        from app.services.listing_instruction_service import enrich_property_with_instruction_fields
+        for prop in properties:
+            enrich_property_with_instruction_fields(
+                db,
+                property_obj=prop,
+                current_user_id=current_user.user_id,
+                current_user_role=getattr(current_user, "user_role", ""),
+                current_user_agency_id=getattr(current_user, "agency_id", None),
+            )
+    
     return properties
 
 
