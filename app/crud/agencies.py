@@ -469,9 +469,8 @@ class AgencyCRUD:
         listings_by_status: Dict[str, int] = {}
         total_listings = 0
         for row in listing_counts_rows:
-            status = str(row[0])
             c = int(row[1] or 0)
-            listings_by_status[status] = c
+            listings_by_status[row[0].value] = c
             total_listings += c
         
         # Agents by membership status

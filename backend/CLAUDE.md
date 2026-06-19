@@ -16,6 +16,7 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 - Work flows: feature -> staging -> validate -> merge to main -> production.
 - Correct branch flow is staging first, manual validation second, then a deliberate merge or promotion to main for production.
 - If staging and main both receive pushes, verify this is the intentional two-step promotion flow. Railway/Vercel may pick up branches independently, but production must never be an accidental side effect of unvalidated staging work.
+- **Commit order is strictly: backend first, then frontend.** Backend commit → push → wait for Railway deploy (green `/healthz`) → `pnpm gen:types` against production OpenAPI → if types changed, commit gen:types result → push → finally commit frontend logic changes. Never commit backend and frontend in the same batch. gen:types must resolve against a live, deployed backend, not a pending one.
 
 ## Database And Auth
 

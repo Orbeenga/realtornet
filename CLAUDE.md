@@ -25,6 +25,7 @@
 - Work flows: feature -> staging -> validate -> merge to main -> production.
 - Correct branch flow is staging first, manual validation second, then a deliberate merge or promotion to main for production.
 - If staging and main both receive pushes, verify this is the intentional two-step promotion flow. Vercel may pick up each branch independently, but production must never be an accidental side effect of unvalidated staging work.
+- **Commit order is strictly: backend first, then frontend.** Backend commit → push → wait for Railway deploy (green `/healthz`) → `pnpm gen:types` against production OpenAPI → if types changed, commit gen:types result → push → finally commit frontend logic changes. Never commit backend and frontend in the same batch. gen:types must resolve against a live, deployed backend, not a pending one.
 
 ## Current phase state
 - Phase F closed April 25 2026
