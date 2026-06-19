@@ -48,9 +48,17 @@ def read_agents_directory(
     skip = pagination.get("skip", 0)
     limit = pagination.get("limit", 100)
 
+    primary_membership_timestamp = func.coalesce(
+        AgencyAgentMembership.status_decided_at,
+        AgencyAgentMembership.updated_at,
+        AgencyAgentMembership.created_at,
+    )
+
     # Resolve agency affiliation:
     # - For AGENTS: use agency_agent_memberships (most recent active)
     # - For AGENCY_OWNERS: use users.agency_id (ownership relation)
+    # There is no joined_at column; the coalesced membership decision/update/create
+    # timestamp is the local equivalent for the primary active display agency.
     latest_membership = (
         select(
             AgencyAgentMembership.user_id,
@@ -58,7 +66,7 @@ def read_agents_directory(
             Agency.name.label("agency_name"),
             func.row_number().over(
                 partition_by=AgencyAgentMembership.user_id,
-                order_by=AgencyAgentMembership.created_at.desc(),
+                order_by=primary_membership_timestamp.desc(),
             ).label("rn"),
         )
         .join(Agency, Agency.agency_id == AgencyAgentMembership.agency_id)

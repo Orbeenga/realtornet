@@ -1201,6 +1201,70 @@ class TestReadAgencyAgents:
         assert item["license_number"] == "LIC-AGENCY-001"
         assert item["email"] == agent_user.email
 
+    def test_agency_roster_counts_live_listings_for_membership_agency(
+        self, client: TestClient, db, agency, other_agency, agent_user, location, property_type
+    ):
+        from app.models.agency_join_requests import AgencyAgentMembership
+        from app.models.properties import ListingStatus, ListingType, ModerationStatus, Property
+
+        db.add(
+            AgencyAgentMembership(
+                agency_id=agency.agency_id,
+                user_id=agent_user.user_id,
+                status="active",
+            )
+        )
+        db.add_all(
+            [
+                Property(
+                    title="Roster Live Listing",
+                    description="Counts for this agency roster.",
+                    user_id=agent_user.user_id,
+                    agency_id=agency.agency_id,
+                    property_type_id=property_type.property_type_id,
+                    location_id=location.location_id,
+                    price=100000,
+                    listing_type=ListingType.sale,
+                    listing_status=ListingStatus.available,
+                    moderation_status=ModerationStatus.live,
+                    is_verified=True,
+                ),
+                Property(
+                    title="Roster Draft Listing",
+                    description="Does not count because it is not live.",
+                    user_id=agent_user.user_id,
+                    agency_id=agency.agency_id,
+                    property_type_id=property_type.property_type_id,
+                    location_id=location.location_id,
+                    price=120000,
+                    listing_type=ListingType.sale,
+                    listing_status=ListingStatus.available,
+                    moderation_status=ModerationStatus.draft,
+                    is_verified=False,
+                ),
+                Property(
+                    title="Other Agency Live Listing",
+                    description="Does not count for this membership agency.",
+                    user_id=agent_user.user_id,
+                    agency_id=other_agency.agency_id,
+                    property_type_id=property_type.property_type_id,
+                    location_id=location.location_id,
+                    price=140000,
+                    listing_type=ListingType.sale,
+                    listing_status=ListingStatus.available,
+                    moderation_status=ModerationStatus.live,
+                    is_verified=True,
+                ),
+            ]
+        )
+        db.flush()
+
+        response = client.get(f"/api/v1/agencies/{agency.agency_id}/agents")
+
+        assert response.status_code == 200
+        item = next(item for item in response.json() if item["user_id"] == agent_user.user_id)
+        assert item["listing_count"] == 1
+
     def test_agency_roster_accepts_trailing_slash(
         self, client: TestClient, agency
     ):
@@ -1864,6 +1928,90 @@ class TestMyAgencyMemberships:
         )
 
         assert response.status_code == 403
+
+    def test_agent_memberships_include_live_listing_count_per_agency(
+        self, client: TestClient, db, agency, other_agency, agent_user, agent_token_headers, location, property_type
+    ):
+        from app.models.agency_join_requests import AgencyAgentMembership
+        from app.models.properties import ListingStatus, ListingType, ModerationStatus, Property
+
+        db.add_all(
+            [
+                AgencyAgentMembership(
+                    agency_id=agency.agency_id,
+                    user_id=agent_user.user_id,
+                    status="active",
+                ),
+                AgencyAgentMembership(
+                    agency_id=other_agency.agency_id,
+                    user_id=agent_user.user_id,
+                    status="active",
+                ),
+                Property(
+                    title="Membership Agency Live Listing",
+                    description="Counts under the first membership.",
+                    user_id=agent_user.user_id,
+                    agency_id=agency.agency_id,
+                    property_type_id=property_type.property_type_id,
+                    location_id=location.location_id,
+                    price=100000,
+                    listing_type=ListingType.sale,
+                    listing_status=ListingStatus.available,
+                    moderation_status=ModerationStatus.live,
+                    is_verified=True,
+                ),
+                Property(
+                    title="Membership Agency Draft Listing",
+                    description="Does not count because it is not live.",
+                    user_id=agent_user.user_id,
+                    agency_id=agency.agency_id,
+                    property_type_id=property_type.property_type_id,
+                    location_id=location.location_id,
+                    price=120000,
+                    listing_type=ListingType.sale,
+                    listing_status=ListingStatus.available,
+                    moderation_status=ModerationStatus.draft,
+                    is_verified=False,
+                ),
+                Property(
+                    title="Other Membership Live Listing One",
+                    description="Counts under the second membership.",
+                    user_id=agent_user.user_id,
+                    agency_id=other_agency.agency_id,
+                    property_type_id=property_type.property_type_id,
+                    location_id=location.location_id,
+                    price=140000,
+                    listing_type=ListingType.sale,
+                    listing_status=ListingStatus.available,
+                    moderation_status=ModerationStatus.live,
+                    is_verified=True,
+                ),
+                Property(
+                    title="Other Membership Live Listing Two",
+                    description="Also counts under the second membership.",
+                    user_id=agent_user.user_id,
+                    agency_id=other_agency.agency_id,
+                    property_type_id=property_type.property_type_id,
+                    location_id=location.location_id,
+                    price=160000,
+                    listing_type=ListingType.sale,
+                    listing_status=ListingStatus.available,
+                    moderation_status=ModerationStatus.live,
+                    is_verified=True,
+                ),
+            ]
+        )
+        db.flush()
+
+        response = client.get(
+            "/api/v1/agency-memberships/mine/",
+            headers=agent_token_headers,
+        )
+
+        assert response.status_code == 200
+        counts_by_agency = {item["agency_id"]: item["listing_count"] for item in response.json()}
+        assert counts_by_agency[agency.agency_id] == 1
+        assert counts_by_agency[other_agency.agency_id] == 2
 
     def test_agent_membership_status_returns_most_restrictive_state(
         self, client: TestClient, db, agency, other_agency, agent_user, agent_token_headers

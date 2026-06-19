@@ -966,9 +966,32 @@ def read_agency_agents(
             detail="Agency owners can only view non-active membership states for their own agency",
         )
 
+    listing_counts = (
+        select(
+            Property.user_id.label("user_id"),
+            Property.agency_id.label("agency_id"),
+            func.count(Property.property_id).label("listing_count"),
+        )
+        .where(
+            Property.deleted_at.is_(None),
+            Property.moderation_status == "live",
+        )
+        .group_by(Property.user_id, Property.agency_id)
+        .subquery()
+    )
+
     query = (
-        select(AgencyAgentMembership, User)
+        select(
+            AgencyAgentMembership,
+            User,
+            func.coalesce(listing_counts.c.listing_count, 0).label("listing_count"),
+        )
         .join(User, User.user_id == AgencyAgentMembership.user_id)
+        .outerjoin(
+            listing_counts,
+            (listing_counts.c.user_id == AgencyAgentMembership.user_id)
+            & (listing_counts.c.agency_id == AgencyAgentMembership.agency_id),
+        )
         .options(
             joinedload(AgencyAgentMembership.agent_profile),
             joinedload(AgencyAgentMembership.user).joinedload(User.agent_profile),
@@ -987,24 +1010,7 @@ def read_agency_agents(
     elif membership_status != "all":
         query = query.where(AgencyAgentMembership.status == membership_status)
     membership_rows = db.execute(query).all()
-    membership_ids = [cast(int, membership.membership_id) for membership, _ in membership_rows]
-
-    listing_count_by_user: dict[int, int] = {}
-    if membership_ids:
-        count_rows = db.execute(
-            select(
-                Property.user_id,
-                func.count(Property.property_id).label("cnt"),
-            )
-            .where(
-                Property.agency_id == agency_id,
-                Property.user_id.in_([cast(int, m.user_id) for m, _ in membership_rows]),
-                Property.deleted_at.is_(None),
-                Property.moderation_status == "live",
-            )
-            .group_by(Property.user_id)
-        ).all()
-        listing_count_by_user = {row.user_id: row.cnt for row in count_rows}
+    membership_ids = [cast(int, membership.membership_id) for membership, _, _ in membership_rows]
 
     pending_reviews: dict[int, AgencyMembershipReviewRequest] = {}
     if membership_ids:
@@ -1027,11 +1033,11 @@ def read_agency_agents(
             _membership_payload(
                 membership=membership,
                 user=user,
-                listing_count=listing_count_by_user.get(cast(int, user.user_id), 0),
+                listing_count=listing_count,
             ),
             pending_reviews.get(cast(int, membership.membership_id)),
         )
-        for membership, user in membership_rows
+        for membership, user, listing_count in membership_rows
     ]
 
 

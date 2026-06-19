@@ -71,9 +71,29 @@ def read_my_agency_memberships(
             detail="Agency membership history is available to seekers and agents",
         )
 
+    listing_counts = (
+        select(
+            Property.user_id.label("user_id"),
+            Property.agency_id.label("agency_id"),
+            func.count(Property.property_id).label("listing_count"),
+        )
+        .where(
+            Property.deleted_at.is_(None),
+            Property.moderation_status == "live",
+        )
+        .group_by(Property.user_id, Property.agency_id)
+        .subquery()
+    )
+
     membership_rows = db.execute(
         select(AgencyAgentMembership, Agency.name)
         .join(Agency, Agency.agency_id == AgencyAgentMembership.agency_id)
+        .outerjoin(
+            listing_counts,
+            (listing_counts.c.user_id == AgencyAgentMembership.user_id)
+            & (listing_counts.c.agency_id == AgencyAgentMembership.agency_id),
+        )
+        .add_columns(func.coalesce(listing_counts.c.listing_count, 0).label("listing_count"))
         .where(
             AgencyAgentMembership.user_id == current_user_model.user_id,
             AgencyAgentMembership.deleted_at.is_(None),
@@ -84,28 +104,7 @@ def read_my_agency_memberships(
         .limit(pagination["limit"])
     ).all()
 
-    membership_ids = [cast(int, membership.membership_id) for membership, _ in membership_rows]
-
-    listing_count_by_membership: dict[int, int] = {}
-    if membership_ids:
-        count_rows = db.execute(
-            select(
-                AgencyAgentMembership.membership_id,
-                func.count(Property.property_id).label("cnt"),
-            )
-            .join(
-                Property,
-                Property.user_id == AgencyAgentMembership.user_id,
-            )
-            .where(
-                AgencyAgentMembership.membership_id.in_(membership_ids),
-                Property.agency_id == AgencyAgentMembership.agency_id,
-                Property.deleted_at.is_(None),
-                Property.moderation_status == "live",
-            )
-            .group_by(AgencyAgentMembership.membership_id)
-        ).all()
-        listing_count_by_membership = {row.membership_id: row.cnt for row in count_rows}
+    membership_ids = [cast(int, membership.membership_id) for membership, _, _ in membership_rows]
 
     pending_reviews: dict[int, AgencyMembershipReviewRequest] = {}
     if membership_ids:
@@ -124,7 +123,7 @@ def read_my_agency_memberships(
                 pending_reviews[membership_id] = review_request
 
     response_rows: list[dict[str, Any]] = []
-    for membership, agency_name in membership_rows:
+    for membership, agency_name, listing_count in membership_rows:
         membership_id = cast(int, membership.membership_id)
         pending_review = pending_reviews.get(membership_id)
         response_rows.append(
@@ -137,7 +136,7 @@ def read_my_agency_memberships(
                 "status_decided_at": membership.status_decided_at,
                 "status_decided_by": membership.status_decided_by,
                 "source_join_request_id": membership.source_join_request_id,
-                "listing_count": listing_count_by_membership.get(membership_id, 0),
+                "listing_count": listing_count,
                 "pending_review_request_id": (
                     pending_review.review_request_id if pending_review is not None else None
                 ),

@@ -13,6 +13,9 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 - Health check: `GET /healthz`
 - `/healthz` must return `200` even in degraded mode
 - Storage bootstrap is fail-open during startup, so storage issues must not block process health
+- Work flows: feature -> staging -> validate -> merge to main -> production.
+- Correct branch flow is staging first, manual validation second, then a deliberate merge or promotion to main for production.
+- If staging and main both receive pushes, verify this is the intentional two-step promotion flow. Railway/Vercel may pick up branches independently, but production must never be an accidental side effect of unvalidated staging work.
 
 ## Database And Auth
 

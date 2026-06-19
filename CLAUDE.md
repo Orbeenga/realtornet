@@ -21,6 +21,11 @@
 - **Never commit diagnostic scripts, one-off queries, or ad-hoc database checks to the repo.** Run them locally, read the output, delete the file. If a script is needed for reproducibility, it goes in `scripts/` with no hardcoded credentials and a corresponding `.env.example` entry.
 - **Never hardcode credentials in committed files.** Any file containing a connection string, API key, or password must be caught by detect-secrets before commit.
 
+## Deployment Workflow
+- Work flows: feature -> staging -> validate -> merge to main -> production.
+- Correct branch flow is staging first, manual validation second, then a deliberate merge or promotion to main for production.
+- If staging and main both receive pushes, verify this is the intentional two-step promotion flow. Vercel may pick up each branch independently, but production must never be an accidental side effect of unvalidated staging work.
+
 ## Current phase state
 - Phase F closed April 25 2026
 - Phase G closed April 29 2026
