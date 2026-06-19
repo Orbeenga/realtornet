@@ -124,7 +124,7 @@ def get_listing_instructions(
         db.query(ListingInstruction)
         .options(joinedload(ListingInstruction.actor))
         .filter(ListingInstruction.listing_id == listing_id)
-        .order_by(ListingInstruction.created_at.asc())
+        .order_by(ListingInstruction.created_at.asc(), ListingInstruction.instruction_id.asc())
         .all()
     )
 
