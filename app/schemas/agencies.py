@@ -6,7 +6,7 @@ DB-controlled fields (id, timestamps) excluded from Create/Update.
 """
 
 from pydantic import BaseModel, EmailStr, ConfigDict, Field, field_validator
-from typing import Optional
+from typing import Optional, Dict
 from datetime import datetime
 from uuid import UUID
 from enum import Enum
@@ -416,5 +416,16 @@ class AgencyListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AgencyStatsResponse(BaseModel):
+    """Agency-level statistics with breakdowns by listing and agent status."""
+    agent_count: int = 0
+    agents_by_status: Dict[str, int] = Field(default_factory=dict)
+    property_count: int = 0
+    total_listings: int = 0
+    listings_by_status: Dict[str, int] = Field(default_factory=dict)
 
     model_config = ConfigDict(from_attributes=True)

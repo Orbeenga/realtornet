@@ -2252,14 +2252,14 @@ class TestReadAgencyStats:
         assert response.status_code == 200
         assert response.json()["agent_count"] == 1
 
-    def test_agency_stats_count_verified_listings_by_agency_id(
+    def test_agency_stats_count_live_listings_by_agency_id(
         self, client: TestClient, admin_token_headers, db, agency, other_agency, agent_user, location, property_type
     ):
         from app.models.properties import ListingStatus, ListingType, ModerationStatus, Property
 
-        verified_listing = Property(
-            title="Verified Agency Listing",
-            description="Counts because it belongs to the agency and is verified.",
+        live_listing = Property(
+            title="Live Agency Listing",
+            description="Counts because it belongs to the agency and is live.",
             user_id=agent_user.user_id,
             agency_id=agency.agency_id,
             property_type_id=property_type.property_type_id,
@@ -2267,12 +2267,12 @@ class TestReadAgencyStats:
             price=100000,
             listing_type=ListingType.sale,
             listing_status=ListingStatus.available,
-            moderation_status=ModerationStatus.verified,
+            moderation_status=ModerationStatus.live,
             is_verified=True,
         )
-        pending_listing = Property(
-            title="Pending Agency Listing",
-            description="Does not count until verified.",
+        draft_listing = Property(
+            title="Draft Agency Listing",
+            description="Does not count until live.",
             user_id=agent_user.user_id,
             agency_id=agency.agency_id,
             property_type_id=property_type.property_type_id,
@@ -2280,12 +2280,12 @@ class TestReadAgencyStats:
             price=120000,
             listing_type=ListingType.sale,
             listing_status=ListingStatus.available,
-            moderation_status=ModerationStatus.pending_review,
+            moderation_status=ModerationStatus.draft,
             is_verified=False,
         )
         other_agency_listing = Property(
             title="Other Agency Listing",
-            description="Verified, but belongs to another agency.",
+            description="Live, but belongs to another agency.",
             user_id=agent_user.user_id,
             agency_id=other_agency.agency_id,
             property_type_id=property_type.property_type_id,
@@ -2293,10 +2293,10 @@ class TestReadAgencyStats:
             price=140000,
             listing_type=ListingType.sale,
             listing_status=ListingStatus.available,
-            moderation_status=ModerationStatus.verified,
+            moderation_status=ModerationStatus.live,
             is_verified=True,
         )
-        db.add_all([verified_listing, pending_listing, other_agency_listing])
+        db.add_all([live_listing, draft_listing, other_agency_listing])
         db.flush()
 
         stats_response = client.get(

@@ -440,23 +440,63 @@ class AgencyCRUD:
     def get_stats(self, db: Session, agency_id: int) -> Dict[str, Any]:
         """
         Get statistics for an agency.
-        Returns canonical roster and verified listing counts.
+        Returns canonical roster and live listing counts with breakdowns by status.
         """
         from app.models.properties import ModerationStatus, Property
         
         agent_count = self.count_active_members(db, agency_id=agency_id)
         
-        property_count = int(db.execute(
+        live_count = int(db.execute(
             select(func.count(Property.property_id)).where(
                 Property.agency_id == agency_id,
-                Property.moderation_status == ModerationStatus.verified,
+                Property.moderation_status == ModerationStatus.live,
                 Property.deleted_at.is_(None)
             )
-        ).scalar() or 0)  # Count aggregation is narrowed to an int for the stats payload.
+        ).scalar() or 0)
+        
+        # Listing counts by moderation status
+        listing_counts_rows = db.execute(
+            select(
+                Property.moderation_status,
+                func.count(Property.property_id).label("count"),
+            )
+            .where(
+                Property.agency_id == agency_id,
+                Property.deleted_at.is_(None),
+            )
+            .group_by(Property.moderation_status)
+        ).all()
+        listings_by_status: Dict[str, int] = {}
+        total_listings = 0
+        for row in listing_counts_rows:
+            status = str(row[0])
+            c = int(row[1] or 0)
+            listings_by_status[status] = c
+            total_listings += c
+        
+        # Agents by membership status
+        from app.models.agency_join_requests import AgencyAgentMembership
+        agent_status_rows = db.execute(
+            select(
+                AgencyAgentMembership.status,
+                func.count(func.distinct(AgencyAgentMembership.user_id)).label("count"),
+            )
+            .where(
+                AgencyAgentMembership.agency_id == agency_id,
+                AgencyAgentMembership.deleted_at.is_(None),
+            )
+            .group_by(AgencyAgentMembership.status)
+        ).all()
+        agents_by_status: Dict[str, int] = {}
+        for row in agent_status_rows:
+            agents_by_status[str(row[0])] = int(row[1] or 0)
         
         return {
             "agent_count": agent_count,
-            "property_count": property_count
+            "agents_by_status": agents_by_status,
+            "property_count": live_count,
+            "total_listings": total_listings,
+            "listings_by_status": listings_by_status,
         }
 
 

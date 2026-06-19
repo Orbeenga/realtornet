@@ -36,6 +36,7 @@ from app.schemas.users import UserResponse
 from app.models.users import User  # Narrow endpoint-local user values back to the ORM shape expected by CRUD permission helpers.
 from app.schemas.agencies import (
     AgencyResponse,
+    AgencyStatsResponse,
     AgencyAgentRosterResponse,
     AgencyApplicationCreate,
     AgencyApplicationResponse,
@@ -2152,7 +2153,7 @@ def invite_agency_agent(
     }
 
 
-@router.get("/{agency_id}/stats")
+@router.get("/{agency_id}/stats", response_model=AgencyStatsResponse)
 def read_agency_stats(
     *,
     db: Session = Depends(get_db),
@@ -2166,7 +2167,7 @@ def read_agency_stats(
     - Agency agents can view their own agency stats
     - Admins can view any agency stats
     
-    Returns: agent count, property count, active listings, etc.
+    Returns: agent count, property count, active listings, breakdowns by status.
     """
     # Verify agency exists
     agency = agency_crud.get(db, agency_id=agency_id)
@@ -2192,4 +2193,4 @@ def read_agency_stats(
             )
     
     stats = agency_crud.get_stats(db, agency_id=agency_id)
-    return stats
+    return AgencyStatsResponse(**stats)

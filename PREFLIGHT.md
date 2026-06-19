@@ -105,19 +105,29 @@ Applies to the full RealtorNet stack: FastAPI · SQLAlchemy · PostGIS · Supaba
     Apply to all tables unless they are append-only audit tables (which never update or delete).
 
 13. **Append-only audit tables**
-    `agent_membership_audit` is the canonical example: no UPDATE, no DELETE, ever.
-    Enforce via trigger: `prevent_agent_membership_audit_mutation`.
-    Trigger functions must use `SET search_path = ''` to prevent schema injection.
+     `agent_membership_audit` is the canonical example: no UPDATE, no DELETE, ever.
+     Enforce via trigger: `prevent_agent_membership_audit_mutation`.
+     Trigger functions must use `SET search_path = ''` to prevent schema injection.
 
-14. **Public error safety**
+14. **Agency Affiliation Authority (Locked — Phase O)**
+     - `users.agency_id` is authoritative ONLY for the `agency_owner` role.
+       It means "the agency this person owns." Never read for agent context.
+     - `agency_agent_memberships` is the sole source of truth for agent-agency
+       relationships. All agent-context queries must join this table.
+     - An agent may have multiple simultaneous active memberships.
+       Display primary agency = most recent active membership by joined_at.
+     - Any code that uses `users.agency_id` to resolve an agent's current
+       agency is a bug. Fix on discovery.
+
+15. **Public error safety**
     Never use `str(e)` or similar in public-facing error responses.
     Health endpoints return fixed strings — never exception text.
 
-15. **Enum usage in tests**
+16. **Enum usage in tests**
     Tests must never reference uppercase enum members after normalization.
     Only enum values (lowercase strings) are stable references.
 
-16. **Function search path safety**
+17. **Function search path safety**
     All custom PostgreSQL functions must include `SET search_path = ''` between the volatility modifier and `AS $$`.
     This prevents search path injection via mutable schema resolution.
 
@@ -423,6 +433,9 @@ geospatial at poles, price at zero, idempotency (delete already deleted, restore
 | locations | ✅ | n/a | ✅ | ✅ | ✅ | ✅ |
 | properties | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | property_types | ✅ | n/a | ✅ | n/a | ✅ | n/a |
+| listing_events | ✅ | n/a | n/a (append-only) | n/a | n/a (never) | n/a |
+| listing_instructions | ✅ | n/a | n/a (append-only) | n/a | n/a (never) | n/a |
+| notifications | ✅ | n/a | n/a (append-only) | n/a | n/a (never) | n/a |
 | reviews | ✅ | n/a | ✅ | n/a | ✅ | ✅ |
 | saved_searches | ✅ | n/a | ✅ | n/a | ✅ | n/a |
 | users | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -466,6 +479,7 @@ pnpm gen:types   # regenerate src/types/api.generated.ts from live OpenAPI
 - Manually writing TypeScript interfaces for API response shapes instead of running `gen:types`
 - Touching `apiClient.ts` auth intercept logic without explicitly re-verifying silent JWT refresh
 - Removing existing UI sections instead of adding alongside them
+- Using `users.agency_id` to resolve an agent's current agency — use `agency_agent_memberships` instead
 
 ---
 
