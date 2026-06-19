@@ -38,6 +38,7 @@ from app.api.endpoints import (
     saved_searches,
     inquiries,
     reviews,
+    notifications,
 )
 
 api_router = APIRouter()
@@ -180,10 +181,16 @@ api_router.include_router(
     tags=["analytics"]
 )
 
+api_router.include_router(
+    notifications.router,
+    prefix="/notifications",
+    tags=["notifications"]
+)
+
 
 # ROUTER METADATA
 
-# Total routers: 16
+# Total routers: 17
 # Auth: 2 (auth, admin)
 # Core: 4 (users, agencies, agent_profiles, profiles)
 # Domain: 4 (locations, properties, property_types, amenities)

@@ -2,6 +2,6 @@
   "typeCheckingMode": "standard",
   "pythonVersion": "3.12",
   "venvPath": ".",
-  "venv": "venv",
+  "venv": ".venv",
   "include": ["app"]
 }

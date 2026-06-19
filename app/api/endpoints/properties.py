@@ -23,6 +23,7 @@ from app.tasks.email_tasks import (
     send_agency_approval_notification_email,
     send_instruction_notification_email,
 )
+from app.crud.notifications import create_notification_fail_open
 
 # --- DIRECT DEPENDENCY IMPORTS ---
 from app.api.dependencies import (
@@ -751,6 +752,15 @@ def verify_property(
                     verification_in.moderation_reason,
                 )
 
+        if target_status == ModerationStatus.live and owner_user_id is not None:
+            create_notification_fail_open(
+                db,
+                user_id=owner_user_id,
+                event_type="listing_live",
+                listing_id=property_id_value,
+                body_text=f"Your listing \"{property.title}\" is now live!",
+            )
+
         # Only send saved-search match emails the first time a listing becomes
         # publicly visible. Treat both legacy `verified` and new `live` as
         # published states, but only transition into `live` triggers matches.
@@ -820,6 +830,14 @@ def submit_property_for_review(
                     str(property.title),
                     typing_cast(int, property.property_id),
                     submission_time,
+                )
+            if agency_owner is not None:
+                create_notification_fail_open(
+                    db,
+                    user_id=typing_cast(int, agency_owner.user_id),
+                    event_type="listing_submitted",
+                    listing_id=typing_cast(int, property.property_id),
+                    body_text=f"Agent submitted \"{property.title}\" for review",
                 )
 
     return property
@@ -914,6 +932,15 @@ def agency_approve_property(
                 typing_cast(int, property.property_id),
             )
 
+        for admin in admins:
+            create_notification_fail_open(
+                db,
+                user_id=typing_cast(int, admin.user_id),
+                event_type="listing_agency_approved",
+                listing_id=typing_cast(int, property.property_id),
+                body_text=f"Listing \"{property.title}\" was approved by {agency_name} and sent for admin review",
+            )
+
     return property
 
 
@@ -974,6 +1001,13 @@ def agency_reject_property(
                     property_id_value,
                     action_in.moderation_reason,
                 )
+            create_notification_fail_open(
+                db,
+                user_id=owner_user_id,
+                event_type="listing_agency_rejected",
+                listing_id=property_id_value,
+                body_text=f"Your listing \"{property.title}\" was not approved by the agency",
+            )
 
     return property
 
@@ -1158,6 +1192,13 @@ def admin_reject_property(
                     property_id_value,
                     action_in.moderation_reason,
                 )
+            create_notification_fail_open(
+                db,
+                user_id=owner_user_id,
+                event_type="listing_admin_rejected",
+                listing_id=property_id_value,
+                body_text=f"Your listing \"{property.title}\" was not approved by the admin",
+            )
 
         # Concurrently notify the agency owner
         listing_agency_id: int | None = typing_cast(int | None, getattr(property, "agency_id", None))
@@ -1180,6 +1221,14 @@ def admin_reject_property(
                     target_status.value,
                     property_id_value,
                     action_in.moderation_reason,
+                )
+            if agency_owner is not None:
+                create_notification_fail_open(
+                    db,
+                    user_id=typing_cast(int, agency_owner.user_id),
+                    event_type="listing_admin_rejected",
+                    listing_id=property_id_value,
+                    body_text=f"A listing in your agency (\"{property.title}\") was not approved by the admin",
                 )
 
     return property
@@ -1280,6 +1329,13 @@ def revoke_property(
                     property_id_value,
                     action_in.moderation_reason,
                 )
+            create_notification_fail_open(
+                db,
+                user_id=owner_user_id,
+                event_type="listing_revoked",
+                listing_id=property_id_value,
+                body_text=f"Your listing \"{property.title}\" has been revoked",
+            )
 
         # Concurrently notify the agency owner — it's their inventory and reputation.
         listing_agency_id: int | None = typing_cast(int | None, getattr(property, "agency_id", None))
@@ -1302,6 +1358,14 @@ def revoke_property(
                     target_status.value,
                     property_id_value,
                     action_in.moderation_reason,
+                )
+            if agency_owner is not None:
+                create_notification_fail_open(
+                    db,
+                    user_id=typing_cast(int, agency_owner.user_id),
+                    event_type="listing_revoked",
+                    listing_id=property_id_value,
+                    body_text=f"A listing in your agency (\"{property.title}\") has been revoked",
                 )
 
     return property
@@ -1552,6 +1616,14 @@ def instruct_agent(
                 str(property.title),
                 instruction_in.instruction_text,
                 typing_cast(int, property.property_id),
+            )
+        if agent is not None:
+            create_notification_fail_open(
+                db,
+                user_id=typing_cast(int, agent.user_id),
+                event_type="instruction_received",
+                listing_id=typing_cast(int, property.property_id),
+                body_text=f"Instruction received for \"{property.title}\"",
             )
 
     # Enrich response with instruction fields (force since actor is agency_owner, not creator)
