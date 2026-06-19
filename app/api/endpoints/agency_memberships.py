@@ -3,13 +3,14 @@
 from typing import Any, List, cast
 
 from fastapi import APIRouter, Body, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_active_user, get_db, pagination_params, validate_request_size
 from app.api.endpoints.agencies import _set_membership_status_and_sync_user
 from app.models.agencies import Agency
 from app.models.agency_join_requests import AgencyAgentMembership, AgencyMembershipReviewRequest
+from app.models.properties import Property
 from app.models.users import User, UserRole
 from app.schemas.agencies import MyAgencyMembershipResponse, MyAgentMembershipStatusResponse
 from app.schemas.users import UserResponse
@@ -84,6 +85,28 @@ def read_my_agency_memberships(
     ).all()
 
     membership_ids = [cast(int, membership.membership_id) for membership, _ in membership_rows]
+
+    listing_count_by_membership: dict[int, int] = {}
+    if membership_ids:
+        count_rows = db.execute(
+            select(
+                AgencyAgentMembership.membership_id,
+                func.count(Property.property_id).label("cnt"),
+            )
+            .join(
+                Property,
+                Property.user_id == AgencyAgentMembership.user_id,
+            )
+            .where(
+                AgencyAgentMembership.membership_id.in_(membership_ids),
+                Property.agency_id == AgencyAgentMembership.agency_id,
+                Property.deleted_at.is_(None),
+                Property.moderation_status == "live",
+            )
+            .group_by(AgencyAgentMembership.membership_id)
+        ).all()
+        listing_count_by_membership = {row.membership_id: row.cnt for row in count_rows}
+
     pending_reviews: dict[int, AgencyMembershipReviewRequest] = {}
     if membership_ids:
         review_rows = db.execute(
@@ -114,6 +137,7 @@ def read_my_agency_memberships(
                 "status_decided_at": membership.status_decided_at,
                 "status_decided_by": membership.status_decided_by,
                 "source_join_request_id": membership.source_join_request_id,
+                "listing_count": listing_count_by_membership.get(membership_id, 0),
                 "pending_review_request_id": (
                     pending_review.review_request_id if pending_review is not None else None
                 ),

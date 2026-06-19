@@ -4,7 +4,7 @@ Returns simplified agent information for frontend display
 """
 from typing import Any, List
 from fastapi import APIRouter, Depends, status
-from sqlalchemy import select, func, or_
+from sqlalchemy import case, select, func
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, ConfigDict
 
@@ -12,6 +12,7 @@ from app.api.dependencies import get_db, pagination_params
 from app.models.users import User, UserRole
 from app.models.agencies import Agency
 from app.models.agent_profiles import AgentProfile
+from app.models.agency_join_requests import AgencyAgentMembership
 from datetime import datetime
 from typing import Optional, cast
 from app.core.config import settings
@@ -47,16 +48,63 @@ def read_agents_directory(
     skip = pagination.get("skip", 0)
     limit = pagination.get("limit", 100)
 
-    # Query users who are agents OR agency_owners, not deleted, with agency name and profile id
-    query = select(User, Agency.name, AgentProfile.profile_id).outerjoin(
-        Agency, User.agency_id == Agency.agency_id
+    # Resolve agency affiliation:
+    # - For AGENTS: use agency_agent_memberships (most recent active)
+    # - For AGENCY_OWNERS: use users.agency_id (ownership relation)
+    latest_membership = (
+        select(
+            AgencyAgentMembership.user_id,
+            AgencyAgentMembership.agency_id,
+            Agency.name.label("agency_name"),
+            func.row_number().over(
+                partition_by=AgencyAgentMembership.user_id,
+                order_by=AgencyAgentMembership.created_at.desc(),
+            ).label("rn"),
+        )
+        .join(Agency, Agency.agency_id == AgencyAgentMembership.agency_id)
+        .where(
+            AgencyAgentMembership.status == "active",
+            AgencyAgentMembership.deleted_at.is_(None),
+            Agency.deleted_at.is_(None),
+        )
+        .subquery()
+    )
+
+    agency_alias = (
+        select(
+            Agency.agency_id,
+            Agency.name.label("agency_name"),
+        )
+        .where(Agency.deleted_at.is_(None))
+        .subquery()
+    )
+
+    resolved_agency_id = case(
+        (User.user_role == UserRole.AGENT, latest_membership.c.agency_id),
+        else_=User.agency_id,
+    )
+    resolved_agency_name = case(
+        (User.user_role == UserRole.AGENT, latest_membership.c.agency_name),
+        else_=agency_alias.c.agency_name,
+    )
+
+    query = select(
+        User,
+        resolved_agency_id.label("agency_id"),
+        resolved_agency_name.label("agency_name"),
+        AgentProfile.profile_id,
+    ).outerjoin(
+        latest_membership,
+        (User.user_id == latest_membership.c.user_id)
+        & (latest_membership.c.rn == 1),
+    ).outerjoin(
+        agency_alias,
+        User.agency_id == agency_alias.c.agency_id,
     ).outerjoin(
         AgentProfile, User.user_id == AgentProfile.user_id
     ).where(
         User.deleted_at.is_(None),
         User.user_role.in_([UserRole.AGENT, UserRole.AGENCY_OWNER]),
-        # Exclude agents whose primary agency is soft-deleted; allow agents with no primary agency
-        or_(User.agency_id.is_(None), Agency.deleted_at.is_(None)),
     ).order_by(
         User.first_name.asc(),
         User.last_name.asc()
@@ -66,18 +114,18 @@ def read_agents_directory(
 
     # Build response with display name (first_name + last_name)
     agents = []
-    for user, agency_name, profile_id in results:
+    for user, agency_id, agency_name, profile_id in results:
         # Only include agents with non-null first/last names
         first_name = user.first_name if user.first_name else ""
         last_name = user.last_name if user.last_name else ""
         display_name = f"{first_name} {last_name}".strip()
 
-        if display_name:  # Only include agents with non-empty display names
+        if display_name:
             agents.append(AgentDirectoryResponse(
                 user_id=user.user_id,
                 profile_id=profile_id,
                 display_name=display_name,
-                agency_id=user.agency_id,
+                agency_id=agency_id,
                 agency_name=agency_name,
                 bio=None,
                 profile_image_url=user.profile_image_url,

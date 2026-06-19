@@ -28,7 +28,7 @@ class AgencyJoinRequest(Base, AuditMixin, SoftDeleteMixin):
 
     __table_args__ = (
         CheckConstraint(
-            "status IN ('pending', 'approved', 'rejected')",
+            "status IN ('pending', 'approved', 'rejected', 'cancelled')",
             name="agency_join_requests_status_check",
         ),
     )

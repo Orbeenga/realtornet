@@ -25,6 +25,7 @@ class AgencyJoinRequestStatus(str, Enum):
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
+    CANCELLED = "cancelled"
 
 
 class AgencyAgentMembershipStatus(str, Enum):
@@ -224,6 +225,7 @@ class AgencyAgentRosterResponse(BaseModel):
     license_number: Optional[str] = None
     bio: Optional[str] = None
     company_name: Optional[str] = None
+    listing_count: int = 0
     pending_review_request_id: Optional[int] = None
     pending_review_reason: Optional[str] = None
     pending_review_submitted_at: Optional[datetime] = None
@@ -289,6 +291,7 @@ class MyAgencyMembershipResponse(BaseModel):
     status_decided_at: Optional[datetime] = None
     status_decided_by: Optional[int] = None
     source_join_request_id: Optional[int] = None
+    listing_count: int = 0
     pending_review_request_id: Optional[int] = None
     pending_review_reason: Optional[str] = None
     pending_review_submitted_at: Optional[datetime] = None

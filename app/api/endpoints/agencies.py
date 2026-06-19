@@ -8,7 +8,7 @@ from typing import Any, List, cast  # Narrow dependency-backed values locally wi
 import hashlib
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from jose import JWTError, jwt
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 import logging
@@ -63,6 +63,7 @@ from app.schemas.inquiries import InquiryExtendedResponse
 from app.schemas.membership_audit import AgentMembershipAuditResponse
 from app.core.config import settings
 from app.models.agency_join_requests import AgencyAgentMembership, AgencyInvitation, AgencyJoinRequest, AgencyMembershipReviewRequest
+from app.models.properties import Property
 from app.models.review_requests import ReviewRequest
 from app.models.users import UserRole
 from app.api.endpoints.inquiries import _build_inquiry_extended_response
@@ -147,7 +148,9 @@ def _agency_invitation_payload(invitation: AgencyInvitation) -> dict[str, Any]:
     }
 
 
-def _membership_payload(*, membership: AgencyAgentMembership, user: User) -> dict[str, Any]:
+def _membership_payload(
+    *, membership: AgencyAgentMembership, user: User, listing_count: int = 0
+) -> dict[str, Any]:
     profile = getattr(membership, "agent_profile", None) or getattr(user, "agent_profile", None)
     return {
         "user_id": user.user_id,
@@ -167,6 +170,7 @@ def _membership_payload(*, membership: AgencyAgentMembership, user: User) -> dic
         "license_number": getattr(profile, "license_number", None),
         "bio": getattr(profile, "bio", None),
         "company_name": getattr(profile, "company_name", None),
+        "listing_count": listing_count,
         "pending_review_request_id": None,
         "pending_review_reason": None,
         "pending_review_submitted_at": None,
@@ -983,6 +987,24 @@ def read_agency_agents(
         query = query.where(AgencyAgentMembership.status == membership_status)
     membership_rows = db.execute(query).all()
     membership_ids = [cast(int, membership.membership_id) for membership, _ in membership_rows]
+
+    listing_count_by_user: dict[int, int] = {}
+    if membership_ids:
+        count_rows = db.execute(
+            select(
+                Property.user_id,
+                func.count(Property.property_id).label("cnt"),
+            )
+            .where(
+                Property.agency_id == agency_id,
+                Property.user_id.in_([cast(int, m.user_id) for m, _ in membership_rows]),
+                Property.deleted_at.is_(None),
+                Property.moderation_status == "live",
+            )
+            .group_by(Property.user_id)
+        ).all()
+        listing_count_by_user = {row.user_id: row.cnt for row in count_rows}
+
     pending_reviews: dict[int, AgencyMembershipReviewRequest] = {}
     if membership_ids:
         review_rows = db.execute(
@@ -1001,7 +1023,11 @@ def read_agency_agents(
 
     return [
         _attach_pending_review_payload(
-            _membership_payload(membership=membership, user=user),
+            _membership_payload(
+                membership=membership,
+                user=user,
+                listing_count=listing_count_by_user.get(cast(int, user.user_id), 0),
+            ),
             pending_reviews.get(cast(int, membership.membership_id)),
         )
         for membership, user in membership_rows

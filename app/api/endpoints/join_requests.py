@@ -1,6 +1,7 @@
 # app/api/endpoints/join_requests.py
 """Authenticated join-request visibility endpoints."""
 
+from datetime import datetime, timezone
 from typing import Any, List, cast
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -15,6 +16,42 @@ from app.schemas.agencies import MyAgencyJoinRequestResponse
 from app.schemas.users import UserResponse
 
 router = APIRouter()
+
+
+@router.delete("/{request_id}/", status_code=status.HTTP_204_NO_CONTENT)
+def cancel_my_join_request(
+    *,
+    db: Session = Depends(get_db),
+    request_id: int,
+    current_user: UserResponse = Depends(get_current_active_user),
+) -> None:
+    """Cancel a pending join request owned by the authenticated user."""
+    current_user_model = cast(User, current_user)
+    join_request = db.execute(
+        select(AgencyJoinRequest).where(
+            AgencyJoinRequest.join_request_id == request_id,
+            AgencyJoinRequest.deleted_at.is_(None),
+        )
+    ).scalar_one_or_none()
+    if join_request is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Join request not found",
+        )
+    if cast(int, join_request.user_id) != cast(int, current_user_model.user_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only cancel your own join requests",
+        )
+    if str(join_request.status) != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only pending join requests can be cancelled",
+        )
+    cast(Any, join_request).status = "cancelled"
+    cast(Any, join_request).decided_at = datetime.now(timezone.utc)
+    join_request.decided_by = current_user_model.user_id
+    db.flush()
 
 
 @router.get("/mine/", response_model=List[MyAgencyJoinRequestResponse])
