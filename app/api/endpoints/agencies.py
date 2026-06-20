@@ -376,7 +376,7 @@ def _apply_membership_role_after_status_change(
             update_payload["role_version"] = cast(int, member.role_version) + 1
         if cast(int | None, member.agency_id) is None:
             update_payload["agency_id"] = membership.agency_id
-    elif new_status == "inactive":
+    elif new_status in {"inactive", "left"}:
         remaining_active_agency_id = _first_active_membership_agency_for_user(
             db=db,
             user_id=cast(int, member.user_id),

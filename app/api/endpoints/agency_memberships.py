@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_active_user, get_db, pagination_params, validate_request_size
 from app.api.endpoints.agencies import _set_membership_status_and_sync_user
+from app.crud.users import user as user_crud
 from app.models.agencies import Agency
 from app.models.agency_join_requests import AgencyAgentMembership, AgencyMembershipReviewRequest
 from app.models.properties import Property
@@ -224,14 +225,18 @@ def leave_my_agency_membership(
             detail="Only active memberships can be left",
         )
 
+    member_before = user_crud.get(db, user_id=cast(int, membership.user_id))
+    prior_role = cast(UserRole | None, member_before.user_role if member_before is not None else None)
     updated = _set_membership_status_and_sync_user(
         db=db,
         membership=membership,
         current_user=current_user_model,
-        status_value="inactive",
+        status_value="left",
         reason=reason or "User left voluntarily",
         audit_action="left",
     )
+    member_after = user_crud.get(db, user_id=cast(int, membership.user_id))
+    role_changed = prior_role is not None and member_after is not None and member_after.user_role != prior_role
     return {
         "membership_id": updated.membership_id,
         "agency_id": updated.agency_id,
@@ -244,6 +249,8 @@ def leave_my_agency_membership(
         "pending_review_request_id": None,
         "pending_review_reason": None,
         "pending_review_submitted_at": None,
+        "role_changed": role_changed,
+        "new_role": str(member_after.user_role) if member_after is not None else None,
         "created_at": updated.created_at,
         "updated_at": updated.updated_at,
     }

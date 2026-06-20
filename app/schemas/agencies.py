@@ -297,6 +297,8 @@ class MyAgencyMembershipResponse(BaseModel):
     pending_review_request_id: Optional[int] = None
     pending_review_reason: Optional[str] = None
     pending_review_submitted_at: Optional[datetime] = None
+    role_changed: bool = False
+    new_role: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
