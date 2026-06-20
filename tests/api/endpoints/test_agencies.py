@@ -2457,3 +2457,17 @@ class TestReadAgencyStats:
         assert detail_response.status_code == 200
         assert stats_response.json()["property_count"] == 1
         assert detail_response.json()["property_count"] == 1
+
+    def test_agency_stats_status_keys_are_plain_strings(
+        self, client: TestClient, admin_token_headers, agency
+    ):
+        """Regression guard: str(Enum) keys must not contain '.' (e.g. 'ModerationStatus.live')."""
+        response = client.get(
+            f"/api/v1/agencies/{agency.agency_id}/stats",
+            headers=admin_token_headers,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        for key in ("listings_by_status", "agents_by_status"):
+            for k in data.get(key, {}):
+                assert "." not in k, f"{key} key {k!r} contains '.' — use .value instead of str()"
