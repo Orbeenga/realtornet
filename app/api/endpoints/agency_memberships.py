@@ -197,7 +197,7 @@ def leave_my_agency_membership(
     *,
     db: Session = Depends(get_db),
     membership_id: int,
-    reason: str | None = Body(default=None, embed=True),
+    reason: str = Body(..., embed=True),
     current_user: UserResponse = Depends(get_current_active_user),
     _: None = Depends(validate_request_size),
 ) -> Any:
