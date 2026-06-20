@@ -3,7 +3,7 @@
 ## Entry State
 
 FastAPI backend deployed on Railway. Sentry is instrumented.
-Phase F is closed. Phase G is closed as of April 29, 2026. Phase H is closed as of May 6, 2026. Phase I is closed. Phase J is closed except `DEF-J-EMAIL-DOMAIN-001`. Phase K is closed May 2026. Phase L is active. Backend v0.5.3+ at commit `c34bca9`.
+Phase F is closed. Phase G is closed as of April 29, 2026. Phase H is closed as of May 6, 2026. Phase I is closed. Phase J is closed except `DEF-J-EMAIL-DOMAIN-001`. Phase K is closed May 2026. Phase L through Phase O are closed. Backend HEAD: `df9ccf9`.
 
 Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this file for backend-specific state.
 
@@ -235,8 +235,9 @@ Do not answer from stale docs when the router, schema, or CRUD layer says otherw
 
 - Phase H is closed; do not reopen Phase H unless investigating a regression from the closed Phase H state
 - Phase I is closed; Phase J is closed except `DEF-J-EMAIL-DOMAIN-001`
-- Phase K is closed; Phase L is active
+- Phase K is closed; Phase L is closed; Phase M is closed; Phase N is closed; Phase O is closed
 - Verified sender domain remains the launch-blocking operations item (`DEF-J-EMAIL-DOMAIN-001`)
 - Keep production and dev Supabase separation strict during all work
 - Treat agency card branding as blocked on backend enrichment until the response contract changes
 - Keep Railway `/healthz` returning 200 in degraded mode; Redis rate limiting should connect through `REDIS_URL` or Railway `REDISHOST`/`REDISPORT`/`REDISUSER`/`REDISPASSWORD`
+- **ModerationStatus serialization**: `str(ModerationStatus.live)` produces `"ModerationStatus.live"` — always use `.value` for clean enum-to-string conversion in dict keys

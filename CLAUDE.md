@@ -47,6 +47,9 @@
 - `has_instruction`, `instruction_text`, `latest_event_reason` fields on PropertyResponse for mediation context
 - Final Phase N housekeeping deployed 2026-06-15: agency_owner visibility for non-public listings, edit-transition revoked→draft after instruction, N.9 walkthrough all 12 steps passed on staging, production deployment verified
 - Post-close fixes deployed 2026-06-16: backend N.2 join fix (4dc6174) adds joinedload(Property.owner/agency) to N.2 inline queries fixing null owner_display_name/agency_name; frontend rewrite (231c6b2) replaces AGENCY_NAME_STATES set with tabIsPublicContext parameter in resolveListingDisplayName, adds agent Revoked tab with mediation CTAs, sets staleTime:0 + refetchOnWindowFocus:true on all 5 listing tab hooks
+- Phase O closed June 2026: notification system model/migration/fire points/CRUD/hook/bell; O.1 Restore button removed; O.2 instruction box guard; O.3 cancel join request + CANCELLED status; O.4 listing_count aggregate subqueries + agents directory ordering; O.5 property_count stats (verified→live), listings_by_status breakdown; O.6 PREFLIGHT.md membership invariants; O.7 integration validation + ordering test fix + ModerationStatus prefix fix + dynamic breakdown rendering
+- Backend HEAD: `df9ccf9` (fix: strip ModerationStatus prefix from listings_by_status keys)
+- Frontend HEAD: `9f5587d` (fix: render all listings_by_status from response instead of hardcoded set)
 
 ## Locked environment decisions
 - Production Supabase project ref: `fobvnshrqxduuhzgflvd`
@@ -125,15 +128,16 @@ See `DEFERRED.md` for current deferred items.
 - Custom frontend/backend domain setup.
 - Frontend agency-queue/inventory/pending-admin dashboards — user-facing dashboard views for ownership status tabs
 
-## Root-level Phase N closed state
-- Current phase: N closed
+## Root-level Phase O closed state
+- Current phase: O closed
 - Production Supabase: `fobvnshrqxduuhzgflvd`
 - Production Railway: `realtornet-production.up.railway.app`
 - Staging Supabase: `avkhpachzsbgmbnkfnhu`
 - Staging Railway: `realtornet-staging.up.railway.app`
 - Four roles live: seeker / agent / agency_owner / admin
 - Moderation enum: draft / agency_review / agency_rejected / admin_review / admin_rejected / live / revoked
-- Backend HEAD: `4dc6174`, Frontend HEAD: `231c6b2`
+- Backend HEAD: `df9ccf9`, Frontend HEAD: `9f5587d`
+- Coverage: 95.64% (pytest 2055 passed)
 
 ## Review priorities
 1. DB to ORM alignment
@@ -153,6 +157,7 @@ See `DEFERRED.md` for current deferred items.
 - Phase L is closed
 - Phase M is closed; use the opening backlog above for any Phase N planning
 - Phase N is closed; use the opening backlog above for future planning
+- Phase O is closed; use the opening backlog above for future planning
 - Backend quality gates are now enforced at 95%: pyright 0 errors, pytest ≥ 95.0% coverage, CI passes with all required env vars
 - Production SQL verification (E.1–E.3) has been corrected and executed against new project fobvnshrqxduuhzgflvd
 - Keep production vs dev Supabase separation strict during all investigations
@@ -161,3 +166,6 @@ See `DEFERRED.md` for current deferred items.
 - N.9 integration validation passed all 12 steps against staging: full mediation lifecycle (create → submit → agency-approve → admin-verify → revoke → blocked-edit → owner-view → instruct → edit → resubmit → admin-history → listing-events) confirmed end-to-end via API with 9 listing_events rows
 - Migration `f0a1b2c3d4e5` adds Phase M enum values and listing_events table (RLS enabled)
 - Migration `a1b2c3d4e5f6` adds Phase N listing_instructions table with `triggered_by_event_id` FK (RLS enabled)
+- Migration `b1c2d3e4f5a6` adds notifications table (RLS enabled) — Phase O
+- Migration `c2d3e4f5a6b7` adds cancelled to agency_join_requests_status_check — Phase O
+- **ModerationStatus serialization**: `str(ModerationStatus.live)` produces `"ModerationStatus.live"` — always use `.value` for clean enum-to-string conversion. This applies to any `(str, Enum)` pattern used as dict keys in API responses.
