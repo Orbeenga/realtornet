@@ -33,6 +33,8 @@ class AgencyAgentMembershipStatus(str, Enum):
     INACTIVE = "inactive"
     SUSPENDED = "suspended"
     BLOCKED = "blocked"
+    REVOKED = "revoked"
+    LEFT = "left"
 
 
 class AgencyMembershipReviewRequestStatus(str, Enum):

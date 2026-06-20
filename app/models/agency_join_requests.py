@@ -85,7 +85,7 @@ class AgencyAgentMembership(Base, AuditMixin, SoftDeleteMixin):
 
     __table_args__ = (
         CheckConstraint(
-            "status IN ('active', 'inactive', 'suspended', 'blocked')",
+            "status IN ('active', 'inactive', 'suspended', 'blocked', 'revoked', 'left')",
             name="agency_agent_memberships_status_check",
         ),
         UniqueConstraint("agency_id", "user_id", name="agency_agent_memberships_agency_user_key"),
