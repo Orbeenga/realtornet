@@ -208,3 +208,4 @@ tests/conftest_no_mock.py
 .agents/
 .claude/
 skills-lock.json
+RealtorNet_Phase_*_Workbook.md
