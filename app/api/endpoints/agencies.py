@@ -61,7 +61,7 @@ from app.schemas.agencies import (
 )
 from app.schemas.properties import PropertyResponse
 from app.schemas.inquiries import InquiryExtendedResponse
-from app.schemas.membership_audit import AgentMembershipAuditResponse
+from app.schemas.membership_audit import AgentMembershipAuditResponse, AgencyMembershipHistoryResponse
 from app.core.config import settings
 from app.models.agency_join_requests import AgencyAgentMembership, AgencyInvitation, AgencyJoinRequest, AgencyMembershipReviewRequest
 from app.models.properties import Property
@@ -71,6 +71,7 @@ from app.api.endpoints.inquiries import _build_inquiry_extended_response
 from app.services.agency_inquiry_service import get_agency_inquiries
 from app.services.auth_user_sync_service import SupabaseUserSyncError, sync_supabase_auth_user_metadata
 from app.services.membership_audit_service import (
+    get_agency_all_member_history,
     get_agency_member_history,
     membership_audit_action_for_status,
     write_membership_audit,
@@ -1067,6 +1068,35 @@ def read_agency_member_history(
         db=db,
         agency_id=agency_id,
         user_id=user_id,
+        skip=pagination["skip"],
+        limit=pagination["limit"],
+    )
+
+
+@router.get("/{agency_id}/membership-history/", response_model=List[AgencyMembershipHistoryResponse])
+def read_agency_membership_history(
+    *,
+    db: Session = Depends(get_db),
+    agency_id: int,
+    current_user: UserResponse = Depends(get_current_active_user),
+    pagination: dict = Depends(pagination_params),
+) -> Any:
+    """Return this agency's full membership history across all users (agency_owner/admin only)."""
+    current_user_model = cast(User, current_user)
+    if not _is_agency_owner_for(user=current_user_model, agency_id=agency_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Agency owner or admin privileges required",
+        )
+    agency = agency_crud.get(db, agency_id=agency_id)
+    if agency is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agency not found",
+        )
+    return get_agency_all_member_history(
+        db=db,
+        agency_id=agency_id,
         skip=pagination["skip"],
         limit=pagination["limit"],
     )

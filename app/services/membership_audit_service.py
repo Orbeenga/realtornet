@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.agent_membership_audit import AgentMembershipAudit
+from app.models.users import User
 from app.models.agencies import Agency
 from app.models.users import UserRole
 
@@ -97,6 +98,33 @@ def get_agency_member_history(
     return [_audit_payload(audit, agency_name) for audit, agency_name in rows]
 
 
+def get_agency_all_member_history(
+    *,
+    db: Session,
+    agency_id: int,
+    skip: int,
+    limit: int,
+) -> list[dict[str, Any]]:
+    rows = db.execute(
+        select(
+            AgentMembershipAudit,
+            Agency.name,
+            User.first_name,
+            User.last_name,
+        )
+        .join(Agency, Agency.agency_id == AgentMembershipAudit.agency_id)
+        .join(User, User.user_id == AgentMembershipAudit.user_id)
+        .where(AgentMembershipAudit.agency_id == agency_id)
+        .order_by(AgentMembershipAudit.created_at.desc(), AgentMembershipAudit.id.desc())
+        .offset(skip)
+        .limit(limit)
+    ).all()
+    return [
+        _audit_payload_with_display_name(audit, agency_name, f"{first_name} {last_name}")
+        for audit, agency_name, first_name, last_name in rows
+    ]
+
+
 def _audit_payload(audit: AgentMembershipAudit, agency_name: str | None) -> dict[str, Any]:
     return {
         "id": audit.id,
@@ -110,3 +138,13 @@ def _audit_payload(audit: AgentMembershipAudit, agency_name: str | None) -> dict
         "post_role": audit.post_role,
         "created_at": audit.created_at,
     }
+
+
+def _audit_payload_with_display_name(
+    audit: AgentMembershipAudit,
+    agency_name: str | None,
+    user_display_name: str,
+) -> dict[str, Any]:
+    payload = _audit_payload(audit, agency_name)
+    payload["user_display_name"] = user_display_name
+    return payload
