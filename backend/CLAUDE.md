@@ -3,7 +3,7 @@
 ## Entry State
 
 FastAPI backend deployed on Railway. Sentry is instrumented.
-Phase F is closed. Phase G is closed as of April 29, 2026. Phase H is closed as of May 6, 2026. Phase I is closed. Phase J is closed except `DEF-J-EMAIL-DOMAIN-001`. Phase K is closed May 2026. Phase L through Phase O are closed. Backend HEAD: `df9ccf9`.
+Phase F is closed. Phase G through Phase P are closed. Phase Q is open as of June 21, 2026. Backend HEAD: `2aeddc2`. DEF-N-NOTIFICATIONS-001 closed — all three notification email fire points wired in Phase O.
 
 Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this file for backend-specific state.
 
@@ -24,8 +24,8 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 - Auth source of truth: Supabase Auth
 - Production Supabase project ref: `fobvnshrqxduuhzgflvd`
 - Dev Supabase project ref: `umhtnqxdvffpifqbdtjs`
-- Production migration head: `a9d1f3c7b482`
-- Current quality gate: pyright 0 errors; pytest passed; total coverage 95.03%
+- Production migration head: `c2d3e4f5a6b7`
+- Current quality gate: pyright 0 errors; pytest passed; total coverage 95.47%
 - Public registration creates a Supabase Auth identity first, then mirrors that UUID into the local `users` row
 - Registration rollback deletes the Supabase Auth user if the local DB write fails
 - Runtime auth is still based on backend-issued JWTs after login, not direct validation of raw Supabase access tokens
@@ -236,7 +236,13 @@ Do not answer from stale docs when the router, schema, or CRUD layer says otherw
 - Phase H is closed; do not reopen Phase H unless investigating a regression from the closed Phase H state
 - Phase I is closed; Phase J is closed except `DEF-J-EMAIL-DOMAIN-001`
 - Phase K is closed; Phase L is closed; Phase M is closed; Phase N is closed; Phase O is closed
-- Verified sender domain remains the launch-blocking operations item (`DEF-J-EMAIL-DOMAIN-001`)
+- Phase P is closed; Phase Q is open (June 21 2026)
+- Q.1 backend complete at HEAD `2aeddc2` — all three notification email fire points wired and tested:
+  - `draft → agency_review`: `send_submission_notification_email` fires to agency owner
+  - `agency_review → admin_review`: `send_agency_approval_notification_email` fires to admin(s)
+  - `agency_review → agency_rejected`: `send_property_moderation_email` fires to listing agent
+  - `DEF-N-NOTIFICATIONS-001` closed — 11 passing tests in `test_phase_n4_notifications.py`
+- Q.1 operator action remaining: `DEF-J-EMAIL-DOMAIN-001` — Resend domain verification + Railway `MAIL_FROM` update
 - Keep production and dev Supabase separation strict during all work
 - Treat agency card branding as blocked on backend enrichment until the response contract changes
 - Keep Railway `/healthz` returning 200 in degraded mode; Redis rate limiting should connect through `REDIS_URL` or Railway `REDISHOST`/`REDISPORT`/`REDISUSER`/`REDISPASSWORD`

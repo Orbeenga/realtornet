@@ -119,25 +119,31 @@
 - `DEF-L-ADMIN-AUDIT-001`: Admin audit endpoint `GET /api/v1/admin/audit/` implemented and tested
 - `DEF-L-POSTGIS-001`: Closed by clean-slate migration on new production project
 
-## Phase N opening backlog
+## Phase Q opening backlog
 See `DEFERRED.md` for current deferred items.
-- `DEF-J-EMAIL-DOMAIN-001` - real-user email delivery is blocked until a RealtorNet-controlled sender domain is verified in Resend and Railway `MAIL_FROM` is updated.
-- `DEF-002` - audit log retention decision after enough production volume exists.
-- `DEF-007` - psycopg3 dev restart investigation.
-- `DEF-FE-004A` - residual third-party `core-js` dependency audit.
-- Custom frontend/backend domain setup.
-- Frontend agency-queue/inventory/pending-admin dashboards — user-facing dashboard views for ownership status tabs
+- `DEF-J-EMAIL-DOMAIN-001` - real-user email delivery is blocked until a RealtorNet-controlled sender domain is verified in Resend and Railway `MAIL_FROM` is updated (operator action — Q.1).
+- `DEF-N-NOTIFICATIONS-001` — **closed Phase O** — all three notification email fire points wired and tested at HEAD `2aeddc2`.
+- `DEF-N-ENDPOINTS-001` — Missing agency owner read endpoints (`GET /agency-queue/`, `GET /agency-inventory/`, `GET /pending-admin/`). Frontend dashboard views deferred. Partially closed backend Q.2.
+- `DEF-N-TRANSITIONS-001` — Missing `revoked → admin_rejected` reject-permanently endpoint. Q.3 scope.
+- `DEF-L-ADMIN-AUDIT-001` — Admin audit UI section (frontend only; backend endpoint exists). Q.6 scope.
+- `DEF-P-BLOCK-001` — `blocked` membership status UI and policy design. Q.4 scope.
+- `DEF-P-RECONSIDER-001` — Reconsider CTA for rejected join requests. Q.5 scope.
+- `DEF-K-AUDIT-FK-001` — Smoke-user hard-delete blocked by audit FK. Q.7 scope.
+- `DEF-006` — Storage bucket provisioning automation. Q.7 scope.
+- `DEF-007` — psycopg3 prepared statement corruption in dev. Q.7 scope.
+- `DEF-002` — Audit log retention policy. Q.7 scope.
+- `DEF-FE-004A` — Residual core-js dependency audit. Q.7 scope.
 
-## Root-level Phase P closed state
-- Current phase: P closed
+## Root-level Phase Q opening state
+- Current phase: Q open (June 21 2026)
 - Production Supabase: `fobvnshrqxduuhzgflvd`
 - Production Railway: `realtornet-production.up.railway.app`
 - Staging Supabase: `avkhpachzsbgmbnkfnhu`
 - Staging Railway: `realtornet-staging.up.railway.app`
 - Four roles live: seeker / agent / agency_owner / admin
 - Moderation enum: draft / agency_review / agency_rejected / admin_review / admin_rejected / live / revoked
-- Backend HEAD: `5be2faf`, Frontend HEAD: `55832c9`
-- Coverage: 95.60% (pytest 2058 passed)
+- Backend HEAD: `2aeddc2`, Frontend HEAD: `b04601d`
+- Coverage: 95.47% (pytest 2058 passed at P close)
 
 ## Review priorities
 1. DB to ORM alignment
@@ -149,16 +155,11 @@ See `DEFERRED.md` for current deferred items.
 7. Minimal, maintainable diffs
 
 ## Next session handover
-- Phase G is closed; do not reopen Phase G unless investigating a regression from the closed state
-- Phase H is closed; do not reopen Phase H unless investigating a regression from the closed state
-- Phase I is closed; do not reopen Phase I unless investigating a regression from the closed state
-- Phase J is closed except `DEF-J-EMAIL-DOMAIN-001`; do not reopen Phase J scope unless investigating a regression
-- Phase K is closed
-- Phase L is closed
-- Phase M is closed; use the opening backlog above for any Phase N planning
-- Phase N is closed; use the opening backlog above for future planning
-- Phase O is closed; use the opening backlog above for future planning
-- Phase P closed — Current phase: P closed
+- Phase G through Phase O are closed; do not reopen unless investigating a regression
+- Phase P is closed
+- Phase Q is open — June 21 2026
+- Q.1 backend (notification email fire points) already complete at HEAD `2aeddc2`
+- Q.1 operator action remaining: `DEF-J-EMAIL-DOMAIN-001` — verify sender domain in Resend + update Railway `MAIL_FROM`
 - Backend quality gates are now enforced at 95%: pyright 0 errors, pytest ≥ 95.0% coverage, CI passes with all required env vars
 - Production SQL verification (E.1–E.3) has been corrected and executed against new project fobvnshrqxduuhzgflvd
 - Keep production vs dev Supabase separation strict during all investigations
@@ -171,9 +172,9 @@ See `DEFERRED.md` for current deferred items.
 - Migration `c2d3e4f5a6b7` adds cancelled to agency_join_requests_status_check — Phase O
 - **ModerationStatus serialization**: `str(ModerationStatus.live)` produces `"ModerationStatus.live"` — always use `.value` for clean enum-to-string conversion. This applies to any `(str, Enum)` pattern used as dict keys in API responses.
 
-## Phase P close
-- P.5 — Admin listing state breakdown: Listing State Breakdown section added to `AdminAnalyticsClient.tsx` — all 7 states (draft→revoked) rendered as zero-count cards using `moderationStatusLabel` map and `systemStats.properties.by_status` data from existing `GET /api/v1/analytics/system/stats`
-- P.6 — Stats regression test: `test_agency_stats_status_keys_are_plain_strings` added to `tests/api/endpoints/test_agencies.py` — asserts no `"."` in `listings_by_status` or `agents_by_status` keys (guards against `str(Enum)` vs `.value` contamination)
-- P.7 — Closure: Frontend build 0, tsc 0, lint 0; backend test added to guard; DEFERRED.md/CLAUDE.md updated
-- Phase P closed — Current phase: P closed
-- Backend HEAD: `5be2faf`, Frontend HEAD: `55832c9`
+## Phase Q close
+- Q.1 backend (notification email fire points) — all three fire points already wired and tested at HEAD `2aeddc2`. `DEF-N-NOTIFICATIONS-001` closed.
+  - `draft → agency_review`: `send_submission_notification_email` fires to agency owner
+  - `agency_review → admin_review`: `send_agency_approval_notification_email` fires to admin(s)
+  - `agency_review → agency_rejected`: `send_property_moderation_email` fires to listing agent
+- Q.1 operator action remaining: `DEF-J-EMAIL-DOMAIN-001` — Resend domain verification + Railway `MAIL_FROM` update
