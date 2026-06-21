@@ -31,6 +31,7 @@ from app.api.dependencies import (
     get_current_user,
     get_current_active_user,
     get_current_user_optional,
+    get_current_agency_owner_user,
     validate_request_size,
     pagination_params,
 )
@@ -275,14 +276,13 @@ def create_property(
 def get_agency_queue(
     *,
     db: Session = Depends(get_db),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(20, ge=1, le=100),
-    current_user: UserResponse = Depends(get_current_active_user),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    current_user: UserResponse = Depends(get_current_agency_owner_user),
 ) -> Any:
     """Returns listings where moderation_status = 'agency_review' AND agency_id = current_user.agency_id.
     Role gate: agency_owner only."""
-    if current_user.user_role != UserRole.AGENCY_OWNER:
-        raise HTTPException(status_code=403, detail="Only agency owners can view the agency queue")
+    offset = (page - 1) * page_size
 
     if not current_user.agency_id:
         raise HTTPException(status_code=400, detail="User does not belong to an agency")
@@ -296,8 +296,8 @@ def get_agency_queue(
             Property.deleted_at.is_(None),
         )
         .order_by(desc(Property.created_at))
-        .offset(skip)
-        .limit(limit)
+        .offset(offset)
+        .limit(page_size)
         .all()
     )
     from app.services.listing_instruction_service import enrich_property_with_instruction_fields
@@ -316,12 +316,14 @@ def get_agency_queue(
 def get_agency_inventory(
     *,
     db: Session = Depends(get_db),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(20, ge=1, le=100),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     current_user: UserResponse = Depends(get_current_active_user),
 ) -> Any:
     """Returns listings where moderation_status = 'live' AND agency_id = current_user.agency_id.
     Role gate: agent or agency_owner with active membership in that agency."""
+    offset = (page - 1) * page_size
+
     if current_user.user_role not in [UserRole.AGENT, UserRole.AGENCY_OWNER]:
         raise HTTPException(status_code=403, detail="Only agents and agency owners can view the agency inventory")
 
@@ -337,8 +339,8 @@ def get_agency_inventory(
             Property.deleted_at.is_(None),
         )
         .order_by(desc(Property.created_at))
-        .offset(skip)
-        .limit(limit)
+        .offset(offset)
+        .limit(page_size)
         .all()
     )
     from app.services.listing_instruction_service import enrich_property_with_instruction_fields
@@ -357,14 +359,13 @@ def get_agency_inventory(
 def get_pending_admin(
     *,
     db: Session = Depends(get_db),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(20, ge=1, le=100),
-    current_user: UserResponse = Depends(get_current_active_user),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    current_user: UserResponse = Depends(get_current_agency_owner_user),
 ) -> Any:
     """Returns listings where moderation_status = 'admin_review' AND agency_id = current_user.agency_id.
     Role gate: agency_owner only."""
-    if current_user.user_role != UserRole.AGENCY_OWNER:
-        raise HTTPException(status_code=403, detail="Only agency owners can view pending admin listings")
+    offset = (page - 1) * page_size
 
     if not current_user.agency_id:
         raise HTTPException(status_code=400, detail="User does not belong to an agency")
@@ -378,8 +379,8 @@ def get_pending_admin(
             Property.deleted_at.is_(None),
         )
         .order_by(desc(Property.created_at))
-        .offset(skip)
-        .limit(limit)
+        .offset(offset)
+        .limit(page_size)
         .all()
     )
     from app.services.listing_instruction_service import enrich_property_with_instruction_fields

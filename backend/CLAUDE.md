@@ -237,11 +237,12 @@ Do not answer from stale docs when the router, schema, or CRUD layer says otherw
 - Phase I is closed; Phase J is closed except `DEF-J-EMAIL-DOMAIN-001`
 - Phase K is closed; Phase L is closed; Phase M is closed; Phase N is closed; Phase O is closed
 - Phase P is closed; Phase Q is open (June 21 2026)
-- Q.1 backend complete at HEAD `2aeddc2` — all three notification email fire points wired and tested:
-  - `draft → agency_review`: `send_submission_notification_email` fires to agency owner
-  - `agency_review → admin_review`: `send_agency_approval_notification_email` fires to admin(s)
-  - `agency_review → agency_rejected`: `send_property_moderation_email` fires to listing agent
-  - `DEF-N-NOTIFICATIONS-001` closed — 11 passing tests in `test_phase_n4_notifications.py`
+- Q.1 backend complete at HEAD `2aeddc2` — all three notification email fire points wired and tested
+- Q.2 backend — three agency owner read endpoints (`agency-queue`, `agency-inventory`, `pending-admin`) implemented at commit `ac5546b`. `DEF-N-ENDPOINTS-001` closed
+- Q.3 backend — `PATCH /reject-permanent/` already existed at HEAD `2aeddc2`. `DEF-N-TRANSITIONS-001` closed
+- Q.4 backend — `PATCH /block/` existed at HEAD; join request guard added at `ac5546b` (403 for blocked). `DEF-P-BLOCK-001` closed (backend)
+- Q.5 backend — `PATCH /reconsider/` endpoint added at `ac5546b`. `DEF-P-RECONSIDER-001` closed
+- Q.7 backend — operational hardening: DEF-006/007/DEF-K-AUDIT-FK-001 closed; DEF-002 deferred to Phase R
 - Q.1 operator action remaining: `DEF-J-EMAIL-DOMAIN-001` — Resend domain verification + Railway `MAIL_FROM` update
 - Keep production and dev Supabase separation strict during all work
 - Treat agency card branding as blocked on backend enrichment until the response contract changes

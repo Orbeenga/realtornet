@@ -1815,6 +1815,11 @@ def create_agency_join_request(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="User is already affiliated with this agency",
             )
+        if existing_status == "blocked":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You cannot submit a join request to this agency.",
+            )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Agency membership is not active; submit a review request instead",
@@ -2052,6 +2057,52 @@ def reject_agency_join_request(
             "declined",
             cast(str | None, join_request.rejection_reason),
         )
+    return join_request
+
+
+@router.patch("/{agency_id}/join-requests/{request_id}/reconsider/", response_model=AgencyJoinRequestResponse)
+def reconsider_agency_join_request(
+    *,
+    db: Session = Depends(get_db),
+    agency_id: int,
+    request_id: int,
+    current_user: UserResponse = Depends(get_current_agency_owner_user),
+    _: None = Depends(validate_request_size),
+) -> Any:
+    """Reconsider a rejected join request by resetting it to pending."""
+    current_user_model = cast(User, current_user)
+    if cast(int | None, current_user_model.agency_id) != agency_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Agency owners can only manage their own agency",
+        )
+
+    join_request = db.execute(
+        select(AgencyJoinRequest).where(
+            AgencyJoinRequest.join_request_id == request_id,
+            AgencyJoinRequest.agency_id == agency_id,
+            AgencyJoinRequest.deleted_at.is_(None),
+        ).options(joinedload(AgencyJoinRequest.user))
+    ).scalar_one_or_none()
+    if join_request is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Join request not found",
+        )
+    if str(join_request.status) != "rejected":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Only rejected join requests can be reconsidered",
+        )
+
+    cast(Any, join_request).status = "pending"
+    cast(Any, join_request).rejection_reason = None
+    cast(Any, join_request).decided_at = None
+    cast(Any, join_request).decided_by = None
+    join_request.updated_by = current_user_model.supabase_id
+    db.add(join_request)
+    db.flush()
+    db.refresh(join_request)
     return join_request
 
 

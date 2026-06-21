@@ -45,7 +45,7 @@ class TestGetAgencyQueue:
         """Agent cannot access agency-queue."""
         response = client.get("/api/v1/properties/agency-queue", headers=agent_token_headers)
         assert response.status_code == 403
-        assert "Only agency owners" in response.json()["detail"]
+        assert "Agency owner privileges required" in response.json()["detail"]
 
     def test_admin_gets_403(
         self, client: TestClient, admin_token_headers,
@@ -53,7 +53,7 @@ class TestGetAgencyQueue:
         """Admin cannot access agency-queue."""
         response = client.get("/api/v1/properties/agency-queue", headers=admin_token_headers)
         assert response.status_code == 403
-        assert "Only agency owners" in response.json()["detail"]
+        assert "Agency owner privileges required" in response.json()["detail"]
 
     def test_pagination(
         self, client: TestClient, agency_owner_token_headers,
@@ -62,7 +62,7 @@ class TestGetAgencyQueue:
         response = client.get(
             "/api/v1/properties/agency-queue",
             headers=agency_owner_token_headers,
-            params={"skip": 0, "limit": 10},
+            params={"page": 1, "page_size": 10},
         )
         assert response.status_code == 200
 
@@ -132,7 +132,7 @@ class TestGetAgencyInventory:
         response = client.get(
             "/api/v1/properties/agency-inventory",
             headers=agent_token_headers,
-            params={"skip": 0, "limit": 10},
+            params={"page": 1, "page_size": 10},
         )
         assert response.status_code == 200
 
@@ -169,7 +169,7 @@ class TestGetPendingAdmin:
         """Agent cannot access pending-admin."""
         response = client.get("/api/v1/properties/pending-admin", headers=agent_token_headers)
         assert response.status_code == 403
-        assert "Only agency owners" in response.json()["detail"]
+        assert "Agency owner privileges required" in response.json()["detail"]
 
     def test_admin_gets_403(
         self, client: TestClient, admin_token_headers,
@@ -177,7 +177,7 @@ class TestGetPendingAdmin:
         """Admin cannot access pending-admin (agency_owner only)."""
         response = client.get("/api/v1/properties/pending-admin", headers=admin_token_headers)
         assert response.status_code == 403
-        assert "Only agency owners" in response.json()["detail"]
+        assert "Agency owner privileges required" in response.json()["detail"]
 
     def test_pagination(
         self, client: TestClient, agency_owner_token_headers,
@@ -186,7 +186,7 @@ class TestGetPendingAdmin:
         response = client.get(
             "/api/v1/properties/pending-admin",
             headers=agency_owner_token_headers,
-            params={"skip": 0, "limit": 10},
+            params={"page": 1, "page_size": 10},
         )
         assert response.status_code == 200
 

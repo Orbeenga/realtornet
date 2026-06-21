@@ -178,3 +178,18 @@ See `DEFERRED.md` for current deferred items.
   - `agency_review → admin_review`: `send_agency_approval_notification_email` fires to admin(s)
   - `agency_review → agency_rejected`: `send_property_moderation_email` fires to listing agent
 - Q.1 operator action remaining: `DEF-J-EMAIL-DOMAIN-001` — Resend domain verification + Railway `MAIL_FROM` update
+- Q.2 backend — three agency owner read endpoints implemented at commit `ac5546b`:
+  - `GET /agency-queue/` — `agency_review` listings for agency_owner's agency
+  - `GET /agency-inventory/` — `live` listings for agent/agency_owner's agency
+  - `GET /pending-admin/` — `admin_review` listings for agency_owner's agency
+  - `DEF-N-ENDPOINTS-001` closed
+- Q.3 backend — `PATCH /reject-permanent/` already existed at HEAD `2aeddc2`. `DEF-N-TRANSITIONS-001` closed
+- Q.4 backend — `PATCH /block/` existed at HEAD; join request guard updated to return 403 for blocked users. `DEF-P-BLOCK-001` closed (backend)
+- Q.5 backend — `PATCH /reconsider/` endpoint added for rejected join requests. `DEF-P-RECONSIDER-001` closed
+- Q.6 frontend — Audit Activity UI section already existed at HEAD `b04601d`. `DEF-L-ADMIN-AUDIT-001` closed
+- Q.7 backend — operational hardening assessment:
+  - `DEF-002` — deferred to Phase R (trigger unmet, ~4 users)
+  - `DEF-006` — closed (bucket bootstrap working, tested)
+  - `DEF-007` — closed (`prepare_threshold=None` already set)
+  - `DEF-K-AUDIT-FK-001` — closed (FK design correct, cleanup scripts exist)
+- Q.7 frontend — `DEF-FE-004A` closed (`core-js` not in dependency tree; Next.js internal only)
