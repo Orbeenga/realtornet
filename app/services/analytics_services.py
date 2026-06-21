@@ -229,12 +229,12 @@ class AnalyticsService:
         ) or 0
         
         prop_status_counts = db.execute(
-            select(Property.listing_status, func.count(Property.property_id).label('count'))
+            select(Property.moderation_status, func.count(Property.property_id).label('count'))
             .where(Property.deleted_at.is_(None))
-            .group_by(Property.listing_status)
+            .group_by(Property.moderation_status)
         ).all()
         
-        properties_by_status: Dict[str, int] = {str(row.listing_status): int(row[1]) for row in prop_status_counts}  # Read the labeled count column by position so pyright doesn't confuse it with Row.count().
+        properties_by_status: Dict[str, int] = {row[0].value: int(row[1]) for row in prop_status_counts}  # Read the labeled count column by position so pyright doesn't confuse it with Row.count().
         
         prop_type_counts = db.execute(
             select(Property.property_type_id, func.count(Property.property_id).label('count'))
