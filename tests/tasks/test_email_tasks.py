@@ -276,6 +276,23 @@ def test_dispatch_email_task_fail_open_for_sync_errors(monkeypatch: pytest.Monke
     task.apply.assert_called_once()
 
 
+def test_inquiry_reply_email_includes_reply_body_and_links(monkeypatch: pytest.MonkeyPatch) -> None:
+    mock_send = _patch_send_email(monkeypatch)
+
+    task = cast(Any, email_tasks.send_inquiry_reply_email)
+    result = task.apply(
+        args=("seeker@example.com", "Lekki Apartment", "Test Agent", "Thanks for your interest", 42)
+    ).get()
+
+    assert result == "Inquiry reply email sent to seeker@example.com"
+    payload = _sent_payload(mock_send)
+    assert payload["subject"] == "Test Agent replied to your inquiry on Lekki Apartment"
+    assert "Thanks for your interest" in payload["text"]
+    assert "Thanks for your interest" in payload["html"]
+    assert "/account/inquiries" in payload["html"]
+    assert "/properties/42" in payload["html"]
+
+
 @pytest.mark.parametrize(
     ("task", "args"),
     [
@@ -311,6 +328,10 @@ def test_dispatch_email_task_fail_open_for_sync_errors(monkeypatch: pytest.Monke
         ),
         (email_tasks.send_role_change_email, ("agent@example.com", "Test Agent", "agent", "seeker", "Membership revoked")),
         (email_tasks.send_review_request_status_email, ("agent@example.com", "Test Agent", "Acme Realty", "declined", "Still missing documents")),
+        (
+            email_tasks.send_inquiry_reply_email,
+            ("seeker@example.com", "Lekki Apartment", "Test Agent", "Thanks for your interest", 42),
+        ),
     ],
 )
 def test_email_tasks_retry_then_raise_provider_errors(

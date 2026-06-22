@@ -26,3 +26,21 @@ class TestInquirySchemaValidation:
         """Update message must be non-empty if provided."""
         with pytest.raises(ValidationError):
             InquiryUpdate(message=" ")
+
+
+class TestInquiryReplySchemaValidation:
+
+    def test_reply_create_valid_body(self):
+        from app.schemas.inquiries import InquiryReplyCreate
+        reply = InquiryReplyCreate(body="Thanks for your interest")
+        assert reply.body == "Thanks for your interest"
+
+    def test_reply_create_rejects_empty_body(self):
+        from app.schemas.inquiries import InquiryReplyCreate
+        with pytest.raises(ValidationError):
+            InquiryReplyCreate(body=" ")
+
+    def test_reply_create_rejects_blank_body(self):
+        from app.schemas.inquiries import InquiryReplyCreate
+        with pytest.raises(ValidationError):
+            InquiryReplyCreate(body="")

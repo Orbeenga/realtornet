@@ -66,6 +66,30 @@ class InquiryUpdate(BaseModel):
         return v.strip() if v else None
 
 
+class InquiryReplyCreate(BaseModel):
+    body: str
+
+    @field_validator('body')
+    @classmethod
+    def validate_body(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError('body cannot be empty')
+        return v.strip()
+
+
+class InquiryReplyResponse(BaseModel):
+    reply_id: int
+    inquiry_id: int
+    author_id: int
+    author_display_name: str = ""
+    body: str
+    created_at: datetime
+    viewed_at: Optional[datetime] = None
+    edited_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 # Response Schema (includes DB-controlled fields)
 class InquiryResponse(InquiryBase):
     """Schema for inquiry responses (includes DB-generated fields)"""
@@ -77,6 +101,8 @@ class InquiryResponse(InquiryBase):
     deleted_at: Optional[datetime] = None
     deleted_by: Optional[UUID] = None
     can_respond: bool = False
+    reply_count: int = 0
+    latest_reply: Optional[InquiryReplyResponse] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -114,5 +140,3 @@ class InquiryFilter(BaseModel):
     property_id: Optional[int] = None
     inquiry_status: Optional[InquiryStatus] = None
     include_deleted: bool = False
-
-# Alias for convenience

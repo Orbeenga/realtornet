@@ -93,8 +93,7 @@ class InquiryCRUD:
         update_data = obj_in.model_dump(exclude_unset=True)
         
         # Protect core fields from update (Standard 15)
-        # Added 'inquiry_id' to protected_fields to satisfy test_strips_protected_fields
-        protected_fields = {'id', 'user_id', 'property_id', 'inquiry_id', 'created_at'}
+        protected_fields = {'inquiry_id', 'user_id', 'property_id', 'created_at'}
         for field in protected_fields:
             update_data.pop(field, None)
 

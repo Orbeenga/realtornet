@@ -813,6 +813,54 @@ def send_instruction_notification_email(
 
 
 # Export task functions
+@celery_app.task(
+    name="app.tasks.email_tasks.send_inquiry_reply_email",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+)
+def send_inquiry_reply_email(
+    self,
+    to_email: str,
+    property_title: str,
+    agent_name: str,
+    reply_body: str,
+    property_id: int,
+) -> str:
+    """Notify a seeker that their inquiry received a reply."""
+    dashboard_url = _frontend_url("/account/inquiries")
+    property_url = _frontend_url(f"/properties/{property_id}")
+    subject = f"{agent_name} replied to your inquiry on {property_title}"
+    text_body = (
+        f"{agent_name} replied to your inquiry on {property_title}.\n\n"
+        f"Reply:\n{reply_body}\n\n"
+        f"View your inquiries: {dashboard_url}\n"
+        f"View listing: {property_url}"
+    )
+    html_body = f"""
+    <html>
+        <body>
+            <h2>{escape(agent_name)} replied to your inquiry</h2>
+            <p><strong>Property:</strong> {escape(property_title)}</p>
+            <p><strong>Reply:</strong></p>
+            <p>{escape(reply_body)}</p>
+            <p><a href="{dashboard_url}">View your inquiries</a></p>
+            <p><a href="{property_url}">View listing</a></p>
+        </body>
+    </html>
+    """
+    try:
+        return _run_send_email(
+            task_name="Inquiry reply",
+            to_email=to_email,
+            subject=subject,
+            text=text_body,
+            html=html_body,
+        )
+    except Exception as exc:
+        _retry_or_raise(self, exc, to_email=to_email, task_name="inquiry reply")
+
+
 __all__ = [
     "dispatch_email_task",
     "send_welcome_email",
@@ -829,4 +877,5 @@ __all__ = [
     "send_submission_notification_email",
     "send_agency_approval_notification_email",
     "send_instruction_notification_email",
+    "send_inquiry_reply_email",
 ]

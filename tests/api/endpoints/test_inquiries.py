@@ -1022,6 +1022,242 @@ class TestMarkInquiryResponded:
         )
         assert response.status_code == 403
 
+class TestReplyToInquiry:
+
+    REPLY_PATH = "/api/v1/inquiries/{inquiry_id}/reply/"
+
+    def test_unauthenticated_returns_401(self, client: TestClient):
+        response = client.post(
+            self.REPLY_PATH.format(inquiry_id=1),
+            json={"body": "Thanks for your interest"}
+        )
+        assert response.status_code == 401
+
+    def test_inquiry_not_found_returns_404(
+        self, client: TestClient, agent_token_headers
+    ):
+        response = client.post(
+            self.REPLY_PATH.format(inquiry_id=999999),
+            json={"body": "Thanks for your interest"},
+            headers=agent_token_headers
+        )
+        assert response.status_code == 404
+
+    def test_non_owner_agency_member_cannot_reply_returns_403(
+        self, client: TestClient, normal_user_token_headers,
+        agent_token_headers, unverified_property_owned_by_agent
+    ):
+        create_response = client.post(
+            "/api/v1/inquiries/",
+            json={
+                "property_id": unverified_property_owned_by_agent.property_id,
+                "message": "Interested"
+            },
+            headers=normal_user_token_headers
+        )
+        inquiry_id = create_response.json()["inquiry_id"]
+
+        response = client.post(
+            self.REPLY_PATH.format(inquiry_id=inquiry_id),
+            json={"body": "You should not be able to reply"},
+            headers=normal_user_token_headers
+        )
+        assert response.status_code == 403
+
+    def test_agent_replies_success(
+        self, client: TestClient, normal_user_token_headers,
+        agent_token_headers, unverified_property_owned_by_agent
+    ):
+        create_response = client.post(
+            "/api/v1/inquiries/",
+            json={
+                "property_id": unverified_property_owned_by_agent.property_id,
+                "message": "Interested in this property"
+            },
+            headers=normal_user_token_headers
+        )
+        assert create_response.status_code == 201
+        inquiry_id = create_response.json()["inquiry_id"]
+
+        reply_body = "Thanks for reaching out. Let me know when you'd like to view."
+        response = client.post(
+            self.REPLY_PATH.format(inquiry_id=inquiry_id),
+            json={"body": reply_body},
+            headers=agent_token_headers
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["inquiry_id"] == inquiry_id
+        assert data["body"] == reply_body
+        assert "author_display_name" in data
+
+    def test_first_reply_marks_inquiry_responded(
+        self, client: TestClient, normal_user_token_headers,
+        agent_token_headers, unverified_property_owned_by_agent
+    ):
+        create_response = client.post(
+            "/api/v1/inquiries/",
+            json={
+                "property_id": unverified_property_owned_by_agent.property_id,
+                "message": "Is this still available?"
+            },
+            headers=normal_user_token_headers
+        )
+        inquiry_id = create_response.json()["inquiry_id"]
+        assert create_response.json()["inquiry_status"] == "new"
+
+        response = client.post(
+            self.REPLY_PATH.format(inquiry_id=inquiry_id),
+            json={"body": "Yes, still available!"},
+            headers=agent_token_headers
+        )
+        assert response.status_code == 201
+
+        inquiry_response = client.get(
+            f"/api/v1/inquiries/{inquiry_id}",
+            headers=normal_user_token_headers
+        )
+        assert inquiry_response.json()["inquiry_status"] == "responded"
+
+    def test_reply_dispatches_notification_and_email(
+        self, client: TestClient, normal_user_token_headers, normal_user,
+        agent_token_headers, unverified_property_owned_by_agent
+    ):
+        create_response = client.post(
+            "/api/v1/inquiries/",
+            json={
+                "property_id": unverified_property_owned_by_agent.property_id,
+                "message": "Interested"
+            },
+            headers=normal_user_token_headers
+        )
+        inquiry_id = create_response.json()["inquiry_id"]
+
+        with patch("app.api.endpoints.inquiries.dispatch_email_task") as mock_dispatch:
+            response = client.post(
+                self.REPLY_PATH.format(inquiry_id=inquiry_id),
+                json={"body": "Let me get back to you"},
+                headers=agent_token_headers
+            )
+        assert response.status_code == 201
+        mock_dispatch.assert_called_once()
+        args = mock_dispatch.call_args.args
+        assert args[1] == normal_user.email
+
+
+class TestReadInquiryReplies:
+
+    REPLIES_PATH = "/api/v1/inquiries/{inquiry_id}/replies/"
+
+    def test_unauthenticated_returns_401(self, client: TestClient):
+        response = client.get(
+            self.REPLIES_PATH.format(inquiry_id=1)
+        )
+        assert response.status_code == 401
+
+    def test_inquiry_not_found_returns_404(
+        self, client: TestClient, agent_token_headers
+    ):
+        response = client.get(
+            self.REPLIES_PATH.format(inquiry_id=999999),
+            headers=agent_token_headers
+        )
+        assert response.status_code == 404
+
+    def test_seeker_can_read_own_inquiry_replies(
+        self, client: TestClient, normal_user_token_headers,
+        agent_token_headers, unverified_property_owned_by_agent
+    ):
+        create_response = client.post(
+            "/api/v1/inquiries/",
+            json={
+                "property_id": unverified_property_owned_by_agent.property_id,
+                "message": "Interested"
+            },
+            headers=normal_user_token_headers
+        )
+        inquiry_id = create_response.json()["inquiry_id"]
+
+        client.post(
+            self.REPLIES_PATH.replace("/replies/", "/reply/").format(inquiry_id=inquiry_id),
+            json={"body": "Thanks for inquiring"},
+            headers=agent_token_headers
+        )
+
+        response = client.get(
+            self.REPLIES_PATH.format(inquiry_id=inquiry_id),
+            headers=normal_user_token_headers
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, list)
+        assert len(data) == 1
+        assert data[0]["body"] == "Thanks for inquiring"
+
+    def test_property_owner_can_read_replies(
+        self, client: TestClient, normal_user_token_headers,
+        agent_token_headers, unverified_property_owned_by_agent
+    ):
+        create_response = client.post(
+            "/api/v1/inquiries/",
+            json={
+                "property_id": unverified_property_owned_by_agent.property_id,
+                "message": "Interested"
+            },
+            headers=normal_user_token_headers
+        )
+        inquiry_id = create_response.json()["inquiry_id"]
+
+        response = client.get(
+            self.REPLIES_PATH.format(inquiry_id=inquiry_id),
+            headers=agent_token_headers
+        )
+        assert response.status_code == 200
+        assert isinstance(response.json(), list)
+
+    def test_third_party_cannot_read_replies_returns_403(
+        self, client: TestClient, normal_user_token_headers,
+        agent_token_headers, admin_token_headers,
+        unverified_property_owned_by_agent
+    ):
+        create_response = client.post(
+            "/api/v1/inquiries/",
+            json={
+                "property_id": unverified_property_owned_by_agent.property_id,
+                "message": "Interested"
+            },
+            headers=agent_token_headers
+        )
+        inquiry_id = create_response.json()["inquiry_id"]
+
+        response = client.get(
+            self.REPLIES_PATH.format(inquiry_id=inquiry_id),
+            headers=normal_user_token_headers
+        )
+        assert response.status_code == 403
+
+    def test_admin_can_read_any_replies(
+        self, client: TestClient, normal_user_token_headers,
+        admin_token_headers, sample_property
+    ):
+        create_response = client.post(
+            "/api/v1/inquiries/",
+            json={
+                "property_id": sample_property.property_id,
+                "message": "Interested"
+            },
+            headers=normal_user_token_headers
+        )
+        inquiry_id = create_response.json()["inquiry_id"]
+
+        response = client.get(
+            self.REPLIES_PATH.format(inquiry_id=inquiry_id),
+            headers=admin_token_headers
+        )
+        assert response.status_code == 200
+        assert isinstance(response.json(), list)
+
+
 class TestCountInquiries:
 
     def test_count_inquiries_unauthenticated_returns_401(self, client: TestClient):

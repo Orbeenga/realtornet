@@ -139,6 +139,11 @@ See `DEFERRED.md` for current deferred items.
 - Backend HEAD: `1875fed`, Frontend HEAD: `739bd1b`
 - Coverage: 95.28% (pytest 2059 passed at Q close)
 
+## Pre-flight enforcement (derived from Phase R R.2 corrective)
+- **Before any backend code is written**, the agent MUST output a pre-flight confirmation block listing at least 5 locked rules from PREFLIGHT.md. This forces explicit reading, not passive attachment.
+- **No bare `id` in protected_fields**: All PK column names in `protected_fields` sets must be domain-qualified (`inquiry_id`, `reply_id`, `property_id`). Bare `id` violates PREFLIGHT.md Canonical Rule 2 and is a latent bug.
+- **PREFLIGHT.md is law, not reference**: The agent must read PREFLIGHT.md independently before writing code. Attaching it is not sufficient — the pre-flight declaration above proves it was read.
+
 ## Review priorities
 1. DB to ORM alignment
 2. Migration safety

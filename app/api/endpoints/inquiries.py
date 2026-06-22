@@ -3,16 +3,19 @@
 Inquiries management endpoints - Canonical compliant
 Handles property inquiries with user-owner relationships, soft delete, and audit tracking
 """
-from typing import Any, List, cast as typing_cast  # Alias typing.cast so endpoint-local narrowing never shadows SQLAlchemy helpers in future edits.
+from datetime import datetime
+from typing import Any, List, Optional, cast as typing_cast
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 # --- DIRECT CRUD IMPORTS ---
 from app.crud.inquiries import inquiry as inquiry_crud
+from app.crud.inquiry_replies import inquiry_reply as inquiry_reply_crud
 from app.crud.properties import property as property_crud
 from app.crud.users import user as user_crud
-from app.models.users import User  # Narrow endpoint-local user values back to the ORM shape expected by CRUD permission helpers.
-from app.tasks.email_tasks import dispatch_email_task, send_inquiry_received_email
+from app.crud.notifications import create_notification_fail_open
+from app.models.users import User
+from app.tasks.email_tasks import dispatch_email_task, send_inquiry_received_email, send_inquiry_reply_email
 
 # --- DIRECT DEPENDENCY IMPORTS ---
 from app.api.dependencies import (
@@ -28,6 +31,8 @@ from app.schemas.users import UserResponse
 from app.schemas.inquiries import (
     InquiryCreate,
     InquiryExtendedResponse,
+    InquiryReplyCreate,
+    InquiryReplyResponse,
     InquiryResponse,
     InquiryUpdate,
 )
@@ -473,18 +478,22 @@ def mark_inquiry_viewed(
     return updated_inquiry
 
 
-@router.post("/{inquiry_id}/mark-responded", response_model=InquiryResponse)
-def mark_inquiry_responded(
+@router.post("/{inquiry_id}/reply/", response_model=InquiryReplyResponse, status_code=status.HTTP_201_CREATED)
+def reply_to_inquiry(
     *,
     db: Session = Depends(get_db),
     inquiry_id: int,
-    current_user: UserResponse = Depends(get_current_active_user)
+    reply_in: InquiryReplyCreate,
+    current_user: UserResponse = Depends(get_current_active_user),
+    _: None = Depends(validate_request_size)
 ) -> Any:
     """
-    Mark inquiry as responded.
+    Reply to an inquiry.
     
-    - Property owner can mark as responded
-    - Admins can mark any inquiry as responded
+    - Agent or agency_owner who received the inquiry can reply
+    - First reply auto-marks inquiry as responded
+    - Seeker receives in-platform notification
+    - Email dispatched to seeker if MAIL_FROM is verified (fail-open)
     """
     inquiry = inquiry_crud.get(db=db, inquiry_id=inquiry_id)
     if not inquiry:
@@ -492,9 +501,8 @@ def mark_inquiry_responded(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Inquiry not found"
         )
-    
-    # Check authorization: property owner or admin
-    inquiry_property_id: int = typing_cast(int, inquiry.property_id)  # Narrow the ORM-backed property ID before loading the related property.
+
+    inquiry_property_id: int = typing_cast(int, inquiry.property_id)
     property = property_crud.get(db=db, property_id=inquiry_property_id)
     if not property:
         raise HTTPException(
@@ -502,27 +510,168 @@ def mark_inquiry_responded(
             detail="Associated property not found"
         )
 
-    property_owner_id: int = typing_cast(int, property.user_id)  # Narrow the ORM-backed property owner ID before the authorization comparison.
-    current_user_id: int = typing_cast(int, current_user.user_id)  # Narrow the authenticated user ID locally without changing the dependency contract.
-    current_user_model: User = typing_cast(User, current_user)  # typing cast: endpoint local only for CRUD permission helper compatibility.
-    if property_owner_id != current_user_id:
+    current_user_id: int = typing_cast(int, current_user.user_id)
+    current_user_model: User = typing_cast(User, current_user)
+    property_owner_id: int = typing_cast(int, property.user_id)
+    is_property_owner = property_owner_id == current_user_id
+
+    is_agency_member = False
+    if property.agency_id is not None:
+        from app.models.agency_join_requests import AgencyAgentMembership
+        from sqlalchemy import select, and_
+        stmt = select(AgencyAgentMembership).where(
+            and_(
+                AgencyAgentMembership.user_id == current_user_id,
+                AgencyAgentMembership.agency_id == property.agency_id,
+                AgencyAgentMembership.status == 'active',
+                AgencyAgentMembership.deleted_at.is_(None),
+            )
+        )
+        is_agency_member = db.execute(stmt).scalar_one_or_none() is not None
+
+    if not is_property_owner and not is_agency_member and not user_crud.is_admin(current_user_model):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not enough permissions to mark inquiry as responded"
+            detail="Not enough permissions to reply to this inquiry"
         )
-    
-    updated_inquiry = inquiry_crud.mark_as_responded(
+
+    reply = inquiry_reply_crud.create(
         db=db,
-        inquiry_id=inquiry_id
+        inquiry_id=inquiry_id,
+        author_id=current_user_id,
+        body=reply_in.body,
     )
+
+    is_first_reply = inquiry_reply_crud.count_by_inquiry(db=db, inquiry_id=inquiry_id) == 1
+    if is_first_reply:
+        inquiry_crud.mark_as_responded(db=db, inquiry_id=inquiry_id)
+
+    seeker_id: int = typing_cast(int, inquiry.user_id)
+    seeker_user = user_crud.get(db=db, user_id=seeker_id)
+    property_title = str(getattr(property, "title", "") or "") or "a property"
+    agent_name = f"{current_user.first_name} {current_user.last_name}".strip() or "An agent"
+
+    create_notification_fail_open(
+        db,
+        user_id=seeker_id,
+        event_type="inquiry_replied",
+        listing_id=typing_cast(int, property.property_id),
+        body_text=f"{agent_name} replied to your inquiry on {property_title}",
+    )
+
+    if seeker_user is not None:
+        seeker_email = str(getattr(seeker_user, "email", "") or "").strip()
+        if seeker_email:
+            dispatch_email_task(
+                send_inquiry_reply_email,
+                seeker_email,
+                property_title,
+                agent_name,
+                reply.body,
+                typing_cast(int, property.property_id),
+            )
+
+    db.flush()
+    db.refresh(reply)
+
+    author_display_name = agent_name
+    return InquiryReplyResponse(
+        reply_id=typing_cast(int, reply.reply_id),
+        inquiry_id=typing_cast(int, reply.inquiry_id),
+        author_id=typing_cast(int, reply.author_id),
+        author_display_name=author_display_name,
+        body=typing_cast(str, reply.body),
+        created_at=typing_cast(datetime, reply.created_at),
+        viewed_at=typing_cast(datetime | None, reply.viewed_at),
+        edited_at=typing_cast(datetime | None, reply.edited_at),
+    )
+
+
+@router.get("/{inquiry_id}/replies/", response_model=List[InquiryReplyResponse])
+def read_inquiry_replies(
+    *,
+    db: Session = Depends(get_db),
+    inquiry_id: int,
+    current_user: UserResponse = Depends(get_current_active_user),
+    pagination: dict = Depends(pagination_params),
+) -> Any:
+    """
+    Get replies for an inquiry.
     
-    if not updated_inquiry:
+    - Seeker who sent the inquiry can read
+    - Agent/agency_owner who received the inquiry can read
+    - Admin can read all
+    """
+    inquiry = inquiry_crud.get(db=db, inquiry_id=inquiry_id)
+    if not inquiry:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Inquiry not found during mark as responded"
+            detail="Inquiry not found"
         )
-    
-    return updated_inquiry
+
+    inquiry_property_id: int = typing_cast(int, inquiry.property_id)
+    property = property_crud.get(db=db, property_id=inquiry_property_id)
+    if not property:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Associated property not found"
+        )
+
+    inquiry_user_id: int = typing_cast(int, inquiry.user_id)
+    property_owner_id: int = typing_cast(int, property.user_id)
+    current_user_id: int = typing_cast(int, current_user.user_id)
+    current_user_model: User = typing_cast(User, current_user)
+
+    is_agency_member = False
+    if property.agency_id is not None:
+        from app.models.agency_join_requests import AgencyAgentMembership
+        from sqlalchemy import select, and_
+        stmt = select(AgencyAgentMembership).where(
+            and_(
+                AgencyAgentMembership.user_id == current_user_id,
+                AgencyAgentMembership.agency_id == property.agency_id,
+                AgencyAgentMembership.status == 'active',
+                AgencyAgentMembership.deleted_at.is_(None),
+            )
+        )
+        is_agency_member = db.execute(stmt).scalar_one_or_none() is not None
+
+    if (inquiry_user_id != current_user_id
+        and property_owner_id != current_user_id
+        and not is_agency_member
+        and not user_crud.is_admin(current_user_model)):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough permissions to view replies to this inquiry"
+        )
+
+    replies = inquiry_reply_crud.get_by_inquiry(
+        db=db,
+        inquiry_id=inquiry_id,
+        skip=pagination["skip"],
+        limit=pagination["limit"],
+    )
+
+    result = []
+    for reply in replies:
+        author = getattr(reply, "author", None)
+        display_name = ""
+        if author is not None:
+            first = str(getattr(author, "first_name", "") or "").strip()
+            last = str(getattr(author, "last_name", "") or "").strip()
+            display_name = f"{first} {last}".strip()
+        result.append(InquiryReplyResponse(
+            reply_id=typing_cast(int, reply.reply_id),
+            inquiry_id=typing_cast(int, reply.inquiry_id),
+            author_id=typing_cast(int, reply.author_id),
+            author_display_name=display_name,
+            body=typing_cast(str, reply.body),
+            created_at=typing_cast(datetime, reply.created_at),
+            viewed_at=typing_cast(datetime | None, reply.viewed_at),
+            edited_at=typing_cast(datetime | None, reply.edited_at),
+        ))
+
+    return result
 
 
 @router.get("/count/{property_id}")
@@ -613,3 +762,58 @@ def count_inquiries_by_status(
     )
     
     return {"property_id": property_id, "inquiry_status": inquiry_status, "count": count}
+
+
+@router.post("/{inquiry_id}/mark-responded", response_model=InquiryResponse)
+def mark_inquiry_responded(
+    *,
+    db: Session = Depends(get_db),
+    inquiry_id: int,
+    current_user: UserResponse = Depends(get_current_active_user)
+) -> Any:
+    """
+    Mark inquiry as responded (deprecated).
+
+    This endpoint is deprecated in Phase R. Inquiry status now transitions
+    to 'responded' automatically when the first reply is posted via
+    POST /{inquiry_id}/reply/. Use the reply endpoint instead.
+
+    - Property owner can mark as responded
+    - Admins can mark any inquiry as responded
+    """
+    inquiry = inquiry_crud.get(db=db, inquiry_id=inquiry_id)
+    if not inquiry:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Inquiry not found"
+        )
+
+    inquiry_property_id: int = typing_cast(int, inquiry.property_id)
+    property = property_crud.get(db=db, property_id=inquiry_property_id)
+    if not property:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Associated property not found"
+        )
+
+    property_owner_id: int = typing_cast(int, property.user_id)
+    current_user_id: int = typing_cast(int, current_user.user_id)
+    current_user_model: User = typing_cast(User, current_user)
+    if property_owner_id != current_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough permissions to mark inquiry as responded"
+        )
+
+    updated_inquiry = inquiry_crud.mark_as_responded(
+        db=db,
+        inquiry_id=inquiry_id
+    )
+
+    if not updated_inquiry:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Inquiry not found during mark as responded"
+        )
+
+    return updated_inquiry
