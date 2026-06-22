@@ -21,8 +21,10 @@
 | ID | Item | Phase |
 |---|---|---|
 | DEF-J-EMAIL-DOMAIN-001 | Real-user email delivery blocked until a verified sender domain is configured in Resend and Railway `MAIL_FROM` is updated. Operator action only — no code changes needed. | R |
+| DEF-J-LOC-001 | Location breadth/quality monitoring. Self-populating system live and working since Phase J. No monitoring tooling warranted until user volume makes location data quality a reported user friction point. | R |
 | DEF-R-MSG-001 | In-app messaging + auto Mark Responded on reply. Manual Mark Responded button is correct MVP behavior until this lands. | R |
 | DEF-R-AGENT-STATS-001 | Agent personal stats tab (own listings by status, rejected/revoked breakdown, inquiries received, response rate, agency active memberships, rejected/revoked/blocked/left membership counts). | R |
+| DEF-R-NOM-001 | Nominatim self-hosted instance. Public API sufficient at current scale (1 req/sec throttle, 5-min cache, Nigeria-first filtering all in place). Evaluate when rate limiting becomes a confirmed operational constraint. | R |
 | DEF-Q-UNBLOCK-001 | Agency-level unblock endpoint (`PATCH /agencies/{id}/members/{user_id}/unblock`) not implemented. | R |
 | DEF-002 | Audit log retention policy. Trigger not reached (~31 creations, ~11 deletions in 30d at Phase Q close, 5 users). Revisit when audit_logs exceeds 10K rows or user count exceeds 500. | R |
 
