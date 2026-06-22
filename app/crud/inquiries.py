@@ -7,7 +7,7 @@ Soft delete default, no manual timestamps, proper FK joins.
 
 from typing import Any, List, Optional, cast
 from sqlalchemy import select, and_, func
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.inquiries import Inquiry
 from app.models.properties import Property
@@ -16,6 +16,14 @@ from app.schemas.inquiries import InquiryCreate, InquiryUpdate
 
 class InquiryCRUD:
     """CRUD operations for property inquiries"""
+
+    @staticmethod
+    def _enrich(inquiry: Inquiry) -> Inquiry:
+        """Set latest_reply and reply_count for Pydantic from_attributes serialization."""
+        replies = getattr(inquiry, "replies", None) or []
+        setattr(inquiry, "latest_reply", replies[0] if replies else None)
+        setattr(inquiry, "reply_count", len(replies))
+        return inquiry
 
     def create(
         self, 
@@ -35,6 +43,9 @@ class InquiryCRUD:
         db.add(db_obj)
         db.flush()
         db.refresh(db_obj)
+        # New inquiry has no replies
+        setattr(db_obj, "latest_reply", None)
+        setattr(db_obj, "reply_count", 0)
         return db_obj
 
     def get(
@@ -44,13 +55,20 @@ class InquiryCRUD:
         inquiry_id: int
     ) -> Optional[Inquiry]:
         """Get an active inquiry by ID"""
-        stmt = select(Inquiry).where(
-            and_(
-                Inquiry.inquiry_id == inquiry_id,
-                Inquiry.deleted_at.is_(None)
+        stmt = (
+            select(Inquiry)
+            .options(selectinload(Inquiry.replies))
+            .where(
+                and_(
+                    Inquiry.inquiry_id == inquiry_id,
+                    Inquiry.deleted_at.is_(None)
+                )
             )
         )
-        return db.execute(stmt).scalar_one_or_none()
+        inquiry = db.execute(stmt).scalar_one_or_none()
+        if inquiry:
+            self._enrich(inquiry)
+        return inquiry
 
     def get_multi(
         self, 
@@ -65,12 +83,16 @@ class InquiryCRUD:
         """
         stmt = (
             select(Inquiry)
+            .options(selectinload(Inquiry.replies))
             .where(Inquiry.deleted_at.is_(None))
             .order_by(Inquiry.created_at.desc())
             .offset(skip)
             .limit(limit)
         )
-        return list(db.execute(stmt).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
+        results = list(db.execute(stmt).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
+        for r in results:
+            self._enrich(r)
+        return results
 
     def update(
         self, 
@@ -102,6 +124,7 @@ class InquiryCRUD:
 
         db.flush()
         db.refresh(db_obj)
+        self._enrich(db_obj)
         return db_obj
 
     def soft_delete(
@@ -123,6 +146,7 @@ class InquiryCRUD:
         db_obj.deleted_by = deleted_by_supabase_id
         db.flush()
         db.refresh(db_obj)
+        self._enrich(db_obj)
         return db_obj
 
     def get_by_property(
@@ -136,6 +160,7 @@ class InquiryCRUD:
         """Get active inquiries for a specific property"""
         stmt = (
             select(Inquiry)
+            .options(selectinload(Inquiry.replies))
             .where(
                 and_(
                     Inquiry.property_id == property_id,
@@ -146,7 +171,10 @@ class InquiryCRUD:
             .offset(skip)
             .limit(limit)
         )
-        return list(db.execute(stmt).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
+        results = list(db.execute(stmt).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
+        for r in results:
+            self._enrich(r)
+        return results
 
     def get_by_user(
         self, 
@@ -159,6 +187,7 @@ class InquiryCRUD:
         """Get active inquiries made by a specific user"""
         stmt = (
             select(Inquiry)
+            .options(selectinload(Inquiry.replies))
             .where(
                 and_(
                     Inquiry.user_id == user_id,
@@ -169,7 +198,10 @@ class InquiryCRUD:
             .offset(skip)
             .limit(limit)
         )
-        return list(db.execute(stmt).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
+        results = list(db.execute(stmt).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
+        for r in results:
+            self._enrich(r)
+        return results
 
     def get_by_property_owner(
         self, 
@@ -186,6 +218,7 @@ class InquiryCRUD:
         stmt = (
             select(Inquiry)
             .options(
+                selectinload(Inquiry.replies),
                 joinedload(Inquiry.user),
                 joinedload(Inquiry.property).joinedload(Property.agency),
             )
@@ -201,7 +234,10 @@ class InquiryCRUD:
             .offset(skip)
             .limit(limit)
         )
-        return list(db.execute(stmt).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
+        results = list(db.execute(stmt).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
+        for r in results:
+            self._enrich(r)
+        return results
 
     def update_status(
         self, 
@@ -222,6 +258,7 @@ class InquiryCRUD:
         # DB trigger handles updated_at
         db.flush()
         db.refresh(db_obj)
+        self._enrich(db_obj)
         return db_obj
 
     def mark_as_viewed(

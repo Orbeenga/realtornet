@@ -72,6 +72,8 @@ def _build_inquiry_extended_response(inquiry: Any, *, can_respond: bool = False)
         "deleted_at": inquiry.deleted_at,
         "deleted_by": inquiry.deleted_by,
         "can_respond": can_respond,
+        "reply_count": getattr(inquiry, "reply_count", 0),
+        "latest_reply": InquiryReplyResponse.model_validate(inquiry.latest_reply).model_dump(mode="json") if getattr(inquiry, "latest_reply", None) else None,
         "user": user_payload,
         "property": property_payload,
     }

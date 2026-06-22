@@ -15,5 +15,5 @@ class InquiryReply(Base):
     viewed_at = Column(DateTime(timezone=True), nullable=True)
     edited_at = Column(DateTime(timezone=True), nullable=True)
 
-    inquiry = relationship("Inquiry", foreign_keys=[inquiry_id])
+    inquiry = relationship("Inquiry", back_populates="replies", foreign_keys=[inquiry_id])
     author = relationship("User", foreign_keys=[author_id])

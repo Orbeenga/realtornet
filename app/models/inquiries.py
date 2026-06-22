@@ -79,6 +79,13 @@ class Inquiry(Base, TimestampMixin, SoftDeleteMixin):
         back_populates="inquiries",
         foreign_keys=[user_id]
     )
+    replies = relationship(
+        "InquiryReply",
+        back_populates="inquiry",
+        foreign_keys="InquiryReply.inquiry_id",
+        order_by="InquiryReply.created_at.desc()",
+        lazy="selectin",
+    )
 
     def __repr__(self):
         return f"<Inquiry(inquiry_id={self.inquiry_id}, status={self.inquiry_status}, user_id={self.user_id})>"
