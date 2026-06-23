@@ -38,14 +38,24 @@ from app.models.users import User as User
 from app.services.analytics_services import analytics_service
 from app.models.analytics import ActivePropertiesView, AgentPerformanceView
 from app.models.properties import Property
-from app.models.inquiries import Inquiry
+from app.models.property_types import PropertyType
+from app.models.inquiries import Inquiry, InquiryStatus
+from app.models.inquiry_replies import InquiryReply
 from app.models.agency_join_requests import AgencyAgentMembership
+from app.models.agencies import Agency
 from app.schemas.stats import (
     SystemStatsResponse,
     UsageMetricsResponse,
     DataIntegrityResponse,
     PropertyEngagementResponse,
     AgentStatsResponse,
+    AgentListingsByStatusResponse,
+    AgentListingStatusCount,
+    AgentListingStatusItem,
+    AgentInquiryResponseRateResponse,
+    AgentInquiryResponseDetail,
+    AgentMembershipsResponse,
+    AgentMembershipDetail,
 )
 from app.schemas.users import UserResponse
 
@@ -339,6 +349,208 @@ async def get_agent_personal_stats(
         inquiries_responded=inquiries_responded,
         response_rate=response_rate,
         membership_counts=membership_counts,
+    )
+
+
+@router.get(
+    "/agents/me/stats/listings-by-status",
+    response_model=AgentListingsByStatusResponse,
+    summary="Get personal listings drill-down",
+    description="Returns listing counts by moderation status plus itemized listings for the current agent.",
+)
+async def get_agent_listings_by_status(
+    status: Optional[str] = Query(None, description="Filter by moderation_status value"),
+    pending_only: bool = Query(False, description="When true, exclude live listings"),
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_active_user),
+):
+    user_id = current_user.user_id
+
+    listing_counts = list(
+        db.execute(
+            select(Property.moderation_status, func.count().label("cnt"))
+            .where(
+                and_(
+                    Property.user_id == user_id,
+                    Property.deleted_at.is_(None),
+                )
+            )
+            .group_by(Property.moderation_status)
+        ).all()
+    )
+    statuses = [
+        AgentListingStatusCount(status=row.moderation_status.value, count=int(row.cnt))
+        for row in listing_counts
+    ]
+
+    listing_query = (
+        select(
+            Property.property_id,
+            Property.title,
+            Property.moderation_status,
+            Property.created_at,
+            PropertyType.name.label("property_type_name"),
+        )
+        .outerjoin(PropertyType, Property.property_type_id == PropertyType.property_type_id)
+        .where(
+            and_(
+                Property.user_id == user_id,
+                Property.deleted_at.is_(None),
+            )
+        )
+        .order_by(Property.created_at.desc())
+    )
+    if status:
+        listing_query = listing_query.where(Property.moderation_status == status)
+    if pending_only:
+        listing_query = listing_query.where(Property.moderation_status != "live")
+
+    listing_rows = list(db.execute(listing_query).all())
+    items = [
+        AgentListingStatusItem(
+            property_id=row.property_id,
+            property_type=row.property_type_name,
+            moderation_status=row.moderation_status.value,
+            title=row.title,
+            created_at=row.created_at,
+        )
+        for row in listing_rows
+    ]
+
+    return AgentListingsByStatusResponse(
+        count=len(items),
+        statuses=statuses,
+        items=items,
+    )
+
+
+@router.get(
+    "/agents/me/stats/inquiry-response-rate",
+    response_model=AgentInquiryResponseRateResponse,
+    summary="Get personal inquiry response drill-down",
+    description="Returns inquiry response aggregates and per-inquiry details for the current agent.",
+)
+async def get_agent_inquiry_response_rate(
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_active_user),
+):
+    user_id = current_user.user_id
+
+    inquiry_rows = list(
+        db.execute(
+            select(
+                Inquiry.inquiry_id,
+                Inquiry.property_id,
+                Inquiry.inquiry_status,
+                Inquiry.created_at,
+                Property.title.label("property_title"),
+                func.min(InquiryReply.created_at).label("first_reply_at"),
+            )
+            .join(Property, Inquiry.property_id == Property.property_id)
+            .outerjoin(InquiryReply, InquiryReply.inquiry_id == Inquiry.inquiry_id)
+            .where(
+                and_(
+                    Property.user_id == user_id,
+                    Inquiry.deleted_at.is_(None),
+                    Property.deleted_at.is_(None),
+                )
+            )
+            .group_by(
+                Inquiry.inquiry_id,
+                Inquiry.property_id,
+                Inquiry.inquiry_status,
+                Inquiry.created_at,
+                Property.title,
+            )
+            .order_by(Inquiry.created_at.desc())
+        ).all()
+    )
+
+    details: List[AgentInquiryResponseDetail] = []
+    responded_count = 0
+    for row in inquiry_rows:
+        responded = row.inquiry_status == InquiryStatus.responded
+        if responded:
+            responded_count += 1
+        response_time_minutes: Optional[int] = None
+        if responded and row.first_reply_at and row.created_at:
+            delta = row.first_reply_at - row.created_at
+            response_time_minutes = max(0, int(delta.total_seconds() // 60))
+        details.append(
+            AgentInquiryResponseDetail(
+                inquiry_id=row.inquiry_id,
+                property_id=row.property_id,
+                property_title=row.property_title,
+                responded=responded,
+                response_time_minutes=response_time_minutes,
+                created_at=row.created_at,
+            )
+        )
+
+    total_inquiries = len(details)
+    unresponded = total_inquiries - responded_count
+    rate = round(responded_count / total_inquiries, 4) if total_inquiries > 0 else 0.0
+
+    return AgentInquiryResponseRateResponse(
+        rate=rate,
+        period="all_time",
+        total_inquiries=total_inquiries,
+        responded=responded_count,
+        unresponded=unresponded,
+        details=details,
+    )
+
+
+@router.get(
+    "/agents/me/stats/agency-memberships",
+    response_model=AgentMembershipsResponse,
+    summary="Get personal agency membership drill-down",
+    description="Returns agency membership counts and roster details for the current agent.",
+)
+async def get_agent_agency_memberships(
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_active_user),
+):
+    user_id = current_user.user_id
+
+    membership_rows = list(
+        db.execute(
+            select(
+                AgencyAgentMembership.membership_id,
+                AgencyAgentMembership.user_id,
+                AgencyAgentMembership.agency_id,
+                AgencyAgentMembership.status,
+                AgencyAgentMembership.created_at,
+                Agency.name.label("agency_name"),
+            )
+            .join(Agency, AgencyAgentMembership.agency_id == Agency.agency_id)
+            .where(
+                and_(
+                    AgencyAgentMembership.user_id == user_id,
+                    AgencyAgentMembership.deleted_at.is_(None),
+                    Agency.deleted_at.is_(None),
+                )
+            )
+            .order_by(AgencyAgentMembership.created_at.desc())
+        ).all()
+    )
+
+    memberships = [
+        AgentMembershipDetail(
+            membership_id=row.membership_id,
+            user_id=row.user_id,
+            agency_id=row.agency_id,
+            agency_name=row.agency_name,
+            role=current_user.user_role.value,
+            joined_at=row.created_at,
+            status=str(row.status),
+        )
+        for row in membership_rows
+    ]
+
+    return AgentMembershipsResponse(
+        count=len(memberships),
+        memberships=memberships,
     )
 
 

@@ -268,6 +268,58 @@ class AgentStatsResponse(BaseModel):
     membership_counts: Dict[str, int] = Field(default_factory=dict)
 
 
+class AgentListingStatusCount(BaseModel):
+    status: str
+    count: int
+
+
+class AgentListingStatusItem(BaseModel):
+    property_id: int
+    property_type: Optional[str] = None
+    moderation_status: str
+    title: str
+    created_at: datetime
+
+
+class AgentListingsByStatusResponse(BaseModel):
+    count: int
+    statuses: List[AgentListingStatusCount] = Field(default_factory=list)
+    items: List[AgentListingStatusItem] = Field(default_factory=list)
+
+
+class AgentInquiryResponseDetail(BaseModel):
+    inquiry_id: int
+    property_id: int
+    property_title: Optional[str] = None
+    responded: bool
+    response_time_minutes: Optional[int] = None
+    created_at: datetime
+
+
+class AgentInquiryResponseRateResponse(BaseModel):
+    rate: float
+    period: str = "all_time"
+    total_inquiries: int
+    responded: int
+    unresponded: int
+    details: List[AgentInquiryResponseDetail] = Field(default_factory=list)
+
+
+class AgentMembershipDetail(BaseModel):
+    membership_id: int
+    user_id: int
+    agency_id: int
+    agency_name: str
+    role: str
+    joined_at: datetime
+    status: str
+
+
+class AgentMembershipsResponse(BaseModel):
+    count: int
+    memberships: List[AgentMembershipDetail] = Field(default_factory=list)
+
+
 # FUTURE/PLACEHOLDER SCHEMAS
 
 class UserActivityStatsResponse(BaseModel):
