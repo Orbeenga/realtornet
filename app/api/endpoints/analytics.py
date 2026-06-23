@@ -22,7 +22,8 @@ Routes:
 - GET /analytics/properties/{property_id}/engagement - Property engagement
 """
 
-from typing import List, Optional
+from typing import Dict, List, Optional
+from sqlalchemy import select, func, and_
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
@@ -36,11 +37,15 @@ from app.api.dependencies import (
 from app.models.users import User as User
 from app.services.analytics_services import analytics_service
 from app.models.analytics import ActivePropertiesView, AgentPerformanceView
+from app.models.properties import Property
+from app.models.inquiries import Inquiry
+from app.models.agency_join_requests import AgencyAgentMembership
 from app.schemas.stats import (
     SystemStatsResponse,
     UsageMetricsResponse,
     DataIntegrityResponse,
-    PropertyEngagementResponse
+    PropertyEngagementResponse,
+    AgentStatsResponse,
 )
 from app.schemas.users import UserResponse
 
@@ -249,6 +254,93 @@ async def get_top_agents(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve top agents"
         )
+
+@router.get(
+    "/agents/me/stats",
+    response_model=AgentStatsResponse,
+    summary="Get personal agent stats",
+    description="Returns personal listing breakdown, inquiry counts, and membership stats for the current agent or agency_owner."
+)
+async def get_agent_personal_stats(
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_active_user),
+):
+    user_id = current_user.user_id
+
+    # Listings by moderation_status
+    listing_counts = list(
+        db.execute(
+            select(Property.moderation_status, func.count().label("cnt"))
+            .where(
+                and_(
+                    Property.user_id == user_id,
+                    Property.deleted_at.is_(None),
+                )
+            )
+            .group_by(Property.moderation_status)
+        ).all()
+    )
+    listings_by_status: Dict[str, int] = {}
+    for row in listing_counts:
+        status_val = row.moderation_status.value
+        listings_by_status[status_val] = int(row.cnt)
+
+    # Inquiries received for user's properties
+    total_inquiries = db.scalar(
+        select(func.count())
+        .select_from(Inquiry)
+        .join(Property, Inquiry.property_id == Property.property_id)
+        .where(
+            and_(
+                Property.user_id == user_id,
+                Inquiry.deleted_at.is_(None),
+                Property.deleted_at.is_(None),
+            )
+        )
+    ) or 0
+
+    inquiries_responded = db.scalar(
+        select(func.count())
+        .select_from(Inquiry)
+        .join(Property, Inquiry.property_id == Property.property_id)
+        .where(
+            and_(
+                Property.user_id == user_id,
+                Inquiry.inquiry_status == "responded",
+                Inquiry.deleted_at.is_(None),
+                Property.deleted_at.is_(None),
+            )
+        )
+    ) or 0
+
+    response_rate = round(inquiries_responded / total_inquiries * 100, 1) if total_inquiries > 0 else 0.0
+
+    # Membership counts
+    membership_rows = list(
+        db.execute(
+            select(AgencyAgentMembership.status, func.count().label("cnt"))
+            .where(
+                and_(
+                    AgencyAgentMembership.user_id == user_id,
+                    AgencyAgentMembership.deleted_at.is_(None),
+                )
+            )
+            .group_by(AgencyAgentMembership.status)
+        ).all()
+    )
+    membership_counts: Dict[str, int] = {}
+    for row in membership_rows:
+        membership_counts[str(row.status)] = int(row.cnt)
+
+    return AgentStatsResponse(
+        user_id=user_id,
+        listings_by_status=listings_by_status,
+        total_inquiries_received=total_inquiries,
+        inquiries_responded=inquiries_responded,
+        response_rate=response_rate,
+        membership_counts=membership_counts,
+    )
+
 
 @router.get(
     "/agents/{user_id}",

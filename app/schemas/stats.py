@@ -258,6 +258,16 @@ class AgentPerformanceResponse(BaseModel):
     )
 
 
+class AgentStatsResponse(BaseModel):
+    """Agent personal stats — computed inline from live tables, not a pre-computed view."""
+    user_id: int
+    listings_by_status: Dict[str, int] = Field(default_factory=dict)
+    total_inquiries_received: int = 0
+    inquiries_responded: int = 0
+    response_rate: float = 0.0
+    membership_counts: Dict[str, int] = Field(default_factory=dict)
+
+
 # FUTURE/PLACEHOLDER SCHEMAS
 
 class UserActivityStatsResponse(BaseModel):
