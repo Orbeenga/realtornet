@@ -1213,7 +1213,7 @@ def block_agency_agent_membership(
         db=db,
         membership=membership,
         current_user=cast(User, current_user),
-        status_value="active",
+        status_value="blocked",
         reason=action_in.reason,
     )
 
