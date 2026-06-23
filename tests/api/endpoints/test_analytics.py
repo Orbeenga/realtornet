@@ -522,3 +522,106 @@ class TestAnalyticsSystemIntegrity:
             headers=admin_token_headers
         )
         assert response.status_code == 500
+
+
+class TestAgentPersonalStatsDrillDown:
+    def test_listings_by_status_requires_auth(self, client: TestClient):
+        response = client.get("/api/v1/analytics/agents/me/stats/listings-by-status")
+        assert response.status_code == 401
+
+    def test_listings_by_status_returns_items(
+        self,
+        client: TestClient,
+        agent_token_headers,
+        verified_property,
+        unverified_property_owned_by_agent,
+    ):
+        response = client.get(
+            "/api/v1/analytics/agents/me/stats/listings-by-status",
+            headers=agent_token_headers,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["count"] >= 2
+        assert isinstance(data["statuses"], list)
+        assert isinstance(data["items"], list)
+        assert all("property_id" in item for item in data["items"])
+
+    def test_listings_by_status_pending_only_filter(
+        self,
+        client: TestClient,
+        agent_token_headers,
+        verified_property,
+    ):
+        response = client.get(
+            "/api/v1/analytics/agents/me/stats/listings-by-status?pending_only=true",
+            headers=agent_token_headers,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert all(item["moderation_status"] != "live" for item in data["items"])
+
+    def test_inquiry_response_rate_requires_auth(self, client: TestClient):
+        response = client.get("/api/v1/analytics/agents/me/stats/inquiry-response-rate")
+        assert response.status_code == 401
+
+    def test_inquiry_response_rate_returns_details(
+        self,
+        client: TestClient,
+        db,
+        agent_token_headers,
+        normal_user,
+        unverified_property_owned_by_agent,
+    ):
+        from app.models.inquiries import Inquiry, InquiryStatus
+
+        inquiry = Inquiry(
+            user_id=normal_user.user_id,
+            property_id=unverified_property_owned_by_agent.property_id,
+            message="Interested",
+            inquiry_status=InquiryStatus.responded,
+        )
+        db.add(inquiry)
+        db.flush()
+
+        response = client.get(
+            "/api/v1/analytics/agents/me/stats/inquiry-response-rate",
+            headers=agent_token_headers,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total_inquiries"] >= 1
+        assert "details" in data
+        assert isinstance(data["details"], list)
+
+    def test_agency_memberships_requires_auth(self, client: TestClient):
+        response = client.get("/api/v1/analytics/agents/me/stats/agency-memberships")
+        assert response.status_code == 401
+
+    def test_agency_memberships_returns_roster(
+        self,
+        client: TestClient,
+        db,
+        agent_token_headers,
+        agent_user,
+        agency,
+    ):
+        from app.models.agency_join_requests import AgencyAgentMembership
+
+        membership = AgencyAgentMembership(
+            agency_id=agency.agency_id,
+            user_id=agent_user.user_id,
+            status="active",
+        )
+        db.add(membership)
+        db.flush()
+
+        response = client.get(
+            "/api/v1/analytics/agents/me/stats/agency-memberships",
+            headers=agent_token_headers,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["count"] >= 1
+        assert isinstance(data["memberships"], list)
+        assert data["memberships"][0]["agency_name"] == agency.name
