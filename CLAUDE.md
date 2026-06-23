@@ -37,20 +37,12 @@
 - Phase L closed May 2026: clean-slate DB propagation on new Supabase project `fobvnshrqxduuhzgflvd`, staging environment live at `realtornet-staging.up.railway.app`, admin audit endpoint live, modals/tabs/detail frontend complete
 - Phase M closed June 2026: listing governance system complete, state machine live (draft → agency_review → agency_rejected → admin_review → admin_rejected → live → revoked)
 - Phase N closed June 2026 with post-close fixes 2026-06-16: listing instruction mediation system complete, `listing_instructions` table with `triggered_by_event_id` FK gating, reject-permanent transition (`revoked → admin_rejected`), mediated governance read endpoints (revocation-history, rejection-history, agency-queue, inventory, pending-admin), email notification wiring for instruction, frontend mediation CTAs and admin historical views
-- Backend HEAD: `4dc6174` (fix: add joinedload for N.2 mediation endpoints)
-- Frontend HEAD: `231c6b2` (fix: name resolution rewrite + agent Revoked tab)
-- Backend Phase N: N.1 `listing_instructions` table with `triggered_by_event_id` FK (RLS enabled); N.2 mediated governance read endpoints (revocation-history, rejection-history, agency-queue, inventory, pending-admin); N.3 reject-permanent transition (`revoked → admin_rejected`); N.4 email notification wiring for instruction; N.5-N.7 frontend mediation CTAs, admin historical views, instruct-agent hooks
-- Coverage: 96.07%; `.coveragerc` legitimately omits: `env.py`, `main.py`, `config.py`, `celery_worker.py`
-- `owner_display_name` added to `PropertyResponse` (DEF-N-PROP-001 closed)
-- `listing_events` table append-only, RLS enabled
-- `listing_instructions` table append-only with `triggered_by_event_id` FK to listing_events, RLS enabled
-- `has_instruction`, `instruction_text`, `latest_event_reason` fields on PropertyResponse for mediation context
-- Final Phase N housekeeping deployed 2026-06-15: agency_owner visibility for non-public listings, edit-transition revoked→draft after instruction, N.9 walkthrough all 12 steps passed on staging, production deployment verified
-- Post-close fixes deployed 2026-06-16: backend N.2 join fix (4dc6174) adds joinedload(Property.owner/agency) to N.2 inline queries fixing null owner_display_name/agency_name; frontend rewrite (231c6b2) replaces AGENCY_NAME_STATES set with tabIsPublicContext parameter in resolveListingDisplayName, adds agent Revoked tab with mediation CTAs, sets staleTime:0 + refetchOnWindowFocus:true on all 5 listing tab hooks
 - Phase O closed June 2026: notification system model/migration/fire points/CRUD/hook/bell; O.1 Restore button removed; O.2 instruction box guard; O.3 cancel join request + CANCELLED status; O.4 listing_count aggregate subqueries + agents directory ordering; O.5 property_count stats (verified→live), listings_by_status breakdown; O.6 PREFLIGHT.md membership invariants; O.7 integration validation + ordering test fix + ModerationStatus prefix fix + dynamic breakdown rendering
 - Phase Q closed June 21-22 2026: agency owner read endpoints (Q.2), reject-permanent (Q.3), blocked tabs (Q.4), reconsider CTA (Q.5), admin analytics listing breakdown fix, Revoked tab read-only fix, agent Agency Inventory/Public Marketplace dedicated queries, DEFERRED.md updated, all quality gates passed
-- Backend HEAD: `1875fed` (fix: by_status groups by moderation_status + .value serialization)
-- Frontend HEAD: `739bd1b` (fix: Revoked tab read-only + gen:types sync + agent listings dedicated queries)
+- Phase R closed June 2026: R.2 inquiry_replies table + endpoints + email task + 27 tests, R.3 reply composer (agent) + reply display (seeker), R.4 agent stats endpoint + frontend page, R.5 unblock endpoint + frontend CTA, R.6 operational closure with production evidence, R.7 12-journey integration validation
+- **Current phase: Phase S — In-App Reply Threading & Platform Maturity**
+- Backend HEAD: `ee0806c` (chore: close Phase R — update CLAUDE.md and DEFERRED.md)
+- Frontend HEAD: `6750e1d` (R.4 + R.5 frontend: agent stats page + unblock CTA)
 
 ## Locked environment decisions
 - Production Supabase project ref: `fobvnshrqxduuhzgflvd`
@@ -120,24 +112,22 @@
 - `DEF-L-ADMIN-AUDIT-001`: Admin audit endpoint `GET /api/v1/admin/audit/` implemented and tested
 - `DEF-L-POSTGIS-001`: Closed by clean-slate migration on new production project
 
-## Phase R opening backlog
+## Phase R close summary
+- R.2: `inquiry_replies` table + endpoints + email task + 27 tests — confirmed working on staging
+- R.3: Reply composer (agent) + reply display (seeker) — confirmed working by operator browser check
+- R.4: `GET /analytics/agents/me/stats/` + `/account/stats` frontend page — confirmed rendering correctly
+- R.5: Unblock endpoint + frontend CTA — staging-validated via curl; pre-existing block status bug fixed (agencies.py:1216)
+- R.6: DEFERRED.md updated with production evidence (audit counts, location count, Nominatim status)
+- R.7: 12-journey validation script ran and all journeys passed; dual-membership data issue identified and documented (DEF-R-DUAL-MEMBERSHIP-001)
+- Backend HEAD: `ee0806c`, Frontend HEAD: `6750e1d`, Coverage: 95.16%
+
+## Phase S opening backlog
 See `DEFERRED.md` for current deferred items.
 - `DEF-J-EMAIL-DOMAIN-001` — real-user email delivery is blocked until a verified sender domain is configured in Resend and Railway `MAIL_FROM` is updated (operator action).
 - `DEF-R-MSG-001` — In-app messaging + auto Mark Responded on reply. Manual Mark Responded button is correct MVP behavior until this lands.
-- `DEF-R-AGENT-STATS-001` — Agent personal stats tab (own listings by status, rejected/revoked breakdown, inquiries received, response rate, agency active memberships, rejected/revoked/blocked/left membership counts).
-- `DEF-Q-UNBLOCK-001` — Agency-level unblock endpoint not implemented.
-- `DEF-002` — Audit log retention policy. Trigger not reached (~31 creations, ~11 deletions in 30d at Phase Q close, 5 users). Revisit when audit_logs exceeds 10K rows or user count exceeds 500.
-
-## Root-level Phase Q closed state
-- Current phase: Q closed (June 22 2026)
-- Production Supabase: `fobvnshrqxduuhzgflvd`
-- Production Railway: `realtornet-production.up.railway.app`
-- Staging Supabase: `avkhpachzsbgmbnkfnhu`
-- Staging Railway: `realtornet-staging.up.railway.app`
-- Four roles live: seeker / agent / agency_owner / admin
-- Moderation enum: draft / agency_review / agency_rejected / admin_review / admin_rejected / live / revoked
-- Backend HEAD: `1875fed`, Frontend HEAD: `739bd1b`
-- Coverage: 95.28% (pytest 2059 passed at Q close)
+- `DEF-R-DUAL-MEMBERSHIP-001` — Dual-membership data cleanup: yahoo staging agent has users.agency_id=1 + active membership in agency 9. Operator action only.
+- `DEF-S-SMOKE-001` — Dual-membership smoke data cleanup from R.7 validation walk. Soft-delete from staging before Phase S integration tests.
+- `DEF-Q-UNBLOCK-002` — Multi-membership edge case in `_apply_membership_role_after_status_change`.
 
 ## Pre-flight enforcement (derived from Phase R R.2 corrective)
 - **Before any backend code is written**, the agent MUST output a pre-flight confirmation block listing at least 5 locked rules from PREFLIGHT.md. This forces explicit reading, not passive attachment.
@@ -157,6 +147,7 @@ See `DEFERRED.md` for current deferred items.
 - Phase G through Phase O are closed; do not reopen unless investigating a regression
 - Phase P is closed
 - Phase Q is closed — June 22 2026
+- Phase R is closed — June 23 2026
 - Backend quality gates are now enforced at 95%: pyright 0 errors, pytest ≥ 95.0% coverage, CI passes with all required env vars
 - Production SQL verification (E.1–E.3) has been corrected and executed against new project fobvnshrqxduuhzgflvd
 - Keep production vs dev Supabase separation strict during all investigations
@@ -167,30 +158,6 @@ See `DEFERRED.md` for current deferred items.
 - Migration `a1b2c3d4e5f6` adds Phase N listing_instructions table with `triggered_by_event_id` FK (RLS enabled)
 - Migration `b1c2d3e4f5a6` adds notifications table (RLS enabled) — Phase O
 - Migration `c2d3e4f5a6b7` adds cancelled to agency_join_requests_status_check — Phase O
+- Migration `d3e4f5a6b7c8` adds inquiry_replies table (RLS enabled) — Phase R (append-only)
 - **ModerationStatus serialization**: `str(ModerationStatus.live)` produces `"ModerationStatus.live"` — always use `.value` for clean enum-to-string conversion. This applies to any `(str, Enum)` pattern used as dict keys in API responses.
-
-## Phase Q close summary
-- Q.1 backend (notification email fire points) — all three fire points already wired and tested at HEAD `2aeddc2`. `DEF-N-NOTIFICATIONS-001` closed.
-  - `draft → agency_review`: `send_submission_notification_email` fires to agency owner
-  - `agency_review → admin_review`: `send_agency_approval_notification_email` fires to admin(s)
-  - `agency_review → agency_rejected`: `send_property_moderation_email` fires to listing agent
-- Q.1 operator action remaining: `DEF-J-EMAIL-DOMAIN-001` — Resend domain verification + Railway `MAIL_FROM` update
-- Q.2 backend — three agency owner read endpoints implemented at commit `ac5546b`:
-  - `GET /agency-queue/` — `agency_review` listings for agency_owner's agency
-  - `GET /agency-inventory/` — `live` listings for agent/agency_owner's agency
-  - `GET /pending-admin/` — `admin_review` listings for agency_owner's agency
-  - `DEF-N-ENDPOINTS-001` closed
-- Q.2 frontend — Agency Queue, Pending Admin, Agency Inventory sections added to `/account/agency` dashboard. 3 new hooks. Approve/Reject dialogs with reason. Recall CTA. Badge count on queue header.
-- Q.3 frontend — Reject Permanently dialog wired in `AdminPropertiesClient.tsx` via `useRejectPermanent` hook on Revoked tab listings. `DEF-N-TRANSITIONS-001` closed
-- Q.4 backend — `PATCH /block/` existed at HEAD; join request guard updated to return 403 for blocked users. `DEF-P-BLOCK-001` closed (backend)
-- Q.4 frontend — Blocked tab added to agency owner members page. Blocked membership sub-tab in `/account/join-requests`. Agency profile header shows "You cannot apply" when user has blocked membership.
-- Q.5 backend — `PATCH /reconsider/` endpoint added for rejected join requests. `DEF-P-RECONSIDER-001` closed
-- Q.5 frontend — `useReconsiderJoinRequest` hook created. Reconsider button on each rejected join request card.
-- Q.6 frontend — Audit Activity UI section already existed at HEAD `b04601d`. `DEF-L-ADMIN-AUDIT-001` closed
-- Q.7 backend — operational hardening assessment:
-  - `DEF-002` — deferred to Phase R (trigger unmet, ~31 creations, ~11 deletions in 30d, 5 users)
-  - `DEF-006` — closed (bucket bootstrap working, tested)
-  - `DEF-007` — closed (`prepare_threshold=None` already set)
-  - `DEF-K-AUDIT-FK-001` — closed (FK design correct, cleanup scripts exist)
-- Q.7 frontend — `DEF-FE-004A` closed (`core-js` not in dependency tree; Next.js internal only)
-- Post-close fixes (June 22 2026): admin analytics listing breakdown `by_status` now groups by `moderation_status` (not `listing_status`) with `.value` serialization; Revoked tab cards are read-only (no form on restored listings); agent Agency Inventory uses dedicated `GET /agency-inventory/` endpoint; Public Marketplace uses `GET /properties/?moderation_status=live` platform-wide; DEFERRED.md updated with Phase R deferred items
+- **mark-responded endpoint is deprecated**: Do not remove it, but do not call it from frontend. Reply creation in `inquiry_replies` now handles response tracking.

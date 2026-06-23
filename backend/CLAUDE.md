@@ -3,7 +3,7 @@
 ## Entry State
 
 FastAPI backend deployed on Railway. Sentry is instrumented.
-Phase F is closed. Phase G through Phase P are closed. Phase Q is open as of June 21, 2026. Backend HEAD: `2aeddc2`. DEF-N-NOTIFICATIONS-001 closed — all three notification email fire points wired in Phase O.
+Phase F through Phase Q are closed. Phase R is closed as of June 23, 2026. Backend HEAD: `ee0806c`. Phase S is open.
 
 Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this file for backend-specific state.
 
@@ -24,8 +24,8 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 - Auth source of truth: Supabase Auth
 - Production Supabase project ref: `fobvnshrqxduuhzgflvd`
 - Dev Supabase project ref: `umhtnqxdvffpifqbdtjs`
-- Production migration head: `c2d3e4f5a6b7`
-- Current quality gate: pyright 0 errors; pytest passed; total coverage 95.47%
+- Production migration head: `d3e4f5a6b7c8` (inquiry_replies — Phase R)
+- Current quality gate: pyright 0 errors; pytest passed; total coverage 95.16%
 - Public registration creates a Supabase Auth identity first, then mirrors that UUID into the local `users` row
 - Registration rollback deletes the Supabase Auth user if the local DB write fails
 - Runtime auth is still based on backend-issued JWTs after login, not direct validation of raw Supabase access tokens
@@ -43,6 +43,15 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 - Required buckets: `property-images`, `profile-images`, `agency-logos`
 - Buckets are auto-provisioned and validated at deploy/startup time
 - Storage bootstrap must never take Railway health down with it
+
+## Append-Only Tables
+
+The following tables are append-only — never UPDATE or DELETE rows in production code:
+- `agent_membership_audit` — membership state change history
+- `listing_events` — listing lifecycle events
+- `listing_instructions` — mediation instructions with `triggered_by_event_id` FK
+- `notifications` — in-platform notification records
+- `inquiry_replies` — inquiry reply threading (Phase R)
 
 ## Endpoint Contracts
 
@@ -72,6 +81,16 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 - Agent promotion must atomically create an `agent_profiles` row in the same transaction
 - Pagination and visibility assumptions should always be pulled from actual endpoint code, not memory
 - Trailing slashes matter on authenticated endpoints because 308 redirects can drop Bearer headers on some clients; frontend OPEN-001 normalized paths and is deployed
+
+### Inquiry Reply Endpoints (Phase R)
+
+- `POST /api/v1/inquiries/{inquiry_id}/replies/` — create reply (agent/agency_owner only, must own the inquiry)
+- `GET /api/v1/inquiries/{inquiry_id}/replies/` — list replies (authenticated, owner or admin)
+- **mark-responded endpoint is deprecated**: `PATCH /api/v1/inquiries/{inquiry_id}/mark-responded` exists but should not be called from frontend. Reply creation in `inquiry_replies` now handles response tracking. Do not remove the endpoint.
+
+### Agent Stats Endpoint (Phase R)
+
+- `GET /api/v1/analytics/agents/me/stats/` — agent personal stats (own listings by status, rejected/revoked breakdown, inquiries received, response rate, agency active memberships, rejected/revoked/blocked/left membership counts)
 
 ## Phase H Endpoint Maps
 
@@ -200,6 +219,17 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 - Phase L execution reference: `docs/DEFERRED.md` and root `CLAUDE.md`
 - Promoted K items: audit activity UI frontend, Railway env cut-over to new Supabase project, clean-slate DB propagation verification
 
+## Phase R Closed State
+
+- R.2: `inquiry_replies` table + `POST /inquiries/{id}/replies/` + `GET /inquiries/{id}/replies/` + email task — 27 tests, append-only, RLS enabled
+- R.3: Reply composer (agent) + reply display (seeker) — `latest_reply`/`reply_count` wiring confirmed
+- R.4: `GET /api/v1/analytics/agents/me/stats/` — agent personal stats endpoint
+- R.5: `PATCH /agencies/{id}/agents/{membership_id}/unblock/` — unblock endpoint with role gate + state gate
+- R.6: Operational closure — production audit counts, location count (63), Nominatim status confirmed
+- R.7: 12-journey integration validation — all parts passed
+- Migration head: `d3e4f5a6b7c8` (inquiry_replies)
+- Coverage: 95.16%
+
 ## Locked Invariants
 
 - Public registration must always downgrade requested role to `seeker`
@@ -207,6 +237,13 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 - Promoting a user to agent must leave both `users.user_role = 'agent'` and a live `agent_profiles` row
 - Property creation for agents depends on `users.agency_id`
 - Agency-wide inquiries remain deferred to Phase G; do not build aggregation shortcuts that create N+1 behavior
+- `agent_membership_audit`, `listing_events`, `listing_instructions`, `notifications`, `inquiry_replies` are append-only — never UPDATE or DELETE
+- `ModerationStatus` serialisation uses `.value` not `str()`
+- `users.agency_id` is valid only for `agency_owner` ownership context — `agency_agent_memberships` is sole source of truth for agent affiliation
+- No `@property` on SQLAlchemy ORM models
+- `detect-secrets` pre-commit hook is active — any credential pattern blocks commit
+- Sequential deploy order: backend → Railway deploys → `pnpm gen:types` → frontend
+- **mark-responded endpoint is deprecated**: `PATCH /api/v1/inquiries/{inquiry_id}/mark-responded` exists but do not call from frontend. Reply creation in `inquiry_replies` now handles response tracking. Do not remove.
 
 ## Reference Data
 
@@ -236,15 +273,11 @@ Do not answer from stale docs when the router, schema, or CRUD layer says otherw
 - Phase H is closed; do not reopen Phase H unless investigating a regression from the closed Phase H state
 - Phase I is closed; Phase J is closed except `DEF-J-EMAIL-DOMAIN-001`
 - Phase K is closed; Phase L is closed; Phase M is closed; Phase N is closed; Phase O is closed
-- Phase P is closed; Phase Q is open (June 21 2026)
-- Q.1 backend complete at HEAD `2aeddc2` — all three notification email fire points wired and tested
-- Q.2 backend — three agency owner read endpoints (`agency-queue`, `agency-inventory`, `pending-admin`) implemented at commit `ac5546b`. `DEF-N-ENDPOINTS-001` closed
-- Q.3 backend — `PATCH /reject-permanent/` already existed at HEAD `2aeddc2`. `DEF-N-TRANSITIONS-001` closed
-- Q.4 backend — `PATCH /block/` existed at HEAD; join request guard added at `ac5546b` (403 for blocked). `DEF-P-BLOCK-001` closed (backend)
-- Q.5 backend — `PATCH /reconsider/` endpoint added at `ac5546b`. `DEF-P-RECONSIDER-001` closed
-- Q.7 backend — operational hardening: DEF-006/007/DEF-K-AUDIT-FK-001 closed; DEF-002 deferred to Phase R
-- Q.1 operator action remaining: `DEF-J-EMAIL-DOMAIN-001` — Resend domain verification + Railway `MAIL_FROM` update
+- Phase P is closed; Phase Q is closed (June 22 2026)
+- Phase R is closed (June 23 2026)
+- Phase S is open — current phase
 - Keep production and dev Supabase separation strict during all work
 - Treat agency card branding as blocked on backend enrichment until the response contract changes
 - Keep Railway `/healthz` returning 200 in degraded mode; Redis rate limiting should connect through `REDIS_URL` or Railway `REDISHOST`/`REDISPORT`/`REDISUSER`/`REDISPASSWORD`
 - **ModerationStatus serialization**: `str(ModerationStatus.live)` produces `"ModerationStatus.live"` — always use `.value` for clean enum-to-string conversion in dict keys
+- **mark-responded is deprecated**: Do not remove, do not call from frontend
