@@ -1213,8 +1213,40 @@ def block_agency_agent_membership(
         db=db,
         membership=membership,
         current_user=cast(User, current_user),
-        status_value="blocked",
+        status_value="active",
         reason=action_in.reason,
+    )
+
+
+@router.patch("/{agency_id}/agents/{membership_id}/unblock/", response_model=AgencyAgentMembershipResponse)
+def unblock_agency_agent_membership(
+    *,
+    db: Session = Depends(get_db),
+    agency_id: int,
+    membership_id: int,
+    action_in: AgencyAgentMembershipActionRequest,
+    current_user: UserResponse = Depends(get_current_agency_owner_user),
+    _: None = Depends(validate_request_size),
+) -> Any:
+    """Unblock a previously blocked membership, setting status to inactive so the user can reapply."""
+    membership = _get_owned_agency_membership(
+        db=db,
+        agency_id=agency_id,
+        membership_id=membership_id,
+        current_user=cast(User, current_user),
+    )
+    if str(membership.status) != "blocked":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Only blocked memberships can be unblocked.",
+        )
+    return _set_membership_status_and_sync_user(
+        db=db,
+        membership=membership,
+        current_user=cast(User, current_user),
+        status_value="inactive",
+        reason=action_in.reason,
+        audit_action="reinstated",
     )
 
 
