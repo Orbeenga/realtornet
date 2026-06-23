@@ -15,24 +15,26 @@
 | DEF-N-TRANSITIONS-001 | `revoked → admin_rejected` endpoint existed at HEAD `2aeddc2`. Reject Permanently button frontend Q.3 deployed. **Closed Q.3**. | Q ✗ |
 | DEF-N-NOTIFICATIONS-001 | All three notification email fire points wired and tested at HEAD `2aeddc2`. **Closed O/Q.1**. | O ✗ |
 | DEF-M-NOTIF-001 | In-platform notifications: bell icon, notification list, badge count, 7 fire points. Poll-based at 60s. **Closed Phase O**. Real-time push remains deferred. | O ✗ |
+| DEF-R-AGENT-STATS-001 | Agent personal stats tab (own listings by status, rejected/revoked breakdown, inquiries received, response rate, agency active memberships, rejected/revoked/blocked/left membership counts). **Closed R.4** — `GET /api/v1/analytics/agents/me/stats/` endpoint + `/account/stats` frontend page + nav link for agent/agency_owner roles deployed. | R ✗ |
+| DEF-Q-UNBLOCK-001 | Agency-level unblock endpoint (`PATCH /agencies/{id}/agents/{membership_id}/unblock/`). **Closed R.5** — endpoint with role gate (agency_owner), state gate (blocked only), transitions to `inactive` with `audit_action='reinstated'`. Frontend Unblock CTA on Blocked tab. Deployed + staging validated. | R ✗ |
 
 ## Phase R (Deferred)
 
 | ID | Item | Phase |
 |---|---|---|
 | DEF-J-EMAIL-DOMAIN-001 | Real-user email delivery blocked until a verified sender domain is configured in Resend and Railway `MAIL_FROM` is updated. Operator action only — no code changes needed. | R |
-| DEF-J-LOC-001 | Location breadth/quality monitoring. Self-populating system live and working since Phase J. No monitoring tooling warranted until user volume makes location data quality a reported user friction point. | R |
+| DEF-J-LOC-001 | Location breadth/quality monitoring. Self-populating system live and working since Phase J. Production count: 63 locations (confirmed Phase R). No monitoring tooling warranted until user volume makes location data quality a reported user friction point. | R |
 | DEF-R-MSG-001 | In-app messaging + auto Mark Responded on reply. Manual Mark Responded button is correct MVP behavior until this lands. | R |
-| DEF-R-AGENT-STATS-001 | Agent personal stats tab (own listings by status, rejected/revoked breakdown, inquiries received, response rate, agency active memberships, rejected/revoked/blocked/left membership counts). | R |
-| DEF-R-NOM-001 | Nominatim self-hosted instance. Public API sufficient at current scale (1 req/sec throttle, 5-min cache, Nigeria-first filtering all in place). Evaluate when rate limiting becomes a confirmed operational constraint. | R |
-| DEF-Q-UNBLOCK-001 | Agency-level unblock endpoint (`PATCH /agencies/{id}/members/{user_id}/unblock`) not implemented. | R |
-| DEF-002 | Audit log retention policy. Trigger not reached (~31 creations, ~11 deletions in 30d at Phase Q close, 5 users). Revisit when audit_logs exceeds 10K rows or user count exceeds 500. | R |
+| DEF-R-NOM-001 | Nominatim self-hosted instance. Public API sufficient at current scale (1 req/sec throttle, 5-min cache, Nigeria-first filtering all in place). No rate limiting errors in Railway logs since Phase J (confirmed Phase R). Evaluate when rate limiting becomes a confirmed operational constraint. | R |
+| DEF-002 | Audit log retention policy. Trigger not reached: production counts at Phase R close — `agent_membership_audit`: 4 rows, `audit_creations`: 31 (~31 creations in 30d), `audit_deletions`: 11 (~11 deletions in 30d), 5 users. Revisit when total audit rows exceed 10K or user count exceeds 500. | R |
 
-## Phase Q close count
+## Phase R close count
 
-- Backend HEAD: `1875fed`
-- Frontend HEAD: `739bd1b`
-- pytest: 2059 passed, coverage 95.28%
+- Backend HEAD: `d3423cc`
+- Frontend HEAD: `6750e1d`
+- Coverage: 95.20% (pytest — single-file runs excluded)
 - pyright: 0 errors
-- tsc: 0, lint: 0, build: 0
-- All 12 N.9 integration journeys confirmed passing
+- tsc: 0, lint: 0
+- R.3: `latest_reply`/`reply_count` wiring confirmed working
+- R.4: agent personal stats deployed + tested
+- R.5: unblock endpoint + frontend CTA validated on staging (blocked → inactive → reapply)
