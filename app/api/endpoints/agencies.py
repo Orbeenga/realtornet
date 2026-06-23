@@ -349,7 +349,7 @@ def _first_active_membership_agency_for_user(*, db: Session, user_id: int) -> in
             AgencyAgentMembership.deleted_at.is_(None),
         )
         .order_by(AgencyAgentMembership.created_at.asc())
-    ).scalar_one_or_none()
+    ).scalars().first()
 
 
 def _apply_membership_role_after_status_change(
