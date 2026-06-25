@@ -8,9 +8,10 @@ import pytest
 import uuid
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
+from sqlalchemy import event
 
 from app.core.security import generate_access_token, get_password_hash
-from app.models.properties import Property, ListingType, ListingStatus
+from app.models.properties import Property, ListingType, ListingStatus, ModerationStatus
 from app.models.listing_events import ListingEvent
 from app.models.property_images import PropertyImage
 from app.models.saved_searches import SavedSearch
@@ -102,6 +103,56 @@ class TestReadProperties:
     def test_anonymous_cannot_filter_by_agency_id(self, client: TestClient):
         response = client.get("/api/v1/properties/", params={"agency_id": 1})
         assert response.status_code == 403
+
+    def test_properties_list_no_n_plus_one(
+        self, client: TestClient, db, agent_user, location, property_type
+    ):
+        """Regression test for N+1 query fix on /api/v1/properties/ endpoint.
+        
+        Before fix: _populate_latest_event_reason executed one query per property.
+        After fix: single batch query fetches all events at once.
+        """
+        from geoalchemy2.elements import WKTElement
+        from app.models.properties import ModerationStatus
+
+        # Create 10 properties to ensure we have enough data to trigger N+1 if it existed
+        properties = []
+        for i in range(10):
+            prop = Property(
+                title=f"Property {i}",
+                description=f"Test property {i}",
+                user_id=agent_user.user_id,
+                agency_id=agent_user.agency_id,
+                property_type_id=property_type.property_type_id,
+                location_id=location.location_id,
+                geom=WKTElement("POINT(3.3488 6.6018)", srid=4326),
+                price=30000000 + (i * 1000000),
+                bedrooms=2,
+                bathrooms=1,
+                property_size=90.0,
+                listing_type=ListingType.sale,
+                listing_status=ListingStatus.available,
+                moderation_status=ModerationStatus.live,
+            )
+            properties.append(prop)
+        
+        db.add_all(properties)
+        db.commit()
+
+        # Count queries during the request
+        query_count = 0
+
+        @event.listens_for(db.bind, "before_cursor_execute")
+        def count_queries(conn, cursor, statement, parameters, context, executemany):
+            nonlocal query_count
+            query_count += 1
+
+        response = client.get("/api/v1/properties/?page=1&page_size=10")
+        assert response.status_code == 200
+
+        # After fix: should be bounded (typically 3-5 queries regardless of N)
+        # Before fix: would be N+1 (11+ queries for 10 properties)
+        assert query_count <= 8, f"Expected ≤8 queries, got {query_count} - N+1 pattern detected"
 
     def test_admin_filters_properties_by_agency_id(
         self,

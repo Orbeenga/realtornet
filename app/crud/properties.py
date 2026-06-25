@@ -24,23 +24,41 @@ class PropertyCRUD:
     """CRUD operations for Property model - DB-first canonical implementation"""
 
     def _populate_latest_event_reason(self, db: Session, properties: List[Property]) -> None:
-        """Populate latest_event_reason on each property using a listing_events subquery.
+        """Populate latest_event_reason on each property using a single batch query.
 
         Sets the reason from the most recent event where to_status is
         revoked, admin_rejected, or agency_rejected.
+        
+        FIX: Use a single batch query to avoid N+1 pattern. Previously executed
+        one query per property; now fetches all events in one query and maps in memory.
         """
-        for prop in properties:
-            latest_event = (
-                db.query(ListingEvent.reason)
-                .filter(
-                    ListingEvent.listing_id == prop.property_id,
-                    ListingEvent.to_status.in_(["revoked", "admin_rejected", "agency_rejected"]),
-                )
-                .order_by(ListingEvent.created_at.desc())
-                .first()
+        if not properties:
+            return
+
+        # Collect all property IDs
+        property_ids = [prop.property_id for prop in properties]
+
+        # Single batch query for all latest events
+        # Uses DISTINCT ON to get the most recent event per listing_id
+        # Query returns tuples (listing_id, reason) not objects
+        latest_events = (
+            db.query(ListingEvent.listing_id, ListingEvent.reason)
+            .filter(
+                ListingEvent.listing_id.in_(property_ids),
+                ListingEvent.to_status.in_(["revoked", "admin_rejected", "agency_rejected"]),
             )
-            if latest_event and latest_event[0]:
-                type_cast(Any, prop).latest_event_reason = latest_event[0]
+            .order_by(ListingEvent.listing_id, ListingEvent.created_at.desc())
+            .distinct(ListingEvent.listing_id)
+            .all()
+        )
+
+        # Map listing_id -> reason for fast lookup (handle tuple results)
+        event_map = {event[0]: event[1] for event in latest_events if event[1]}
+
+        # Populate each property from the map
+        for prop in properties:
+            if prop.property_id in event_map:
+                type_cast(Any, prop).latest_event_reason = event_map[prop.property_id]
 
     def _verified_visibility_filter(self) -> Any:
         """Return the public visibility predicate during the enum transition.
