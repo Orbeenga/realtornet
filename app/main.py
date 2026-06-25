@@ -59,7 +59,7 @@ async def lifespan(app: FastAPI):
     """Manage application lifespan events."""
     logger.info("RealtorNet application starting up")
 
-    if settings.SENTRY_DSN:
+    if settings.SENTRY_DSN and settings.ENV not in ("test", "testing"):
         if importlib.util.find_spec("sentry_sdk") is None:
             logger.warning(
                 "SENTRY_DSN is set but sentry-sdk is not installed; skipping Sentry initialization"

@@ -1,5 +1,7 @@
 from app import main
 from fastapi.testclient import TestClient
+import os
+os.environ["ENV"] = "test"  # Ensure test environment is set
 
 
 def test_run_storage_bucket_bootstrap_marks_ready_on_success(monkeypatch):
@@ -58,3 +60,27 @@ def test_healthz_returns_200_when_storage_bootstrap_failed():
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
     assert response.json()["storage"]["ready"] is False
+
+
+def test_sentry_not_initialized_in_test_environment():
+    """Verify Sentry does not initialize when ENV=test.
+    
+    This prevents intentional test exceptions from reaching production Sentry.
+    """
+    import importlib
+    import os
+    
+    # Ensure we're in test environment
+    assert os.environ.get("ENV") == "test"
+    
+    # Try to import sentry_sdk (may not be installed in test env)
+    sentry_spec = importlib.util.find_spec("sentry_sdk")
+    
+    if sentry_spec is not None:
+        sentry_sdk = importlib.import_module("sentry_sdk")
+        client = sentry_sdk.get_client()
+        # In test environment, Sentry should have no active DSN
+        assert not client or not client.options.get("dsn"), (
+            "Sentry must not be initialized in test environment. "
+            "Check the ENV guard in sentry_sdk.init()."
+        )
