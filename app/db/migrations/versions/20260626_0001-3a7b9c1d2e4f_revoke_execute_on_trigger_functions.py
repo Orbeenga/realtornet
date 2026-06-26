@@ -20,10 +20,18 @@ Step 2: ALTER DEFAULT PRIVILEGES to prevent Supabase from re-granting
 
 After this migration the Supabase advisor will be fully silent on all three
 functions.
+
+NOTE: The REVOKE statements modify pg_proc system catalog rows that Supabase
+background processes may update concurrently, causing PostgreSQL's
+"tuple concurrently updated" serialization error. Each REVOKE is wrapped in
+a savepoint-based retry loop so that a transient conflict rolls back only
+the savepoint, not the entire migration transaction.
 """
+import time
 from typing import Sequence, Union
 
 from alembic import op
+from sqlalchemy import text
 
 
 # revision identifiers, used by Alembic.
@@ -33,28 +41,52 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+_REVOKE_SQLS = [
+    "REVOKE EXECUTE ON FUNCTION public.prevent_listing_instructions_mutation() FROM PUBLIC;",
+    "REVOKE EXECUTE ON FUNCTION public.prevent_notifications_delete() FROM PUBLIC;",
+    "REVOKE EXECUTE ON FUNCTION public.prevent_inquiry_replies_mutation() FROM PUBLIC;",
+]
+
+_GRANT_SQLS = [
+    "GRANT EXECUTE ON FUNCTION public.prevent_listing_instructions_mutation() TO PUBLIC;",
+    "GRANT EXECUTE ON FUNCTION public.prevent_notifications_delete() TO PUBLIC;",
+    "GRANT EXECUTE ON FUNCTION public.prevent_inquiry_replies_mutation() TO PUBLIC;",
+]
+
+
+def _exec_with_retry(sqls, retries=3, delay=2):
+    """Execute DDL statements with savepoint-based retry.
+
+    Each statement is attempted in its own savepoint. If PostgreSQL raises
+    "tuple concurrently updated" (race on pg_proc with Supabase background
+    processes), the savepoint is rolled back and the statement is retried
+    after a brief delay. On success the savepoint is released.
+    """
+    conn = op.get_bind()
+    for sql in sqls:
+        for attempt in range(retries):
+            try:
+                with conn.begin_nested():
+                    conn.execute(text(sql))
+                break
+            except Exception as exc:
+                if "tuple concurrently updated" in str(exc) and attempt < retries - 1:
+                    time.sleep(delay)
+                else:
+                    raise
+
+
 def upgrade() -> None:
     """Upgrade schema."""
     # Step 1 — Revoke EXECUTE from PUBLIC on existing functions.
-    # PostgreSQL grants EXECUTE to PUBLIC by default on every new function.
-    # The anon and authenticated roles inherit through PUBLIC membership,
-    # so revoking FROM anon/authenticated directly is insufficient.
-    op.execute("""
-        REVOKE EXECUTE ON FUNCTION public.prevent_listing_instructions_mutation()
-        FROM PUBLIC;
-    """)
-    op.execute("""
-        REVOKE EXECUTE ON FUNCTION public.prevent_notifications_delete()
-        FROM PUBLIC;
-    """)
-    op.execute("""
-        REVOKE EXECUTE ON FUNCTION public.prevent_inquiry_replies_mutation()
-        FROM PUBLIC;
-    """)
+    # Each REVOKE modifies pg_proc which may race with Supabase background
+    # processes; retry with savepoint isolation.
+    _exec_with_retry(_REVOKE_SQLS)
 
     # Step 2 — Prevent Supabase default privileges from re-granting
     # on future CREATE OR REPLACE FUNCTION. Functions that legitimately
     # need REST exposure must have EXECUTE granted explicitly.
+    # This statement modifies pg_default_acl which is not contended.
     op.execute("""
         ALTER DEFAULT PRIVILEGES IN SCHEMA public
         REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
@@ -70,15 +102,4 @@ def downgrade() -> None:
     """)
 
     # Restore EXECUTE on the specific functions
-    op.execute("""
-        GRANT EXECUTE ON FUNCTION public.prevent_listing_instructions_mutation()
-        TO PUBLIC;
-    """)
-    op.execute("""
-        GRANT EXECUTE ON FUNCTION public.prevent_notifications_delete()
-        TO PUBLIC;
-    """)
-    op.execute("""
-        GRANT EXECUTE ON FUNCTION public.prevent_inquiry_replies_mutation()
-        TO PUBLIC;
-    """)
+    _exec_with_retry(_GRANT_SQLS)
