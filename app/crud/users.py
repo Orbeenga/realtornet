@@ -8,7 +8,7 @@ Canonical Rules: No manual timestamps, no phantom fields, RLS-aware
 from typing import List, Optional, Dict, Any, Union, cast
 import logging
 from sqlalchemy.orm import Session
-from sqlalchemy import select, or_, func
+from sqlalchemy import select, or_, and_, func, text
 from datetime import datetime, timezone
 
 from app.core.security import get_password_hash, verify_password
@@ -120,6 +120,85 @@ class UserCRUD:
         
         return list(db.execute(query).scalars().all())  # Normalize SQLAlchemy's sequence result to the declared list return type.
     
+    def get_multi_filtered(
+        self,
+        db: Session,
+        *,
+        skip: int = 0,
+        limit: int = 100,
+        user_role: Optional[UserRole] = None,
+        activity_state: Optional[str] = None,
+    ) -> List[User]:
+        """Get multiple users with role and activity_state filters (admin)."""
+        query = select(User).where(User.deleted_at.is_(None))
+        INACTIVE_THRESHOLD = func.now() - text("INTERVAL '90 days'")
+
+        if user_role:
+            query = query.where(User.user_role == user_role)
+
+        if activity_state == 'active':
+            query = query.where(
+                and_(
+                    User.is_active == True,
+                    or_(
+                        User.last_login >= INACTIVE_THRESHOLD,
+                        and_(
+                            User.last_login.is_(None),
+                            User.created_at >= INACTIVE_THRESHOLD
+                        )
+                    )
+                )
+            )
+        elif activity_state == 'inactive':
+            query = query.where(
+                and_(
+                    User.is_active == True,
+                    or_(
+                        User.last_login < INACTIVE_THRESHOLD,
+                        and_(
+                            User.last_login.is_(None),
+                            User.created_at < INACTIVE_THRESHOLD
+                        )
+                    )
+                )
+            )
+        elif activity_state == 'deactivated':
+            query = query.where(User.is_active == False)
+
+        query = query.offset(skip).limit(limit)
+        return list(db.execute(query).scalars().all())
+
+    def get_counts(self, db: Session) -> dict:
+        """Return badge counts for admin users page in a single aggregation query."""
+        INACTIVE_THRESHOLD = func.now() - text("INTERVAL '90 days'")
+        stmt = select(
+            func.count().label("all"),
+            func.count().filter(User.user_role == UserRole.SEEKER, User.deleted_at.is_(None)).label("seekers"),
+            func.count().filter(User.user_role == UserRole.AGENT, User.deleted_at.is_(None)).label("agents"),
+            func.count().filter(User.user_role == UserRole.AGENCY_OWNER, User.deleted_at.is_(None)).label("agency_owners"),
+            func.count().filter(
+                User.is_active == True,
+                User.deleted_at.is_(None),
+                or_(
+                    User.last_login < INACTIVE_THRESHOLD,
+                    and_(
+                        User.last_login.is_(None),
+                        User.created_at < INACTIVE_THRESHOLD
+                    )
+                )
+            ).label("inactive"),
+            func.count().filter(User.is_active == False, User.deleted_at.is_(None)).label("deactivated"),
+        ).where(User.deleted_at.is_(None))
+        row = db.execute(stmt).one()
+        return {
+            "all": int(row.all),
+            "seekers": int(row.seekers),
+            "agents": int(row.agents),
+            "agency_owners": int(row.agency_owners),
+            "inactive": int(row.inactive),
+            "deactivated": int(row.deactivated),
+        }
+
     def get_agents(
         self, 
         db: Session, 

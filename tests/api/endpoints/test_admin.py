@@ -77,6 +77,135 @@ class TestAdminGetUsers:
         response = client.get("/api/v1/admin/users")
         assert response.status_code == 401
 
+    def test_admin_can_filter_users_by_role(
+        self, client: TestClient, admin_token_headers, agent_user
+    ):
+        """
+        Admin can filter users by role (e.g. agent).
+
+        This validates the role query parameter on the admin users list.
+        """
+        response = client.get(
+            "/api/v1/admin/users",
+            params={"role": "agent"},
+            headers=admin_token_headers
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data["items"], list)
+        if data["items"]:
+            assert all(item["user_role"] == "agent" for item in data["items"])
+
+    def test_admin_can_filter_users_by_activity_state(
+        self, client: TestClient, admin_token_headers
+    ):
+        """
+        Admin can filter users by activity state (e.g. deactivated).
+
+        This validates the activity_state query parameter.
+        """
+        response = client.get(
+            "/api/v1/admin/users",
+            params={"activity_state": "deactivated"},
+            headers=admin_token_headers
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data["items"], list)
+
+    def test_admin_can_filter_users_by_role_and_activity(
+        self, client: TestClient, admin_token_headers
+    ):
+        """
+        Admin can combine role and activity_state filters.
+
+        This validates filter composability.
+        """
+        response = client.get(
+            "/api/v1/admin/users",
+            params={"role": "seeker", "activity_state": "active"},
+            headers=admin_token_headers
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data["items"], list)
+
+    def test_admin_filter_users_invalid_role_returns_422(
+        self, client: TestClient, admin_token_headers
+    ):
+        """
+        Invalid role values must return 422.
+
+        This enforces strict param validation.
+        """
+        response = client.get(
+            "/api/v1/admin/users",
+            params={"role": "invalid_role"},
+            headers=admin_token_headers
+        )
+        assert response.status_code == 422
+
+    def test_admin_filter_users_invalid_activity_state_returns_422(
+        self, client: TestClient, admin_token_headers
+    ):
+        """
+        Invalid activity_state values must return 422.
+
+        This enforces strict param validation.
+        """
+        response = client.get(
+            "/api/v1/admin/users",
+            params={"activity_state": "invalid_state"},
+            headers=admin_token_headers
+        )
+        assert response.status_code == 422
+
+
+class TestAdminGetUsersCounts:
+    def test_admin_can_get_users_counts(
+        self, client: TestClient, admin_token_headers
+    ):
+        """
+        Admin can retrieve user badge counts from the counts endpoint.
+
+        This validates the single-aggregation query returns correct categories.
+        """
+        response = client.get(
+            "/api/v1/admin/users/counts/",
+            headers=admin_token_headers
+        )
+        assert response.status_code == 200
+        data = response.json()
+        expected_keys = {"all", "seekers", "agents", "agency_owners", "inactive", "deactivated"}
+        assert expected_keys.issubset(data.keys())
+        assert data["all"] >= 0
+        assert data["seekers"] >= 0
+        assert data["agents"] >= 0
+        assert data["agency_owners"] >= 0
+        assert data["inactive"] >= 0
+        assert data["deactivated"] >= 0
+
+    def test_admin_users_counts_non_admin_returns_403(
+        self, client: TestClient, normal_user_token_headers
+    ):
+        """
+        Non-admins must not access user counts.
+        """
+        response = client.get(
+            "/api/v1/admin/users/counts/",
+            headers=normal_user_token_headers
+        )
+        assert response.status_code == 403
+
+    def test_admin_users_counts_unauthenticated_returns_401(
+        self, client: TestClient
+    ):
+        """
+        Unauthenticated requests must be rejected.
+        """
+        response = client.get("/api/v1/admin/users/counts/")
+        assert response.status_code == 401
+
 
 class TestAdminCreateUser:
     def test_admin_can_create_user(

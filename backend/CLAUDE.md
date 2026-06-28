@@ -5,8 +5,10 @@
 FastAPI backend deployed on Railway. Sentry is instrumented.
 Phase F through Phase Q are closed. Phase R is closed as of June 23, 2026.
 Phase S open — Schema Hardening, User Intelligence & Communications Completion.
-Backend HEAD: `4eb6ba3` (fix: add savepoint retry for pg_proc contention).
-Migration head: `3a7b9c1d2e4f` (revoke EXECUTE on trigger functions + alter default privileges).
+S.1 closed — Trigger functions moved to `internal` schema.
+S.2 closed — `is_active` column on users table + `uq_agencies_email` restored.
+Backend HEAD: `61b1de5`.
+Migration head: `957b99ad3a58`.
 
 Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this file for backend-specific state.
 
@@ -286,16 +288,33 @@ Do not answer from stale docs when the router, schema, or CRUD layer says otherw
 - `pytest` coverage should not regress
 - Any non-obvious workaround, invariant, or guard clause added during a task must be documented inline in touched files
 
-## Next Session Handover
+## Next Session Handover (Phase S checkpoint — June 28, 2026)
 
-- Phase H is closed; do not reopen Phase H unless investigating a regression from the closed Phase H state
-- Phase I is closed; Phase J is closed except `DEF-J-EMAIL-DOMAIN-001`
-- Phase K is closed; Phase L is closed; Phase M is closed; Phase N is closed; Phase O is closed
-- Phase P is closed; Phase Q is closed (June 22 2026)
-- Phase R is closed (June 23 2026)
-- Phase S is open — current phase
+- Phase H through Phase R: all closed
+- **Phase S active** — S.1 ✅, S.2 ✅, S.3 ✅, S.4 is next
+
+### Phase S completed items
+
+| Item | Revision | State |
+|---|---|---|
+| S.1 — Trigger functions → `internal` schema | `f7f8c6a12f4a` | ✅ Closed |
+| S.2 — `is_active` column on users | `b0dc323b893a` | ✅ Closed |
+| S.3 — Admin user segmentation backend (role + activity_state filters, counts endpoint) | `HEAD` | ✅ Closed |
+| `uq_agencies_email` constraint restored | `957b99ad3a58` | ✅ Closed |
+| **Backend HEAD** | `61b1de5` | Pushed to main |
+| **Migration head** | `957b99ad3a58` | Applied to prod |
+| **Coverage** | 95.04% | Gate passed |
+
+### Permanent infrastructure resolutions (recorded from S.2)
+- `scripts/reset_staging.py` is the canonical pre-test reset tool. Run it before any pytest session against staging to purge accumulated artifacts and reseed reference data.
+- `tests/conftest.py` no longer runs DDL. Schema is owned exclusively by Alembic. The `setup_test_schema()` fixture and module-level `CREATE EXTENSION`/`CREATE TYPE` blocks have been replaced with `SELECT 1` connectivity checks.
+- SQLAlchemy 2.x `join_transaction_mode="create_savepoint"` is the correct test isolation pattern going forward. Older patterns using `begin_nested()` + `restart_savepoint` event listener are obsolete. The `TestingSessionLocal` factory has been removed from conftest.
+
+### Pinned for S.4
+- S.4 depends on S.3 being live on Railway. Deploy S.3 to Railway first, then run `pnpm gen:types`.
+- S.4 deliverable: Admin Users page with tab structure (All, Seekers, Agents, Agency Owners, Inactive, Deactivated), user cards with role/activity badges, deactivate/reactivate via AlertDialog, badge counts from `/admin/users/counts/`.
 - Keep production and dev Supabase separation strict during all work
 - Treat agency card branding as blocked on backend enrichment until the response contract changes
-- Keep Railway `/healthz` returning 200 in degraded mode; Redis rate limiting should connect through `REDIS_URL` or Railway `REDISHOST`/`REDISPORT`/`REDISUSER`/`REDISPASSWORD`
-- **ModerationStatus serialization**: `str(ModerationStatus.live)` produces `"ModerationStatus.live"` — always use `.value` for clean enum-to-string conversion in dict keys
+- Keep Railway `/healthz` returning 200 in degraded mode
+- **ModerationStatus serialization**: `str(ModerationStatus.live)` produces `"ModerationStatus.live"` — always use `.value`
 - **mark-responded is deprecated**: Do not remove, do not call from frontend

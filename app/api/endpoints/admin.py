@@ -53,8 +53,8 @@ from app.schemas.users import (
     UserResponse,
     UserCreate,
     UserUpdate,
-    UserRole,
 )
+from app.models.users import UserRole
 from app.schemas.agencies import AgencyCreate, AgencyRejectRequest, AgencyResponse
 from app.schemas.agent_profiles import AgentProfileCreate
 from app.schemas.properties import PropertyResponse, PropertyUpdate, ListingStatus, PropertyVerificationUpdate, ModerationStatus
@@ -331,23 +331,58 @@ def suspend_agency(
 def get_users(
     db: Session = Depends(get_db),
     pagination: dict = Depends(pagination_params),
+    role: Optional[str] = Query(None, description="Filter by role: seeker, agent, agency_owner, admin"),
+    activity_state: Optional[str] = Query(None, description="Filter by activity state: active, inactive, deactivated"),
     current_user: UserResponse = Depends(get_current_admin_user)
 ) -> Any:
     """
-    Retrieve users with pagination (admin only).
+    Retrieve users with pagination and optional role/activity_state filters (admin only).
     
     Returns only non-deleted users (deleted_at IS NULL).
-    CRUD layer enforces soft delete filtering.
     """
-    users = user_crud.get_multi(db, **pagination,)
-    total = user_crud.count_active(db)  # Use CRUD method that filters deleted_at
-    
+    user_role = None
+    if role:
+        try:
+            user_role = UserRole(role)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Invalid role: {role}. Valid options: seeker, agent, agency_owner, admin",
+            )
+
+    valid_states = {"active", "inactive", "deactivated"}
+    if activity_state and activity_state not in valid_states:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid activity_state: {activity_state}. Valid options: active, inactive, deactivated",
+        )
+
+    users = user_crud.get_multi_filtered(
+        db,
+        skip=pagination["skip"],
+        limit=pagination["limit"],
+        user_role=user_role,
+        activity_state=activity_state,
+    )
+    total = user_crud.count_active(db)
+
     return {
         "items": jsonable_encoder(users),
         "total": total,
         "page": pagination["skip"] // pagination["limit"] + 1 if pagination["limit"] else 1,
         "pages": (total + pagination["limit"] - 1) // pagination["limit"] if pagination["limit"] else 1
     }
+
+
+@router.get("/users/counts/")
+def get_users_counts(
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_admin_user)
+) -> Any:
+    """
+    Return tab badge counts for admin users page (single aggregation query).
+    """
+    return user_crud.get_counts(db)
 
 
 @router.post("/users", response_model=UserResponse)
