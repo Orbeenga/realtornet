@@ -7,15 +7,18 @@ import pytest
 import uuid
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import Session
 from sqlalchemy import text
+from typing import cast
+from uuid import UUID
 
 import os
 os.environ["ENV"] = "test"
 os.environ["SENTRY_DSN"] = ""  # Disable Sentry during tests to prevent test errors leaking to production
+os.environ["ADMIN_NOTIFICATION_EMAIL"] = "admin_test@realtornet.test"
 
 from app.core.config import settings
-from app.core.database import Base, get_db
+from app.core.database import get_db
 from app.main import app
 from app.models.users import User, UserRole
 from app.core.security import get_password_hash, generate_access_token
@@ -37,7 +40,7 @@ from app.schemas.properties import PropertyCreate
 # Engine setup
 # ---------------------------------------------------------------------------
 
-TEST_SQLALCHEMY_DATABASE_URL = "postgresql+psycopg://postgres:postgres@localhost:5432/testdb"
+TEST_SQLALCHEMY_DATABASE_URL = "postgresql+psycopg://postgres:WithKhaldun1332@db.avkhpachzsbgmbnkfnhu.supabase.co:5432/postgres?sslmode=require"
 print(f"Using test database URL: {TEST_SQLALCHEMY_DATABASE_URL}")
 
 engine = create_engine(
@@ -47,76 +50,7 @@ engine = create_engine(
 )
 
 with engine.connect() as conn:
-    conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis;"))
-    conn.execute(text("CREATE EXTENSION IF NOT EXISTS pgcrypto;"))
-    conn.execute(text("""
-        DO $$ BEGIN
-            CREATE TYPE user_role_enum AS ENUM ('seeker', 'agent', 'agency_owner', 'admin');
-        EXCEPTION WHEN duplicate_object THEN
-            ALTER TYPE user_role_enum ADD VALUE IF NOT EXISTS 'agency_owner';
-        END $$;
-    """))
-    conn.execute(text("""
-        DO $$ BEGIN
-            CREATE TYPE listing_type_enum AS ENUM ('sale', 'rent', 'lease');
-        EXCEPTION WHEN duplicate_object THEN null;
-        END $$;
-    """))
-    conn.execute(text("""
-        DO $$ BEGIN
-            CREATE TYPE listing_status_enum AS ENUM ('available', 'active', 'pending', 'sold', 'rented', 'unavailable');
-        EXCEPTION WHEN duplicate_object THEN null;
-        END $$;
-    """))
-    conn.execute(text("""
-        DO $$
-        BEGIN
-            -- Test database only: ensure moderation_status_enum exists and matches Phase M superset
-            IF NOT EXISTS (
-                SELECT 1 FROM pg_type t
-                JOIN pg_namespace n ON n.oid = t.typnamespace
-                WHERE t.typname = 'moderation_status_enum' AND n.nspname = 'public'
-            ) THEN
-                CREATE TYPE moderation_status_enum AS ENUM (
-                    'draft',
-                    'agency_review',
-                    'agency_rejected',
-                    'admin_review',
-                    'admin_rejected',
-                    'live',
-                    'pending_review',
-                    'agency_approved',
-                    'verified',
-                    'rejected',
-                    'revoked'
-                );
-            ELSE
-                -- Upgrade existing enum in-place to include any missing values
-                ALTER TYPE moderation_status_enum ADD VALUE IF NOT EXISTS 'draft';
-                ALTER TYPE moderation_status_enum ADD VALUE IF NOT EXISTS 'agency_review';
-                ALTER TYPE moderation_status_enum ADD VALUE IF NOT EXISTS 'agency_rejected';
-                ALTER TYPE moderation_status_enum ADD VALUE IF NOT EXISTS 'admin_review';
-                ALTER TYPE moderation_status_enum ADD VALUE IF NOT EXISTS 'admin_rejected';
-                ALTER TYPE moderation_status_enum ADD VALUE IF NOT EXISTS 'live';
-                ALTER TYPE moderation_status_enum ADD VALUE IF NOT EXISTS 'pending_review';
-                ALTER TYPE moderation_status_enum ADD VALUE IF NOT EXISTS 'agency_approved';
-                ALTER TYPE moderation_status_enum ADD VALUE IF NOT EXISTS 'verified';
-                ALTER TYPE moderation_status_enum ADD VALUE IF NOT EXISTS 'rejected';
-                ALTER TYPE moderation_status_enum ADD VALUE IF NOT EXISTS 'revoked';
-            END IF;
-        END;
-        $$;
-    """))
-    conn.execute(text("""
-        DO $$ BEGIN
-            CREATE TYPE profile_status_enum AS ENUM ('active', 'inactive', 'pending', 'suspended');
-        EXCEPTION WHEN duplicate_object THEN null;
-        END $$;
-    """))
-    conn.commit()
-
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=True, bind=engine)
-
+    conn.execute(text("SELECT 1"))  # verify connectivity only
 
 # ---------------------------------------------------------------------------
 # Schema setup (session-scoped — runs once before all tests)
@@ -124,221 +58,11 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=True, bind=engine
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_test_schema():
-    """Create tables, types, and apply DDL patches once per test session.
+    """Schema is managed by Alembic migrations. This fixture is intentionally
+    a no-op when running against a pre-migrated database."""
+    with engine.connect() as conn:
+        conn.execute(text("SELECT 1"))
 
-    Moving DDL out of the per-test ``db`` fixture prevents concurrent ALTER
-    TABLE statements from deadlocking under heavy test-suite load.
-    """
-    Base.metadata.create_all(bind=engine)
-    with engine.begin() as schema_conn:
-        schema_conn.execute(text("""
-            ALTER TABLE properties
-            ADD COLUMN IF NOT EXISTS moderation_status moderation_status_enum
-            DEFAULT 'draft'::moderation_status_enum
-            NOT NULL;
-        """))
-        schema_conn.execute(text("""
-            ALTER TABLE properties
-            ALTER COLUMN moderation_status
-            SET DEFAULT 'draft'::moderation_status_enum;
-        """))
-        schema_conn.execute(text("""
-            ALTER TABLE properties
-            ADD COLUMN IF NOT EXISTS moderation_reason TEXT;
-        """))
-        schema_conn.execute(text("""
-            ALTER TABLE properties
-            ADD COLUMN IF NOT EXISTS location_name VARCHAR;
-        """))
-        schema_conn.execute(text("""
-            ALTER TABLE agency_join_requests
-            ADD COLUMN IF NOT EXISTS decided_at TIMESTAMP WITH TIME ZONE;
-        """))
-        schema_conn.execute(text("""
-            ALTER TABLE agency_join_requests
-            ADD COLUMN IF NOT EXISTS decided_by BIGINT;
-        """))
-        schema_conn.execute(text("""
-            ALTER TABLE users
-            ADD COLUMN IF NOT EXISTS deactivation_reason TEXT;
-        """))
-        schema_conn.execute(text("""
-            ALTER TABLE users
-            ADD COLUMN IF NOT EXISTS role_change_reason TEXT;
-        """))
-        schema_conn.execute(text("""
-            ALTER TABLE users
-            ADD COLUMN IF NOT EXISTS role_version INTEGER DEFAULT 1 NOT NULL;
-        """))
-        schema_conn.execute(text("""
-            ALTER TABLE agencies
-            ADD COLUMN IF NOT EXISTS status_reason TEXT;
-        """))
-        schema_conn.execute(text("""
-            ALTER TABLE agency_agent_memberships
-            ADD COLUMN IF NOT EXISTS agent_profile_id BIGINT;
-        """))
-        schema_conn.execute(text("""
-            ALTER TABLE agency_agent_memberships
-            ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'active' NOT NULL;
-        """))
-        schema_conn.execute(text("""
-            ALTER TABLE agency_agent_memberships
-            ADD COLUMN IF NOT EXISTS status_reason TEXT;
-        """))
-        schema_conn.execute(text("""
-            ALTER TABLE agency_agent_memberships
-            ADD COLUMN IF NOT EXISTS status_decided_at TIMESTAMP WITH TIME ZONE;
-        """))
-        schema_conn.execute(text("""
-            ALTER TABLE agency_agent_memberships
-            ADD COLUMN IF NOT EXISTS status_decided_by BIGINT;
-        """))
-        schema_conn.execute(text("""
-            ALTER TABLE reviews
-            ADD COLUMN IF NOT EXISTS agency_id BIGINT;
-        """))
-        schema_conn.execute(text("""
-            ALTER TABLE saved_searches
-            ADD COLUMN IF NOT EXISTS unsubscribe_token UUID DEFAULT gen_random_uuid() NOT NULL;
-        """))
-        schema_conn.execute(text("""
-            CREATE UNIQUE INDEX IF NOT EXISTS ix_saved_searches_unsubscribe_token
-            ON saved_searches (unsubscribe_token);
-        """))
-        schema_conn.execute(text("""
-            ALTER TABLE agency_agent_memberships
-            DROP CONSTRAINT IF EXISTS agency_agent_memberships_status_check;
-        """))
-        schema_conn.execute(text("""
-            ALTER TABLE agency_agent_memberships
-            DROP CONSTRAINT IF EXISTS ck_agency_agent_memberships_agency_agent_memberships_status_check;
-        """))
-        schema_conn.execute(text("""
-            ALTER TABLE agency_agent_memberships
-            ADD CONSTRAINT agency_agent_memberships_status_check
-            CHECK (status IN ('active', 'inactive', 'suspended', 'blocked'));
-        """))
-        # Create audit views for test coverage of the admin audit endpoint
-        schema_conn.execute(text("""
-            CREATE OR REPLACE VIEW public.audit_creations AS
-            SELECT 'users'::text AS table_name, u.user_id AS record_id,
-                   u.created_at, u.created_by, NULL::uuid AS created_by_email
-            FROM users u
-            UNION ALL
-            SELECT 'profiles'::text, p.profile_id, p.created_at, p.created_by, NULL
-            FROM profiles p
-            UNION ALL
-            SELECT 'properties'::text, pr.property_id, pr.created_at, pr.created_by, NULL
-            FROM properties pr
-            UNION ALL
-            SELECT 'agencies'::text, a.agency_id, a.created_at, a.created_by, NULL
-            FROM agencies a
-            UNION ALL
-            SELECT 'agent_profiles'::text, ap.profile_id, ap.created_at, ap.created_by, NULL
-            FROM agent_profiles ap
-            ORDER BY 3 DESC;
-        """))
-        schema_conn.execute(text("""
-            CREATE OR REPLACE VIEW public.audit_deletions AS
-            SELECT 'users'::text AS table_name, u.user_id AS record_id,
-                   u.deleted_at, u.deleted_by, NULL::uuid AS deleted_by_email
-            FROM users u WHERE u.deleted_at IS NOT NULL
-            UNION ALL
-            SELECT 'profiles'::text, p.profile_id, p.deleted_at, p.deleted_by, NULL
-            FROM profiles p WHERE p.deleted_at IS NOT NULL
-            UNION ALL
-            SELECT 'properties'::text, pr.property_id, pr.deleted_at, pr.deleted_by, NULL
-            FROM properties pr WHERE pr.deleted_at IS NOT NULL
-            UNION ALL
-            SELECT 'agencies'::text, a.agency_id, a.deleted_at, a.deleted_by, NULL
-            FROM agencies a WHERE a.deleted_at IS NOT NULL
-            UNION ALL
-            SELECT 'agent_profiles'::text, ap.profile_id, ap.deleted_at, ap.deleted_by, NULL
-            FROM agent_profiles ap WHERE ap.deleted_at IS NOT NULL
-            UNION ALL
-            SELECT 'inquiries'::text, i.inquiry_id, i.deleted_at, i.deleted_by, NULL
-            FROM inquiries i WHERE i.deleted_at IS NOT NULL
-            UNION ALL
-            SELECT 'reviews'::text, r.review_id, r.deleted_at, r.deleted_by, NULL
-            FROM reviews r WHERE r.deleted_at IS NOT NULL
-            UNION ALL
-            SELECT 'saved_searches'::text, ss.search_id, ss.deleted_at, ss.deleted_by, NULL
-            FROM saved_searches ss WHERE ss.deleted_at IS NOT NULL
-            UNION ALL
-            SELECT 'favorites'::text, f.user_id, f.deleted_at, f.deleted_by, NULL
-            FROM favorites f WHERE f.deleted_at IS NOT NULL
-            UNION ALL
-            SELECT 'locations'::text, l.location_id, l.deleted_at, l.deleted_by, NULL
-            FROM locations l WHERE l.deleted_at IS NOT NULL
-            ORDER BY 3 DESC;
-        """))
-        schema_conn.execute(text("""
-            CREATE OR REPLACE VIEW public.audit_recent_changes AS
-            WITH base AS (
-                SELECT 'users'::text AS table_name, users.user_id AS record_id,
-                       users.created_at, users.created_by,
-                       users.updated_at, users.updated_by,
-                       users.deleted_at, users.deleted_by,
-                       COALESCE(users.deleted_by, users.updated_by, users.created_by) AS _actor_id
-                FROM users WHERE users.updated_at > (now() - '90 days'::interval)
-                UNION ALL
-                SELECT 'profiles'::text, profiles.profile_id, profiles.created_at, profiles.created_by,
-                       profiles.updated_at, profiles.updated_by, profiles.deleted_at, profiles.deleted_by,
-                       COALESCE(profiles.deleted_by, profiles.updated_by, profiles.created_by)
-                FROM profiles WHERE profiles.updated_at > (now() - '90 days'::interval)
-                UNION ALL
-                SELECT 'properties'::text, properties.property_id, properties.created_at, properties.created_by,
-                       properties.updated_at, properties.updated_by, properties.deleted_at, properties.deleted_by,
-                       COALESCE(properties.deleted_by, properties.updated_by, properties.created_by)
-                FROM properties WHERE properties.updated_at > (now() - '90 days'::interval)
-                UNION ALL
-                SELECT 'agencies'::text, agencies.agency_id, agencies.created_at, agencies.created_by,
-                       agencies.updated_at, agencies.updated_by, agencies.deleted_at, agencies.deleted_by,
-                       COALESCE(agencies.deleted_by, agencies.updated_by, agencies.created_by)
-                FROM agencies WHERE agencies.updated_at > (now() - '90 days'::interval)
-                UNION ALL
-                SELECT 'agent_profiles'::text, agent_profiles.profile_id, agent_profiles.created_at, agent_profiles.created_by,
-                       agent_profiles.updated_at, agent_profiles.updated_by, agent_profiles.deleted_at, agent_profiles.deleted_by,
-                       COALESCE(agent_profiles.deleted_by, agent_profiles.updated_by, agent_profiles.created_by)
-                FROM agent_profiles WHERE agent_profiles.updated_at > (now() - '90 days'::interval)
-                UNION ALL
-                SELECT 'inquiries'::text, inquiries.inquiry_id, inquiries.created_at, NULL::uuid,
-                       inquiries.updated_at, NULL::uuid, inquiries.deleted_at, inquiries.deleted_by,
-                       COALESCE(inquiries.deleted_by, NULL::uuid, NULL::uuid)
-                FROM inquiries WHERE inquiries.updated_at > (now() - '90 days'::interval)
-                UNION ALL
-                SELECT 'reviews'::text, reviews.review_id, reviews.created_at, NULL::uuid,
-                       reviews.updated_at, NULL::uuid, reviews.deleted_at, reviews.deleted_by,
-                       COALESCE(reviews.deleted_by, NULL::uuid, NULL::uuid)
-                FROM reviews WHERE reviews.updated_at > (now() - '90 days'::interval)
-                UNION ALL
-                SELECT 'saved_searches'::text, saved_searches.search_id, saved_searches.created_at, NULL::uuid,
-                       saved_searches.updated_at, NULL::uuid, saved_searches.deleted_at, saved_searches.deleted_by,
-                       COALESCE(saved_searches.deleted_by, NULL::uuid, NULL::uuid)
-                FROM saved_searches WHERE saved_searches.updated_at > (now() - '90 days'::interval)
-                UNION ALL
-                SELECT 'favorites'::text, favorites.user_id, favorites.created_at, NULL::uuid,
-                       favorites.updated_at, NULL::uuid, favorites.deleted_at, favorites.deleted_by,
-                       COALESCE(favorites.deleted_by, NULL::uuid, NULL::uuid)
-                FROM favorites WHERE favorites.updated_at > (now() - '90 days'::interval)
-                UNION ALL
-                SELECT 'locations'::text, locations.location_id, locations.created_at, NULL::uuid,
-                       locations.updated_at, locations.updated_by, locations.deleted_at, locations.deleted_by,
-                       COALESCE(locations.deleted_by, locations.updated_by, NULL::uuid)
-                FROM locations WHERE locations.updated_at > (now() - '90 days'::interval)
-            )
-            SELECT base.table_name, base.record_id, base.created_at, base.created_by,
-                   base.updated_at, base.updated_by, base.deleted_at, base.deleted_by,
-                   COALESCE(
-                       u.first_name || ' ' || u.last_name,
-                       CASE WHEN base._actor_id IS NULL THEN 'System'
-                            ELSE LEFT(base._actor_id::text, 8) END
-                   ) AS actor_name
-            FROM base
-            LEFT JOIN users u ON u.supabase_id = base._actor_id
-            ORDER BY base.updated_at DESC NULLS LAST;
-        """))
 
 
 # ---------------------------------------------------------------------------
@@ -349,22 +73,13 @@ def setup_test_schema():
 def db():
     connection = engine.connect()
     transaction = connection.begin()
-    db = TestingSessionLocal(bind=connection)
+    session = Session(bind=connection, join_transaction_mode="create_savepoint")
 
-    # CRITICAL FIX: Start a nested transaction (Savepoint)
-    # This intercepts the .commit() calls in your CRUD methods
-    db.begin_nested()
+    yield session
 
-    try:
-        yield db
-    except Exception as e:
-        print(f"Test error: {e}")
-        raise
-    finally:
-        db.close()
-        # Roll back the outer transaction to keep tests isolated
-        transaction.rollback()
-        connection.close()
+    session.close()
+    transaction.rollback()
+    connection.close()
 
 
 @pytest.fixture(scope="function")
@@ -537,8 +252,8 @@ def agent_no_agency_token_headers(db, client):
     db.flush()
     db.refresh(user)
     token = generate_access_token(
-        supabase_id=user.supabase_id,
-        user_id=user.user_id,
+        user_id=cast(int, user.user_id),
+        supabase_id=cast(UUID, user.supabase_id),
         user_role=user.user_role.value,
     )
     return {"Authorization": f"Bearer {token}"}
@@ -608,16 +323,13 @@ def location_lekki(db):
 
 @pytest.fixture
 def property_type(db):
-    pt = PropertyType(name="Apartment", description="Modern apartment")
-    db.add(pt)
-    db.flush()
-    db.refresh(pt)
-    return pt
+    from app.models.property_types import PropertyType
+    return db.query(PropertyType).filter_by(name="Apartment").first()
 
 
 @pytest.fixture
 def property_type_villa(db):
-    pt = PropertyType(name="Villa", description="Luxury villa")
+    pt = PropertyType(name="Test Villa Type", description="Luxury villa")
     db.add(pt)
     db.flush()
     db.refresh(pt)
@@ -832,24 +544,14 @@ def second_property_image(db, unverified_property_owned_by_agent):
 
 @pytest.fixture
 def sample_amenity(db):
-    """A single amenity — Swimming Pool."""
     from app.models.amenities import Amenity
-    a = Amenity(name="Swimming Pool", description="Outdoor pool")
-    db.add(a)
-    db.flush()
-    db.refresh(a)
-    return a
+    return db.query(Amenity).filter_by(name="Swimming Pool").first()
 
 
 @pytest.fixture
 def second_amenity(db):
-    """A second amenity — Gym."""
     from app.models.amenities import Amenity
-    a = Amenity(name="Gym", description="Fitness center")
-    db.add(a)
-    db.flush()
-    db.refresh(a)
-    return a
+    return db.query(Amenity).filter_by(name="Gym").first()
 
 
 @pytest.fixture
@@ -889,7 +591,7 @@ def sample_property_type(db):
 def second_property_type(db):
     """Second PropertyType for duplicate-name conflict tests."""
     from app.models.property_types import PropertyType
-    pt = PropertyType(name="Duplex", description="Two-floor connected unit")
+    pt = PropertyType(name="Test Duplex B", description="Two-floor connected unit")
     db.add(pt)
     db.flush()
     db.refresh(pt)

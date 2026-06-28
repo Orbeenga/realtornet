@@ -27,22 +27,11 @@
 - If staging and main both receive pushes, verify this is the intentional two-step promotion flow. Vercel may pick up each branch independently, but production must never be an accidental side effect of unvalidated staging work.
 - **Commit order is strictly: backend first, then frontend.** Backend commit → push → wait for Railway deploy (green `/healthz`) → `pnpm gen:types` against production OpenAPI → if types changed, commit gen:types result → push → finally commit frontend logic changes. Never commit backend and frontend in the same batch. gen:types must resolve against a live, deployed backend, not a pending one.
 
-## Current phase state
-- Phase F closed April 25 2026
-- Phase G closed April 29 2026
-- Phase H closed May 6 2026
-- Phase I closed May 2026
-- Phase J closed May 2026; only `DEF-J-EMAIL-DOMAIN-001` (verified sender domain + Railway `MAIL_FROM`) remains open
-- Phase K closed May 2026
-- Phase L closed May 2026: clean-slate DB propagation on new Supabase project `fobvnshrqxduuhzgflvd`, staging environment live at `realtornet-staging.up.railway.app`, admin audit endpoint live, modals/tabs/detail frontend complete
-- Phase M closed June 2026: listing governance system complete, state machine live (draft → agency_review → agency_rejected → admin_review → admin_rejected → live → revoked)
-- Phase N closed June 2026 with post-close fixes 2026-06-16: listing instruction mediation system complete, `listing_instructions` table with `triggered_by_event_id` FK gating, reject-permanent transition (`revoked → admin_rejected`), mediated governance read endpoints (revocation-history, rejection-history, agency-queue, inventory, pending-admin), email notification wiring for instruction, frontend mediation CTAs and admin historical views
-- Phase O closed June 2026: notification system model/migration/fire points/CRUD/hook/bell; O.1 Restore button removed; O.2 instruction box guard; O.3 cancel join request + CANCELLED status; O.4 listing_count aggregate subqueries + agents directory ordering; O.5 property_count stats (verified→live), listings_by_status breakdown; O.6 PREFLIGHT.md membership invariants; O.7 integration validation + ordering test fix + ModerationStatus prefix fix + dynamic breakdown rendering
-- Phase Q closed June 21-22 2026: agency owner read endpoints (Q.2), reject-permanent (Q.3), blocked tabs (Q.4), reconsider CTA (Q.5), admin analytics listing breakdown fix, Revoked tab read-only fix, agent Agency Inventory/Public Marketplace dedicated queries, DEFERRED.md updated, all quality gates passed
-- Phase R closed June 2026: R.2 inquiry_replies table + endpoints + email task + 27 tests, R.3 reply composer (agent) + reply display (seeker), R.4 agent stats endpoint + frontend page, R.5 unblock endpoint + frontend CTA, R.6 operational closure with production evidence, R.7 12-journey integration validation
-- **Current phase: Phase S — In-App Reply Threading & Platform Maturity**
-- Backend HEAD: `ee0806c` (chore: close Phase R — update CLAUDE.md and DEFERRED.md)
-- Frontend HEAD: `6750e1d` (R.4 + R.5 frontend: agent stats page + unblock CTA)
+## Current Phase
+
+**Phase S — Schema Hardening, User Intelligence & Communications Completion**
+Phase R closed: June 2026 — inquiry reply foundation, agent stats, agency unblock,
+operational closure, 12-journey validation passed.
 
 ## Locked environment decisions
 - Production Supabase project ref: `fobvnshrqxduuhzgflvd`
@@ -98,6 +87,12 @@
 - Public frontend hooks should use the `authMode: omit` pattern for public API surfaces
 - Browser-direct geocoding is prohibited; all Nominatim/OSM resolution must happen server-side through backend contracts.
 - Mobile total blocking time target was met in Phase I I.6 for the current revised threshold; deeper <100ms RSC work is Phase K unless fresh traces reprioritize it.
+- Schema topology (locked — Phase S): trigger functions, utility functions, and
+  scheduled job procedures must be created in the `internal` schema, never `public`.
+  `public` is the PostgREST API exposure layer. `internal` is invisible to the REST
+  API by design. This applies to all future development on this project and is the
+  canonical pattern for any Supabase or PostgREST deployment.
+  See PREFLIGHT.md PostgREST Schema Topology Standard.
 
 ## Phase K close
 - Stream A (settings/infrastructure): Settings class env variables confirmed correct; test telemetry isolated from production Sentry

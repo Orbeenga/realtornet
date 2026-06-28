@@ -144,6 +144,7 @@ class UserResponse(UserBase):
     created_at: datetime
     updated_at: datetime
     last_login: Optional[datetime] = None
+    is_active: bool = True
     deleted_at: Optional[datetime] = None
     deactivation_reason: Optional[str] = None
     role_change_reason: Optional[str] = None

@@ -80,29 +80,33 @@ def upgrade() -> None:
         $$
     """)
 
-    # 3. Update triggers to reference internal schema functions
+    # 3. Drop public schema versions with CASCADE.
+    # CASCADE is required because the DB may have separate-named triggers
+    # (e.g. prevent_listing_instructions_update, prevent_listing_instructions_delete)
+    # that reference the public function. CREATE OR REPLACE TRIGGER only
+    # replaces by name, so old-named triggers would block the DROP FUNCTION.
+    op.execute("DROP FUNCTION IF EXISTS public.prevent_listing_instructions_mutation() CASCADE;")
+    op.execute("DROP FUNCTION IF EXISTS public.prevent_notifications_delete() CASCADE;")
+    op.execute("DROP FUNCTION IF EXISTS public.prevent_inquiry_replies_mutation() CASCADE;")
+
+    # 4. Create replacement triggers referencing internal schema functions
     op.execute("""
-        CREATE OR REPLACE TRIGGER prevent_listing_instructions_mutation
+        CREATE TRIGGER prevent_listing_instructions_mutation
           BEFORE UPDATE OR DELETE ON public.listing_instructions
           FOR EACH ROW EXECUTE FUNCTION internal.prevent_listing_instructions_mutation();
     """)
 
     op.execute("""
-        CREATE OR REPLACE TRIGGER prevent_notifications_delete
+        CREATE TRIGGER prevent_notifications_delete
           BEFORE UPDATE OR DELETE ON public.notifications
           FOR EACH ROW EXECUTE FUNCTION internal.prevent_notifications_delete();
     """)
 
     op.execute("""
-        CREATE OR REPLACE TRIGGER prevent_inquiry_replies_mutation
+        CREATE TRIGGER prevent_inquiry_replies_mutation
           BEFORE UPDATE OR DELETE ON public.inquiry_replies
           FOR EACH ROW EXECUTE FUNCTION internal.prevent_inquiry_replies_mutation();
     """)
-
-    # 4. Drop public schema versions (no longer needed)
-    op.execute("DROP FUNCTION IF EXISTS public.prevent_listing_instructions_mutation();")
-    op.execute("DROP FUNCTION IF EXISTS public.prevent_notifications_delete();")
-    op.execute("DROP FUNCTION IF EXISTS public.prevent_inquiry_replies_mutation();")
 
 
 def downgrade() -> None:
@@ -148,26 +152,27 @@ def downgrade() -> None:
         $$
     """)
 
-    # 2. Update triggers to reference public schema functions
+    # 2. Drop internal schema function versions with CASCADE
+    # (removes any triggers referencing internal functions)
+    op.execute("DROP FUNCTION IF EXISTS internal.prevent_listing_instructions_mutation() CASCADE;")
+    op.execute("DROP FUNCTION IF EXISTS internal.prevent_notifications_delete() CASCADE;")
+    op.execute("DROP FUNCTION IF EXISTS internal.prevent_inquiry_replies_mutation() CASCADE;")
+
+    # 3. Create triggers referencing public schema functions
     op.execute("""
-        CREATE OR REPLACE TRIGGER prevent_listing_instructions_mutation
+        CREATE TRIGGER prevent_listing_instructions_mutation
           BEFORE UPDATE OR DELETE ON public.listing_instructions
           FOR EACH ROW EXECUTE FUNCTION public.prevent_listing_instructions_mutation();
     """)
 
     op.execute("""
-        CREATE OR REPLACE TRIGGER prevent_notifications_delete
+        CREATE TRIGGER prevent_notifications_delete
           BEFORE UPDATE OR DELETE ON public.notifications
           FOR EACH ROW EXECUTE FUNCTION public.prevent_notifications_delete();
     """)
 
     op.execute("""
-        CREATE OR REPLACE TRIGGER prevent_inquiry_replies_mutation
+        CREATE TRIGGER prevent_inquiry_replies_mutation
           BEFORE UPDATE OR DELETE ON public.inquiry_replies
           FOR EACH ROW EXECUTE FUNCTION public.prevent_inquiry_replies_mutation();
     """)
-
-    # 3. Drop internal schema function versions
-    op.execute("DROP FUNCTION IF EXISTS internal.prevent_listing_instructions_mutation();")
-    op.execute("DROP FUNCTION IF EXISTS internal.prevent_notifications_delete();")
-    op.execute("DROP FUNCTION IF EXISTS internal.prevent_inquiry_replies_mutation();")

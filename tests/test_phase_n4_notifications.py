@@ -139,7 +139,7 @@ class TestAgencyApprovalNotification:
             args = mock_dispatch.call_args[0]
             task_fn = args[0]
             assert task_fn.__name__ == "send_agency_approval_notification_email"
-            assert args[1] == admin_user.email  # to_email = admin
+            assert args[1] == "admin_test@realtornet.test"  # from ADMIN_NOTIFICATION_EMAIL
             assert "N.4 Notification" in args[3]  # property_title
 
 

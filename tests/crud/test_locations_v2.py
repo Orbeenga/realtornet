@@ -109,7 +109,7 @@ class TestLocationFilterEdgeCases:
         
         # Filter by state only
         results = location_crud.get_by_filters(db, state="Oyo")
-        assert len(results) == 2
+        assert len(results) == 3  # seed data adds (Oyo, Oyo, Central)
         
         # Filter by state and city
         results = location_crud.get_by_filters(db, state="Oyo", city="Ibadan")

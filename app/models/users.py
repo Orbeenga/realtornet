@@ -106,6 +106,9 @@ class User(Base, AuditMixin, SoftDeleteMixin):
     # Last login tracking
     last_login = Column(DateTime(timezone=True), nullable=True)
 
+    # Platform-level deactivation (distinct from soft-delete)
+    is_active = Column(Boolean, default=True, nullable=False)
+
     # Timestamps + audit + soft delete inherited from mixins:
     # - created_at, updated_at, updated_by (AuditMixin)
     # - deleted_at, deleted_by (SoftDeleteMixin)
@@ -156,6 +159,6 @@ class User(Base, AuditMixin, SoftDeleteMixin):
         return f"{self.first_name} {self.last_name}"
 
     @property
-    def is_active(self) -> bool:
-        """Check if user is active (not soft deleted)."""
+    def is_not_deleted(self) -> bool:
+        """Check if user is not soft deleted."""
         return self.deleted_at is None

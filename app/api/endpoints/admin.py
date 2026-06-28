@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, cast as typing_cast  # Alias typin
 from decimal import Decimal
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy import text, func, and_
+from sqlalchemy import text, func, and_, update
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.dependencies import (
@@ -632,6 +632,108 @@ def deactivate_user(
     logger.info(f"User deactivated: {user_id} by admin {current_user.user_id}")
     return db_user
 
+
+# --- Platform-Level Deactivation / Reactivation (Phase S) ---
+# These set is_active on the users table, distinct from soft-delete.
+# A deactivated user cannot access any authenticated endpoint.
+
+@router.patch("/users/{user_id}/deactivate/", response_model=UserResponse)
+def platform_deactivate_user(
+    *,
+    db: Session = Depends(get_db),
+    user_id: int,
+    deactivation_in: UserDeactivateRequest,
+    current_user: UserResponse = Depends(get_current_admin_user),
+    _: None = Depends(validate_request_size)
+) -> Any:
+    """
+    Platform-level deactivation (admin only).
+
+    Sets is_active = false on the target user. Unlike soft-delete (POST
+    .../deactivate), the user record remains visible but all API access
+    is blocked by the get_current_active_user dependency.
+    Writes deactivation_reason and updated_by for audit.
+    """
+    db_user = user_crud.get(db, user_id=user_id)
+
+    if not db_user or db_user.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    target_user_id: int = typing_cast(int, db_user.user_id)
+    current_user_id: int = typing_cast(int, current_user.user_id)
+    if target_user_id == current_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Admins cannot deactivate themselves",
+        )
+
+    db.execute(
+        update(User)
+        .where(User.user_id == user_id)
+        .values(
+            is_active=False,
+            deactivation_reason=deactivation_in.reason,
+            updated_by=str(current_user.supabase_id),
+        )
+    )
+    db.commit()
+    db.refresh(db_user)
+
+    logger.info(
+        "Platform deactivation",
+        extra={
+            "user_id": user_id,
+            "by_admin": current_user.user_id,
+            "reason": deactivation_in.reason,
+        },
+    )
+    return db_user
+
+
+@router.patch("/users/{user_id}/reactivate/", response_model=UserResponse)
+def platform_reactivate_user(
+    *,
+    db: Session = Depends(get_db),
+    user_id: int,
+    current_user: UserResponse = Depends(get_current_admin_user),
+    _: None = Depends(validate_request_size)
+) -> Any:
+    """
+    Platform-level reactivation (admin only).
+
+    Sets is_active = true on the target user, restoring API access.
+    The deactivation_reason is preserved for audit.
+    """
+    db_user = user_crud.get(db, user_id=user_id)
+
+    if not db_user or db_user.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    db.execute(
+        update(User)
+        .where(User.user_id == user_id)
+        .values(
+            is_active=True,
+            updated_by=str(current_user.supabase_id),
+        )
+    )
+    db.commit()
+    db.refresh(db_user)
+
+    logger.info(
+        "Platform reactivation",
+        extra={
+            "user_id": user_id,
+            "by_admin": current_user.user_id,
+        },
+    )
+    return db_user
 
 
 # PROPERTY MANAGEMENT ENDPOINTS

@@ -133,11 +133,11 @@ class TestCreatePropertyType:
     ):
         response = client.post(
             "/api/v1/property-types/",
-            json={"name": "Bungalow"},
+            json={"name": "New Test Type A"},
             headers=admin_token_headers
         )
         assert response.status_code == 201
-        assert response.json()["name"] == "Bungalow"
+        assert response.json()["name"] == "New Test Type A"
 
 
 # ===========================================================================

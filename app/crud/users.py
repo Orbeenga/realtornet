@@ -474,8 +474,12 @@ class UserCRUD:
         return cast(bool, user.is_verified)  # Narrow ORM descriptor-backed verification flag to the runtime bool value.
     
     def is_active(self, user: User) -> bool:
-        """Check if user is active (not soft deleted)"""
-        return cast(Optional[datetime], user.deleted_at) is None  # Narrow ORM descriptor-backed timestamp to the runtime optional datetime value.
+        """Check if user is active (not deactivated and not soft deleted)."""
+        if not cast(bool, user.is_active):
+            return False
+        if cast(Optional[datetime], user.deleted_at) is not None:
+            return False
+        return True
 
     def get_realtors(
         self,

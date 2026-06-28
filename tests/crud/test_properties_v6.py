@@ -20,10 +20,7 @@ def test_dependencies(db: Session):
         loc = Location(city="Test City", state="Test State")
         db.add(loc)
     
-    ptype = db.query(PropertyType).first()
-    if not ptype:
-        ptype = PropertyType(name="Apartment", description="2 Bedroom Apartment")
-        db.add(ptype)
+    ptype = db.query(PropertyType).filter_by(name="Apartment").first()
     
     db.commit()
     db.refresh(loc)

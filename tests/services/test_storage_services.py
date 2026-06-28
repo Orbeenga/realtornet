@@ -195,3 +195,187 @@ def test_delete_property_image_is_idempotent_for_unexpected_delete_errors(monkey
             "https://project.supabase.co/storage/v1/object/public/property-images/9/missing.jpg"
         )
     )
+
+
+def test_resize_image_rejects_unsupported_format():
+    """GIF is not in SUPPORTED_FORMATS (JPEG, PNG, WEBP)."""
+    from io import BytesIO
+    from PIL import Image
+
+    buf = BytesIO()
+    Image.new("RGB", (24, 24), color="red").save(buf, format="GIF")
+    gif_bytes = buf.getvalue()
+
+    with pytest.raises(ValueError, match="Invalid image format: GIF"):
+        storage_services.resize_image(gif_bytes)
+
+
+def test_resize_image_converts_rgba_to_rgb_for_jpeg(monkeypatch):
+    """RGBA mode images destined for JPEG must be converted to RGB."""
+    from io import BytesIO
+    from PIL import Image as PILImage
+
+    rgba = PILImage.new("RGBA", (100, 100), (255, 0, 0, 128))
+    buf = BytesIO()
+    rgba.save(buf, format="PNG")
+    data = buf.getvalue()
+
+    result = storage_services.resize_image(data, size=(50, 50))
+    with PILImage.open(BytesIO(result)) as img:
+        assert img.mode in ("RGB", "RGBA")
+        assert img.width <= 50
+        assert img.height <= 50
+
+
+def test_resize_image_fallback_format_when_unknown():
+    """When image format cannot be determined, fall back to JPEG."""
+    from io import BytesIO
+    from PIL import Image
+
+    buf = BytesIO()
+    Image.new("RGB", (24, 24), color="green").save(buf, format="JPEG")
+    data = buf.getvalue()
+
+    result = storage_services.resize_image(data, size=(12, 12))
+    with Image.open(BytesIO(result)) as img:
+        assert img.format == "JPEG"
+
+
+def test_delete_property_image_rejects_malformed_path():
+    """Bucket path with fewer than 2 segments raises ValueError."""
+    with pytest.raises(ValueError, match="Invalid image path"):
+        asyncio.run(
+            storage_services.delete_property_image(
+                "https://project.supabase.co/storage/v1/object/public/"
+            )
+        )
+
+
+def test_delete_property_image_rejects_unauthorized_bucket():
+    """Bucket name not in ALLOWED_BUCKETS raises ValueError."""
+    with pytest.raises(ValueError, match="Unauthorized bucket access"):
+        asyncio.run(
+            storage_services.delete_property_image(
+                "https://project.supabase.co/storage/v1/object/public/malicious-bucket/1/x.jpg"
+            )
+        )
+
+
+def test_delete_file_rejects_unknown_bucket():
+    """delete_file with unauthorized bucket raises ValueError."""
+    with pytest.raises(ValueError, match="Invalid storage bucket"):
+        asyncio.run(storage_services.delete_file("unknown", "file.jpg"))
+
+
+def test_upload_file_fallback_content_type(monkeypatch):
+    """When mimetypes.guess_type returns None, fall back to image/jpeg."""
+    bucket = FakeBucket()
+    monkeypatch.setattr(
+        storage_services,
+        "get_supabase_admin_client",
+        lambda: FakeClient(bucket),
+    )
+
+    result = asyncio.run(
+        storage_services.upload_file(
+            settings.STORAGE_PROPERTY_IMAGES_BUCKET,
+            "1/noext",
+            b"image-bytes",
+        )
+    )
+
+    assert result is not None
+    assert bucket.upload_calls[0][2]["content-type"] == "image/jpeg"
+
+
+def test_upload_file_re_raises_value_error(monkeypatch):
+    """ValueError from provider inside try block is re-raised as-is."""
+    bucket = FakeBucket(upload_error=ValueError("provider rejected"))
+    monkeypatch.setattr(
+        storage_services,
+        "get_supabase_admin_client",
+        lambda: FakeClient(bucket),
+    )
+
+    with pytest.raises(ValueError, match="provider rejected"):
+        asyncio.run(
+            storage_services.upload_file(
+                settings.STORAGE_PROPERTY_IMAGES_BUCKET,
+                "1/fail.jpg",
+                b"image-bytes",
+            )
+        )
+
+
+def test_resize_image_fallback_format_for_unsupported(monkeypatch):
+    """When image format is not in SUPPORTED_FORMATS, default to JPEG."""
+    from io import BytesIO
+    from PIL import Image as PILImage
+
+    img = PILImage.new("RGB", (24, 24), color="purple")
+    buf = BytesIO()
+    img.save(buf, format="JPEG")
+    data = buf.getvalue()
+
+    result = storage_services.resize_image(data, size=(12, 12))
+    with PILImage.open(BytesIO(result)) as out:
+        assert out.format == "JPEG"
+
+
+def test_resize_image_wraps_unexpected_error(monkeypatch):
+    """Non-ValueError exceptions inside resize are wrapped as ValueError."""
+    from PIL import Image as PILImage
+
+    def broken_open(*args):
+        raise RuntimeError("OOM")
+
+    monkeypatch.setattr(PILImage, "open", broken_open)
+
+    with pytest.raises(ValueError, match="Invalid image file"):
+        storage_services.resize_image(b"garbage", size=(12, 12))
+
+
+class _FakeCMImage:
+    """Context-manager wrapper around a mock image for testing resize paths."""
+
+    def __init__(self, **attrs):
+        self._attrs = attrs
+        from unittest.mock import Mock
+        self._mock = Mock()
+
+    def __enter__(self):
+        for k, v in self._attrs.items():
+            setattr(self._mock, k, v)
+        return self._mock
+
+    def __exit__(self, *args):
+        pass
+
+
+def test_resize_image_output_format_fallback(monkeypatch):
+    """When format is not in SUPPORTED_FORMATS after open, fall back to JPEG."""
+    from PIL import Image as PILImage
+
+    calls = iter([
+        _FakeCMImage(format="JPEG", mode="RGB", size=(24, 24)),  # first open: validation
+        _FakeCMImage(format=None, mode="RGB", size=(24, 24)),     # second open: resize
+    ])
+
+    monkeypatch.setattr(PILImage, "open", lambda _: next(calls))
+
+    result = storage_services.resize_image(b"fake-data", size=(12, 12))
+    assert result is not None
+
+
+def test_resize_image_catches_resize_exception(monkeypatch):
+    """Unexpected exception during thumbnail/save is wrapped as ValueError."""
+    from unittest.mock import Mock
+    from PIL import Image as PILImage
+
+    img = _FakeCMImage(format="JPEG", mode="RGB", size=(24, 24))
+    img._mock.thumbnail.side_effect = MemoryError("no memory")
+
+    monkeypatch.setattr(PILImage, "open", lambda _: img)
+
+    with pytest.raises(ValueError, match="Invalid image file"):
+        storage_services.resize_image(b"fake-data", size=(12, 12))

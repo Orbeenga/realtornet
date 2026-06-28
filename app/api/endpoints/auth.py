@@ -10,7 +10,7 @@ from uuid import UUID
 from typing import Any, cast as typing_cast  # Alias typing.cast so endpoint-local narrowing stays explicit without affecting runtime token helpers.
 from fastapi import APIRouter, Depends, HTTPException, status, Body
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy import select
+from sqlalchemy import select, update, func
 from sqlalchemy.orm import Session
 
 # --- DIRECT CRUD IMPORTS ---
@@ -18,6 +18,7 @@ from app.crud.agent_profiles import agent_profile as agent_profile_crud
 from app.crud.profiles import profile as profile_crud
 from app.crud.users import user as user_crud
 from app.models.agencies import Agency
+from app.models.users import User
 
 # --- DIRECT DEPENDENCY IMPORTS ---
 from app.api.dependencies import get_db, get_current_active_user, validate_request_size
@@ -410,14 +411,23 @@ def register_user(
 
 @router.get("/me", response_model=UserResponse)
 def read_users_me(
+    db: Session = Depends(get_db),
     current_user: Any = Depends(get_current_active_user),
 ) -> Any:
     """
     Get current authenticated user.
     
+    Updates last_login timestamp on every authenticated call.
     Dependency ensures:
     - User is authenticated
     - User is active
     - User is not soft-deleted
     """
+    db.execute(
+        update(User)
+        .where(User.user_id == current_user.user_id)
+        .values(last_login=func.now())
+    )
+    db.commit()
+    db.refresh(current_user)
     return current_user

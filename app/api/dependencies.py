@@ -153,8 +153,13 @@ def get_current_user_optional(
 def get_current_active_user(
     current_user: User = Depends(get_current_user),
 ) -> User:
-    """Ensure the current user is active (not soft deleted)."""
-    if not current_user.is_active:
+    """Ensure the current user is active (not deactivated or soft deleted)."""
+    if not cast(bool, current_user.is_active):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is deactivated."
+        )
+    if current_user.deleted_at is not None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User account is inactive"

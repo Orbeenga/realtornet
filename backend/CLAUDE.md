@@ -3,7 +3,10 @@
 ## Entry State
 
 FastAPI backend deployed on Railway. Sentry is instrumented.
-Phase F through Phase Q are closed. Phase R is closed as of June 23, 2026. Backend HEAD: `ee0806c`. Phase S is open.
+Phase F through Phase Q are closed. Phase R is closed as of June 23, 2026.
+Phase S open — Schema Hardening, User Intelligence & Communications Completion.
+Backend HEAD: `4eb6ba3` (fix: add savepoint retry for pg_proc contention).
+Migration head: `3a7b9c1d2e4f` (revoke EXECUTE on trigger functions + alter default privileges).
 
 Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this file for backend-specific state.
 
@@ -24,7 +27,7 @@ Use the root [CLAUDE.md](C:/Users/Apine/realtornet/CLAUDE.md) first, then this f
 - Auth source of truth: Supabase Auth
 - Production Supabase project ref: `fobvnshrqxduuhzgflvd`
 - Dev Supabase project ref: `umhtnqxdvffpifqbdtjs`
-- Production migration head: `d3e4f5a6b7c8` (inquiry_replies — Phase R)
+- Production migration head: `3a7b9c1d2e4f` (revoke EXECUTE on trigger functions + alter default privileges)
 - Current quality gate: pyright 0 errors; pytest passed; total coverage 95.16%
 - Public registration creates a Supabase Auth identity first, then mirrors that UUID into the local `users` row
 - Registration rollback deletes the Supabase Auth user if the local DB write fails
@@ -229,6 +232,21 @@ The following tables are append-only — never UPDATE or DELETE rows in producti
 - R.7: 12-journey integration validation — all parts passed
 - Migration head: `d3e4f5a6b7c8` (inquiry_replies)
 - Coverage: 95.16%
+
+## Phase S Open Items
+
+| ID | Item | Status |
+|---|---|---|
+| S.1 | Move prevent_listing_instructions_mutation, prevent_notifications_delete, prevent_inquiry_replies_mutation from public to internal schema. Drop public versions. Update trigger definitions. | Phase S — first task |
+
+## Schema Security
+
+- `internal` schema: trigger functions and utility functions. Not exposed via PostgREST.
+  Never place trigger functions in `public`.
+- `public` schema: application tables, views, API-callable functions only.
+- `extensions` schema: PostGIS and other extensions.
+- Hosted Supabase does not permit ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin.
+  Schema separation is the only durable privilege boundary for trigger functions.
 
 ## Locked Invariants
 
