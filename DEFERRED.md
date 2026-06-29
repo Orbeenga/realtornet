@@ -29,24 +29,49 @@
 | DEF-002 | Audit log retention policy. Trigger not reached: production counts at Phase R close — `agent_membership_audit`: 4 rows, `audit_creations`: 31 (~31 creations in 30d), `audit_deletions`: 11 (~11 deletions in 30d), 5 users. **Deferred** — revisit when total audit rows exceed 10K or user count exceeds 500. | R ✗ |
 | DEF-R-DUAL-MEMBERSHIP-001 | Dual-membership data cleanup: yahoo staging agent (`user_id=76`) has `users.agency_id=1` (Default Agency) + active membership in agency 9 (Apine). Listings created by this user auto-assign to Default Agency (no owner), blocking the N.9 agency-review transition. Root cause: R.5 unblock → `_first_active_membership_agency_for_user` returns Default Agency membership (the only remaining active after block/inactive of membership 9). No API path exists to update `users.agency_id` (UserUpdate schema omits it; Supabase service key blocked from `public` schema). **Operator action** — direct DB update via alembic migration or SQL console to set `users.agency_id=9 WHERE user_id=76`. | S |
 
-## Phase S (Deferred)
+## Phase S (Closed)
 
-| ID | Item | Phase |
+| ID | Item | Closure |
 |---|---|---|
-| DEF-R-MSG-001 | In-app messaging + auto Mark Responded on reply. Manual Mark Responded button is correct MVP behavior until this lands. | S |
-| DEF-R-DUAL-MEMBERSHIP-001 | Dual-membership data cleanup (see Phase R block above). No code changes needed — single operator DB query. | S |
-| DEF-S-SMOKE-001 | Staging smoke data cleanup. Assessed S.8: staging has 5 real users, 0 agencies, 0 memberships — no smoke data present. **Closed — no action needed.** Validation gate added: `app/utils/validation.py` with placeholder name/test email rejection on all creation endpoints + schemas. | S ✗ |
-| DEF-Q-UNBLOCK-002 | `_apply_membership_role_after_status_change` does not handle multi-membership edge case correctly: when a user has N>1 active memberships and one is blocked then unblocked (→ inactive), `_first_active_membership_agency_for_user` picks the first remaining active membership regardless of which one the user prefers. Consider adding a `preferred_agency_id` column to users table, or having `_apply_membership_role_after_status_change` prefer the membership being acted upon. | S |
+| DEF-S-SMOKE-001 | Staging smoke data cleanup. Assessed: staging has 5 real users, 0 agencies, 0 memberships — no smoke data present. **Closed — no action needed.** Production gate added: `app/utils/validation.py` with placeholder name/test email rejection on all creation endpoints + schemas. | S ✗ |
 
-## Phase R close count
+## Phase T (Deferred)
 
-- Backend HEAD: `ee0806c`
-- Frontend HEAD: `6750e1d`
-- Coverage: 95.16% (pytest — single-file runs excluded, no production code changes in Phase R)
+| ID | Item | Scope |
+|---|---|---|
+| DEF-S-ADMIN-MEM-001 | Admin membership view endpoint — `GET /api/v1/admin/users/{id}/memberships/` to let admin view any user's agency memberships without being logged in as that user. Frontend "View agency membership" link currently shows logged-in user's memberships. | Backend endpoint + frontend wiring |
+| DEF-Q-UNBLOCK-002 | `_apply_membership_role_after_status_change` multi-membership edge case. When N>1 active memberships exist and one is blocked then unblocked (→ inactive), `_first_active_membership_agency_for_user` picks the first remaining membership, not necessarily the preferred one. | Backend fix |
+| DEF-R-MSG-001 | In-app messaging — full conversational UI beyond basic reply threading. | Frontend |
+| DEF-R-DUAL-MEMBERSHIP-001 | Dual-membership data cleanup: yahoo staging agent (`user_id=76` on staging) has `users.agency_id=1` + active membership in agency 9. Single operator DB query. | Operator SQL |
+| T.2 — Conversational Reply Threading | WhatsApp-style quoted replies with `parent_reply_id` FK, quote preview chip, reply action on message bubbles, visual indentation, 10s polling. Full schema below. | Backend + Frontend |
+
+### T.2 — Conversational Reply Threading Design
+
+| Layer | Change |
+|---|---|
+| Backend migration | `parent_reply_id BIGINT NULL FK → inquiry_replies.reply_id` |
+| Backend schema | `InquiryReplyResponse` gains `parent_reply: InquiryReplyResponse \| null` (one level, no recursion) |
+| Backend CRUD | `joinedload parent` on `GET /inquiries/{id}/replies/` |
+| Backend endpoint | `POST /reply/` accepts optional `parent_reply_id` |
+| Frontend | Quote preview chip showing sender name + truncated body above the text input |
+| Frontend | Hover/tap → "Reply" action visible on any message bubble |
+| Frontend | Visual connector or indentation tying reply to parent |
+| Polling | Move from 30s → 10s for chat feel |
+
+True real-time (Supabase Realtime or SSE) is the correct long-term answer for any chat feature but remains deferred from the poll-based approach.
+
+## Phase S close count
+
+- Backend HEAD: `1b9d4e8`
+- Frontend HEAD: `e1d2f04`
+- Coverage: ≥95% (confirmed S.6 inquiry tests 89/89 passing, pyright 0)
 - pyright: 0 errors
-- tsc: 0, lint: 0
-- R.3: `latest_reply`/`reply_count` wiring — inquiry reply lifecycle confirmed working on staging (create inquiry → reply → verify `reply_count=1` and `latest_reply.body`)
-- R.4: agent personal stats endpoint + `/account/stats` page — renders 2 live listings, 1 inquiry received, 100% response rate (user-confirmed screenshot)
-- R.5: unblock endpoint + frontend CTA — staging validated via curl: block (status=blocked) → unblock (status=inactive) → reapply (404, user can submit new join request). Pre-existing bug fixes: block `status_value="active"`→`"blocked"`; `_first_active_membership_agency_for_user` `.scalar_one_or_none()`→`.scalars().first()`.
-- R.6: Operational closure documented — production audit counts verified, Nominatim rate limit confirmed clean, DEFERRED.md updated with evidence. Both PRs merged to main.
-- R.7: Integration validation — Part A (inquiry reply lifecycle) PASS, Part C (unblock regression) PASS. Part B (N.9 12-step lifecycle) partially tested: listing creation + submit-for-review + events audit trail + admin historical views all work. Full N.9 cycle gated by dual-membership data issue (DEF-R-DUAL-MEMBERSHIP-001).
+- tsc: 0 (pre-existing Phase R stats page errors only), lint 0, build 0
+- S.1: Internal schema migration — three trigger functions moved from `public` to `internal`
+- S.2: `last_login` + `is_active` fields, login tracking, deactivation endpoints
+- S.3: Admin user segmentation backend — role/activity_state filters, counts endpoint
+- S.4: Admin user segmentation frontend — six tabs, deactivate/reactivate UI
+- S.5: Agency owner Inactive agent tab — client-side filter on roster `last_login`
+- S.6: Multi-turn reply threading backend — seeker reply, `author_role`, edit endpoint
+- S.7: Multi-turn reply thread UI — ReplyThread component, full thread for both parties
+- S.8: Production gating — `app/utils/validation.py`, placeholder name/test email rejection on all creation schemas. DEF-S-SMOKE-001 closed.

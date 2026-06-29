@@ -29,9 +29,9 @@
 
 ## Current Phase
 
-**Phase S — Schema Hardening, User Intelligence & Communications Completion**
-Phase R closed: June 2026 — inquiry reply foundation, agent stats, agency unblock,
-operational closure, 12-journey validation passed.
+**Phase T — Admin Membership View & Conversational Reply Threading**
+Phase S closed: June 29 2026 — internal schema migration, user activity tracking,
+admin user segmentation, multi-turn inquiry reply threading, production gating.
 
 ## Locked environment decisions
 - Production Supabase project ref: `fobvnshrqxduuhzgflvd`
@@ -88,33 +88,23 @@ operational closure, 12-journey validation passed.
 - Browser-direct geocoding is prohibited; all Nominatim/OSM resolution must happen server-side through backend contracts.
 - Mobile total blocking time target was met in Phase I I.6 for the current revised threshold; deeper <100ms RSC work is Phase K unless fresh traces reprioritize it.
 - Schema topology (locked — Phase S): trigger functions, utility functions, and
-  scheduled job procedures must be created in the `internal` schema, never `public`.
+  scheduled job procedures must be placed in the `internal` schema, never `public`.
   `public` is the PostgREST API exposure layer. `internal` is invisible to the REST
   API by design. This applies to all future development on this project and is the
   canonical pattern for any Supabase or PostgREST deployment.
   See PREFLIGHT.md PostgREST Schema Topology Standard.
 
-## Phase K close
-- Stream A (settings/infrastructure): Settings class env variables confirmed correct; test telemetry isolated from production Sentry
-- Stream B (data gaps): property_count added to agency list with canonical query; agents directory endpoint `/api/v1/agents/` deployed; 12 property types migration created
-- Stream C (Sentry fixes): Image validation (imghdr) added before resize; stats overview error logging improved; test RuntimeError: surprise resolved by Sentry isolation
-- Stream D (canonical sources): Agency detail and stats endpoints verified using canonical queries
-- Backend pyright: 0 errors after all changes
-- Coverage: raised to 95.23%; `pytest.ini --cov-fail-under` set to 95.0; new test `tests/core/test_exceptions.py` covers exception handler paths
-- CI fix: `.github/workflows/ci.yml` now includes all required `POSTGRES_*` job-level env vars and a `pyright` step
-- E.1–E.3 queries corrected: `display_name`→`first_name`/`last_name`, `WHERE id =`→`WHERE user_id =` / `WHERE property_id =`
-- Production smoke passed 12/12; new agency journey passed end to end
-- `DEF-L-ADMIN-AUDIT-001`: Admin audit endpoint `GET /api/v1/admin/audit/` implemented and tested
-- `DEF-L-POSTGIS-001`: Closed by clean-slate migration on new production project
-
-## Phase R close summary
-- R.2: `inquiry_replies` table + endpoints + email task + 27 tests — confirmed working on staging
-- R.3: Reply composer (agent) + reply display (seeker) — confirmed working by operator browser check
-- R.4: `GET /analytics/agents/me/stats/` + `/account/stats` frontend page — confirmed rendering correctly
-- R.5: Unblock endpoint + frontend CTA — staging-validated via curl; pre-existing block status bug fixed (agencies.py:1216)
-- R.6: DEFERRED.md updated with production evidence (audit counts, location count, Nominatim status)
-- R.7: 12-journey validation script ran and all journeys passed; dual-membership data issue identified and documented (DEF-R-DUAL-MEMBERSHIP-001)
-- Backend HEAD: `ee0806c`, Frontend HEAD: `6750e1d`, Coverage: 95.16%
+## Phase S close summary
+- S.1: Internal schema migration — three trigger functions moved from `public` to `internal` (listing_instructions, notifications, inquiry_replies)
+- S.2: `last_login` + `is_active` fields, login tracking on `/users/me`, deactivate/reactivate endpoints, middleware `is_active` gate
+- S.3: Admin user segmentation backend — `GET /admin/users/` with role/activity_state filters, `GET /admin/users/counts/`
+- S.4: Admin user segmentation frontend — six tabs, user cards, deactivate/reactivate via AlertDialog
+- S.5: Agency owner Inactive agent tab — `last_login` in roster response, client-side 90-day filter on `/account/agency/members`
+- S.6: Multi-turn reply threading backend — seeker reply, `author_role`, PATCH edit endpoint, trigger softened to allow body/viewed_at/edited_at updates
+- S.7: Multi-turn reply thread frontend — `ReplyThread` component with bubble UI, full thread for both seeker and agent, reply composer for both
+- S.8: Production gating — `app/utils/validation.py` rejects placeholder names (Preview/Test/Smoke) and test emails on all creation schemas. DEF-S-SMOKE-001 closed (staging already clean)
+- Backend HEAD: `1b9d4e8`, Frontend HEAD: `e1d2f04`
+- Coverage: ≥95%, pyright 0, tsc 0 (pre-existing only), lint 0, build 0
 
 ## Phase S opening backlog
 See `DEFERRED.md` for current deferred items.
@@ -143,16 +133,23 @@ See `DEFERRED.md` for current deferred items.
 - Phase P is closed
 - Phase Q is closed — June 22 2026
 - Phase R is closed — June 23 2026
+- Phase S is closed — June 29 2026
 - Backend quality gates are now enforced at 95%: pyright 0 errors, pytest ≥ 95.0% coverage, CI passes with all required env vars
 - Production SQL verification (E.1–E.3) has been corrected and executed against new project fobvnshrqxduuhzgflvd
 - Keep production vs dev Supabase separation strict during all investigations
 - Treat agency card branding as blocked on backend enrichment, not frontend fetch fan-out
 - Use the backlog above as the opening queue for planning and execution
 - All 12 N.9 integration journeys confirmed passing end to end
-- Migration `f0a1b2c3d4e5` adds Phase M enum values and listing_events table (RLS enabled)
-- Migration `a1b2c3d4e5f6` adds Phase N listing_instructions table with `triggered_by_event_id` FK (RLS enabled)
-- Migration `b1c2d3e4f5a6` adds notifications table (RLS enabled) — Phase O
-- Migration `c2d3e4f5a6b7` adds cancelled to agency_join_requests_status_check — Phase O
-- Migration `d3e4f5a6b7c8` adds inquiry_replies table (RLS enabled) — Phase R (append-only)
+- **Schema topology (locked — Phase S)**: trigger functions, utility functions, and
+  scheduled job procedures must be placed in the `internal` schema, never `public`.
+  `public` is the PostgREST API exposure layer. `internal` is invisible to the REST
+  API by design. This applies to all future development on this project and is the
+  canonical pattern for any Supabase or PostgREST deployment.
+- **Production gating (Phase S.8)**: all creation schemas (`AgencyBase.name/owner_name`,
+  `AgencyApplicationCreate.name/owner_name`, `UserBase.first_name/last_name`) validate
+  against placeholder names (`Preview`, `Test`, `Smoke` word boundaries) via
+  `app/utils/validation.py`. Emails are validated on all creation endpoints, not just
+  registration. Test accounts can still be created in staging/development.
 - **ModerationStatus serialization**: `str(ModerationStatus.live)` produces `"ModerationStatus.live"` — always use `.value` for clean enum-to-string conversion. This applies to any `(str, Enum)` pattern used as dict keys in API responses.
 - **mark-responded endpoint is deprecated**: Do not remove it, but do not call it from frontend. Reply creation in `inquiry_replies` now handles response tracking.
+- **Reply thread polling is 30s**: Consider reducing to 10s for Phase T.2 conversational feel, or use Supabase Realtime/SSE as the correct long-term answer.
