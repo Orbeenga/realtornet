@@ -35,7 +35,7 @@
 |---|---|---|
 | DEF-R-MSG-001 | In-app messaging + auto Mark Responded on reply. Manual Mark Responded button is correct MVP behavior until this lands. | S |
 | DEF-R-DUAL-MEMBERSHIP-001 | Dual-membership data cleanup (see Phase R block above). No code changes needed — single operator DB query. | S |
-| DEF-S-SMOKE-001 | Dual-membership smoke data cleanup — temporary agency and membership created during R.7 validation walk may need soft-deletion from staging. Assess before Phase S integration tests. | S |
+| DEF-S-SMOKE-001 | Staging smoke data cleanup. Assessed S.8: staging has 5 real users, 0 agencies, 0 memberships — no smoke data present. **Closed — no action needed.** Validation gate added: `app/utils/validation.py` with placeholder name/test email rejection on all creation endpoints + schemas. | S ✗ |
 | DEF-Q-UNBLOCK-002 | `_apply_membership_role_after_status_change` does not handle multi-membership edge case correctly: when a user has N>1 active memberships and one is blocked then unblocked (→ inactive), `_first_active_membership_agency_for_user` picks the first remaining active membership regardless of which one the user prefers. Consider adding a `preferred_agency_id` column to users table, or having `_apply_membership_role_after_status_change` prefer the membership being acted upon. | S |
 
 ## Phase R close count

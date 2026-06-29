@@ -79,23 +79,11 @@ def _get_preapproved_agency_for_owner_email(db: Session, email: str) -> Agency |
     ).scalars().first()
 
 
-BLOCKED_EMAIL_DOMAINS: set[str] = {
-    # Prevent accidental smoke/staging runs from registering in production
-    "smoke.realtornetapp.com",
-    # Prevent Resend test-sink addresses from registering
-    "resend.dev",
-}
-
-BLOCKED_EMAIL_PATTERNS: list[str] = [
-    r'^preview[\.\-]',
-    r'\+test',
-    r'@example\.com$',
-    r'^smoke[\.\-]',
-]
-
-
-def is_test_email(email: str) -> bool:
-    return any(re.search(p, email, re.IGNORECASE) for p in BLOCKED_EMAIL_PATTERNS)
+from app.utils.validation import (
+    BLOCKED_EMAIL_DOMAINS,
+    is_test_email,
+    is_placeholder_name,
+)
 
 
 def _validate_registration_email_domain(email: str) -> None:

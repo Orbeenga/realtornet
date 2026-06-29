@@ -11,6 +11,8 @@ from datetime import datetime
 from enum import Enum
 from uuid import UUID
 
+from app.utils.validation import validate_not_placeholder
+
 
 # Enum matching DB exactly
 class UserRole(str, Enum):
@@ -44,7 +46,7 @@ class UserBase(BaseModel):
         """Ensure required fields are not empty"""
         if not v or not v.strip():
             raise ValueError('field cannot be empty')
-        return v.strip()
+        return validate_not_placeholder(v.strip(), "name") or v.strip()
 
     @field_validator('phone_number')
     @classmethod
