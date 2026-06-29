@@ -227,6 +227,7 @@ class AgencyAgentRosterResponse(BaseModel):
     license_number: Optional[str] = None
     bio: Optional[str] = None
     company_name: Optional[str] = None
+    last_login: Optional[datetime] = None
     listing_count: int = 0
     pending_review_request_id: Optional[int] = None
     pending_review_reason: Optional[str] = None

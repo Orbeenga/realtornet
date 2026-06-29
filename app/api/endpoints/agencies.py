@@ -172,6 +172,7 @@ def _membership_payload(
         "license_number": getattr(profile, "license_number", None),
         "bio": getattr(profile, "bio", None),
         "company_name": getattr(profile, "company_name", None),
+        "last_login": user.last_login,
         "listing_count": listing_count,
         "pending_review_request_id": None,
         "pending_review_reason": None,
