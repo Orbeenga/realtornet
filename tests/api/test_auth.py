@@ -201,7 +201,7 @@ class TestAuth:
         user_data = {
             "email": "not-an-email",
             "password": "strongpassword123",
-            "first_name": "Test",
+            "first_name": "New",
             "last_name": "User"
         }
         response = client.post(

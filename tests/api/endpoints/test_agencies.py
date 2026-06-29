@@ -848,7 +848,7 @@ class TestAgencyJoinRequests:
 class TestCreateAgency:
 
     def test_unauthenticated_returns_401(self, client: TestClient):
-        response = client.post("/api/v1/agencies/", json={"name": "Test Agency"})
+        response = client.post("/api/v1/agencies/", json={"name": "New Agency"})
         assert response.status_code == 401
 
     def test_non_admin_returns_403(
@@ -856,7 +856,7 @@ class TestCreateAgency:
     ):
         response = client.post(
             "/api/v1/agencies/",
-            json={"name": "Test Agency"},
+            json={"name": "New Agency"},
             headers=normal_user_token_headers
         )
         assert response.status_code == 403
@@ -866,7 +866,7 @@ class TestCreateAgency:
     ):
         response = client.post(
             "/api/v1/agencies/",
-            json={"name": "Test Agency"},
+            json={"name": "New Agency"},
             headers=agent_token_headers
         )
         assert response.status_code == 403
@@ -903,12 +903,12 @@ class TestCreateAgency:
     ):
         response = client.post(
             "/api/v1/agencies/",
-            json={"name": "Fresh Test Agency XYZ"},
+            json={"name": "Fresh Agency XYZ"},
             headers=admin_token_headers
         )
         assert response.status_code == 201
         data = response.json()
-        assert data["name"] == "Fresh Test Agency XYZ"
+        assert data["name"] == "Fresh Agency XYZ"
         assert data["is_verified"] is False
 
 
