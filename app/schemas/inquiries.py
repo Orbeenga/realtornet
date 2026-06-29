@@ -77,11 +77,23 @@ class InquiryReplyCreate(BaseModel):
         return v.strip()
 
 
+class InquiryReplyEdit(BaseModel):
+    body: str
+
+    @field_validator('body')
+    @classmethod
+    def validate_body(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError('body cannot be empty')
+        return v.strip()
+
+
 class InquiryReplyResponse(BaseModel):
     reply_id: int
     inquiry_id: int
     author_id: int
     author_display_name: str = ""
+    author_role: str = "agent"
     body: str
     created_at: datetime
     viewed_at: Optional[datetime] = None

@@ -3,7 +3,7 @@
 Inquiries management endpoints - Canonical compliant
 Handles property inquiries with user-owner relationships, soft delete, and audit tracking
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, List, Optional, cast as typing_cast
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -14,6 +14,7 @@ from app.crud.inquiry_replies import inquiry_reply as inquiry_reply_crud
 from app.crud.properties import property as property_crud
 from app.crud.users import user as user_crud
 from app.crud.notifications import create_notification_fail_open
+from app.models.inquiry_replies import InquiryReply
 from app.models.users import User
 from app.tasks.email_tasks import dispatch_email_task, send_inquiry_received_email, send_inquiry_reply_email
 
@@ -32,6 +33,7 @@ from app.schemas.inquiries import (
     InquiryCreate,
     InquiryExtendedResponse,
     InquiryReplyCreate,
+    InquiryReplyEdit,
     InquiryReplyResponse,
     InquiryResponse,
     InquiryUpdate,
@@ -39,6 +41,19 @@ from app.schemas.inquiries import (
 from app.schemas.properties import PropertyResponse
 
 router = APIRouter()
+
+
+def _latest_reply_with_role(inquiry: Any) -> Optional[dict[str, Any]]:
+    """Build latest_reply dict including computed author_role."""
+    latest = getattr(inquiry, "latest_reply", None)
+    if latest is None:
+        return None
+    inquiry_user_id: int = typing_cast(int, inquiry.user_id) if inquiry.user_id is not None else 0
+    reply_author_id: int = typing_cast(int, latest.author_id) if latest.author_id is not None else 0
+    role = "seeker" if reply_author_id == inquiry_user_id else "agent"
+    data = InquiryReplyResponse.model_validate(latest).model_dump(mode="json")
+    data["author_role"] = role
+    return data
 
 
 def _build_inquiry_extended_response(inquiry: Any, *, can_respond: bool = False) -> dict[str, Any]:
@@ -73,7 +88,7 @@ def _build_inquiry_extended_response(inquiry: Any, *, can_respond: bool = False)
         "deleted_by": inquiry.deleted_by,
         "can_respond": can_respond,
         "reply_count": getattr(inquiry, "reply_count", 0),
-        "latest_reply": InquiryReplyResponse.model_validate(inquiry.latest_reply).model_dump(mode="json") if getattr(inquiry, "latest_reply", None) else None,
+        "latest_reply": _latest_reply_with_role(inquiry),
         "user": user_payload,
         "property": property_payload,
     }
@@ -514,8 +529,10 @@ def reply_to_inquiry(
 
     current_user_id: int = typing_cast(int, current_user.user_id)
     current_user_model: User = typing_cast(User, current_user)
+    inquiry_user_id: int = typing_cast(int, inquiry.user_id)
     property_owner_id: int = typing_cast(int, property.user_id)
     is_property_owner = property_owner_id == current_user_id
+    is_seeker = inquiry_user_id == current_user_id
 
     is_agency_member = False
     if property.agency_id is not None:
@@ -531,7 +548,7 @@ def reply_to_inquiry(
         )
         is_agency_member = db.execute(stmt).scalar_one_or_none() is not None
 
-    if not is_property_owner and not is_agency_member and not user_crud.is_admin(current_user_model):
+    if not is_seeker and not is_property_owner and not is_agency_member and not user_crud.is_admin(current_user_model):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to reply to this inquiry"
@@ -548,40 +565,53 @@ def reply_to_inquiry(
     if is_first_reply:
         inquiry_crud.mark_as_responded(db=db, inquiry_id=inquiry_id)
 
-    seeker_id: int = typing_cast(int, inquiry.user_id)
-    seeker_user = user_crud.get(db=db, user_id=seeker_id)
+    is_reply_from_seeker = typing_cast(int, reply.author_id) == inquiry_user_id
+
     property_title = str(getattr(property, "title", "") or "") or "a property"
-    agent_name = f"{current_user.first_name} {current_user.last_name}".strip() or "An agent"
+    author_name = f"{current_user.first_name} {current_user.last_name}".strip() or "A user"
+
+    if is_reply_from_seeker:
+        notify_user_id = property_owner_id
+        notify_body = f"{author_name} replied on {property_title}"
+    else:
+        seeker_id: int = typing_cast(int, inquiry.user_id)
+        notify_user_id = seeker_id
+        notify_body = f"{author_name} replied to your inquiry on {property_title}"
 
     create_notification_fail_open(
         db,
-        user_id=seeker_id,
+        user_id=notify_user_id,
         event_type="inquiry_replied",
         listing_id=typing_cast(int, property.property_id),
-        body_text=f"{agent_name} replied to your inquiry on {property_title}",
+        body_text=notify_body,
     )
 
-    if seeker_user is not None:
-        seeker_email = str(getattr(seeker_user, "email", "") or "").strip()
-        if seeker_email:
-            dispatch_email_task(
-                send_inquiry_reply_email,
-                seeker_email,
-                property_title,
-                agent_name,
-                reply.body,
-                typing_cast(int, property.property_id),
-            )
+    if not is_reply_from_seeker:
+        seeker_id = typing_cast(int, inquiry_user_id)
+        seeker_user = user_crud.get(db=db, user_id=seeker_id)
+        if seeker_user is not None:
+            seeker_email = str(getattr(seeker_user, "email", "") or "").strip()
+            if seeker_email:
+                dispatch_email_task(
+                    send_inquiry_reply_email,
+                    seeker_email,
+                    property_title,
+                    author_name,
+                    reply.body,
+                    typing_cast(int, property.property_id),
+                )
 
     db.flush()
     db.refresh(reply)
 
-    author_display_name = agent_name
+    author_role = "seeker" if is_reply_from_seeker else "agent"
+    author_display_name = author_name
     return InquiryReplyResponse(
         reply_id=typing_cast(int, reply.reply_id),
         inquiry_id=typing_cast(int, reply.inquiry_id),
         author_id=typing_cast(int, reply.author_id),
         author_display_name=author_display_name,
+        author_role=author_role,
         body=typing_cast(str, reply.body),
         created_at=typing_cast(datetime, reply.created_at),
         viewed_at=typing_cast(datetime | None, reply.viewed_at),
@@ -654,19 +684,29 @@ def read_inquiry_replies(
         limit=pagination["limit"],
     )
 
+    now = datetime.now(timezone.utc)
     result = []
     for reply in replies:
+        reply_author_id = typing_cast(int, reply.author_id)
+        is_reply_from_seeker = reply_author_id == inquiry_user_id
+        author_role = "seeker" if is_reply_from_seeker else "agent"
         author = getattr(reply, "author", None)
         display_name = ""
         if author is not None:
             first = str(getattr(author, "first_name", "") or "").strip()
             last = str(getattr(author, "last_name", "") or "").strip()
             display_name = f"{first} {last}".strip()
+
+        if current_user_id != reply_author_id and reply.viewed_at is None:
+            typing_cast(Any, reply).viewed_at = now
+            db.flush()
+
         result.append(InquiryReplyResponse(
             reply_id=typing_cast(int, reply.reply_id),
             inquiry_id=typing_cast(int, reply.inquiry_id),
-            author_id=typing_cast(int, reply.author_id),
+            author_id=reply_author_id,
             author_display_name=display_name,
+            author_role=author_role,
             body=typing_cast(str, reply.body),
             created_at=typing_cast(datetime, reply.created_at),
             viewed_at=typing_cast(datetime | None, reply.viewed_at),
@@ -674,6 +714,68 @@ def read_inquiry_replies(
         ))
 
     return result
+
+
+@router.patch("/{inquiry_id}/replies/{reply_id}/", response_model=InquiryReplyResponse)
+def edit_inquiry_reply(
+    *,
+    db: Session = Depends(get_db),
+    inquiry_id: int,
+    reply_id: int,
+    reply_in: InquiryReplyEdit,
+    current_user: UserResponse = Depends(get_current_active_user),
+) -> Any:
+    """
+    Edit a reply.
+    
+    - Only the reply author can edit
+    - Only allowed while viewed_at is NULL (recipient has not seen it yet)
+    - Updates body and sets edited_at timestamp
+    """
+    reply = db.get(InquiryReply, reply_id)
+    if not reply:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Reply not found"
+        )
+    if typing_cast(int, reply.inquiry_id) != inquiry_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Reply not found for this inquiry"
+        )
+    current_user_id: int = typing_cast(int, current_user.user_id)
+    if typing_cast(int, reply.author_id) != current_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the reply author can edit"
+        )
+    if reply.viewed_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reply has already been viewed and can no longer be edited"
+        )
+
+    typing_cast(Any, reply).body = reply_in.body
+    typing_cast(Any, reply).edited_at = datetime.now(timezone.utc)
+    db.flush()
+    db.refresh(reply)
+
+    inquiry = inquiry_crud.get(db=db, inquiry_id=inquiry_id)
+    inquiry_user_id: int = typing_cast(int, inquiry.user_id) if inquiry else current_user_id
+    is_reply_from_seeker = typing_cast(int, reply.author_id) == inquiry_user_id
+    author_role = "seeker" if is_reply_from_seeker else "agent"
+
+    return InquiryReplyResponse(
+        reply_id=typing_cast(int, reply.reply_id),
+        inquiry_id=typing_cast(int, reply.inquiry_id),
+        author_id=typing_cast(int, reply.author_id),
+        author_display_name="",
+        author_role=author_role,
+        body=typing_cast(str, reply.body),
+        created_at=typing_cast(datetime, reply.created_at),
+        viewed_at=typing_cast(datetime | None, reply.viewed_at),
+        edited_at=typing_cast(datetime | None, reply.edited_at),
+    )
 
 
 @router.get("/count/{property_id}")
