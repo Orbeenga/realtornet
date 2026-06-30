@@ -547,13 +547,19 @@ def second_property_image(db, unverified_property_owned_by_agent):
 @pytest.fixture
 def sample_amenity(db):
     from app.models.amenities import Amenity
-    return db.query(Amenity).filter_by(name="Swimming Pool").first()
+    amenity = Amenity(name="Swimming Pool", category="Recreation")
+    db.add(amenity)
+    db.flush()
+    return amenity
 
 
 @pytest.fixture
 def second_amenity(db):
     from app.models.amenities import Amenity
-    return db.query(Amenity).filter_by(name="Gym").first()
+    amenity = Amenity(name="Gym", category="Recreation")
+    db.add(amenity)
+    db.flush()
+    return amenity
 
 
 @pytest.fixture
