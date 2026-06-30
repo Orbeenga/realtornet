@@ -87,6 +87,10 @@ Applies to the full RealtorNet stack: FastAPI · SQLAlchemy · PostGIS · Supaba
 
 8. **SQLAlchemy 2.x-native**
    No deprecated APIs. Consistent sync or async — never mixed arbitrarily in the same request path.
+   **Same-transaction timestamp collision on ORDER BY**
+   Problem: `server_default=func.now()` resolves once per PostgreSQL transaction, not per-statement. Rows created in rapid succession within the same transaction (common in tests using the "Double-Tap" pattern, also possible in production under connection pooling) can receive identical `created_at` values, making `ORDER BY created_at` non-deterministic for ties.
+   Solution: Always add the primary key as a secondary sort key: `.order_by(Model.created_at.asc(), Model.pk_id.asc())`.
+   Standard: Any `ORDER BY <timestamp>` query must include a PK tiebreaker if row creation order matters.
 
 9. **DB is SSOT**
    Database is the single source of truth. ORM conforms to DB. API types conform to ORM. Frontend types are generated from OpenAPI — never manually written for API response shapes.
@@ -613,6 +617,7 @@ pnpm gen:types   # regenerate src/types/api.generated.ts from live OpenAPI
   architecture — they may have been provisioned at different points in Supabase's
   platform evolution. Newer projects have `supabase_admin` as a co-grantor;
   older projects do not. Always verify ACLs on both environments independently.
+- Sorting by created_at alone without a PK tiebreaker — same-transaction writes can share identical       timestamps.
 
 ---
 
