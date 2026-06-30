@@ -1,155 +1,204 @@
 # RealtorNet Repository Guidance
 
 ## Core architecture
-- Database-first architecture: the database is the source of truth
-- FastAPI backend
-- SQLAlchemy 2.x ORM
-- Pydantic v2
-- Alembic migrations
-- Supabase/Postgres
-- RLS aligned to Supabase Auth via users.supabase_id bridge patterns
+
+- Database-first architecture: the database is the single source of truth
+- FastAPI backend, SQLAlchemy 2.x ORM, Pydantic v2, Alembic migrations
+- Supabase/Postgres with RLS aligned to Supabase Auth via `users.supabase_id` bridge
+- Next.js frontend (App Router, TypeScript strict, TanStack Query v5)
 
 ## Non-negotiable rules
+
 - Do not invent fields not present in the DB schema
-- Preserve PK/FK type parity exactly
-- Use timezone-aware datetime handling for timestamptz fields
+- Preserve PK/FK type parity exactly (BIGINT FK → BIGINT PK; UUID FK → UUID PK)
+- Use timezone-aware datetime handling for all `timestamptz` fields
 - Respect existing enum values exactly as stored in Postgres
 - Avoid broad rewrites when a narrow fix is sufficient
-- No create_all in production code
+- No `create_all` in production code — Alembic is the only schema management tool
 - Prefer migration-safe, dependency-ordered changes
 - Flag any ORM/schema/router drift from DB truth
-- **Never commit diagnostic scripts, one-off queries, or ad-hoc database checks to the repo.** Run them locally, read the output, delete the file. If a script is needed for reproducibility, it goes in `scripts/` with no hardcoded credentials and a corresponding `.env.example` entry.
-- **Never hardcode credentials in committed files.** Any file containing a connection string, API key, or password must be caught by detect-secrets before commit.
+- **Never commit diagnostic scripts, one-off queries, or ad-hoc database checks.**
+  Run locally, read output, delete the file. Reproducible scripts go in `scripts/`
+  with no hardcoded credentials and a corresponding `.env.example` entry.
+- **Never hardcode credentials in committed files.** `detect-secrets` pre-commit
+  hook is active — any commit with a credential pattern is blocked.
 
-## Deployment Workflow
-- Work flows: feature -> staging -> validate -> merge to main -> production.
-- Correct branch flow is staging first, manual validation second, then a deliberate merge or promotion to main for production.
-- If staging and main both receive pushes, verify this is the intentional two-step promotion flow. Vercel may pick up each branch independently, but production must never be an accidental side effect of unvalidated staging work.
-- **Commit order is strictly: backend first, then frontend.** Backend commit → push → wait for Railway deploy (green `/healthz`) → `pnpm gen:types` against production OpenAPI → if types changed, commit gen:types result → push → finally commit frontend logic changes. Never commit backend and frontend in the same batch. gen:types must resolve against a live, deployed backend, not a pending one.
+## Deployment workflow
 
-## Current Phase
+- Work flows: `feature → staging → validate → merge to main → production`
+- Staging first, manual validation second, deliberate merge/promotion to main
+- **Commit order is strictly: backend first, then frontend.**
+  Backend commit → push → wait for Railway deploy (green `/healthz`) →
+  `pnpm gen:types` against production OpenAPI → if types changed, commit result →
+  push → finally commit frontend logic changes.
+  Never batch backend and frontend in the same commit.
+  `gen:types` must resolve against a live deployed backend, not a pending one.
+
+## Current phase
 
 **Phase T — Admin Membership View & Conversational Reply Threading**
-Phase S closed: June 29 2026 — internal schema migration, user activity tracking,
-admin user segmentation, multi-turn inquiry reply threading, production gating.
+Phase S closed: June 30 2026 — internal schema migration, user activity tracking,
+admin user segmentation, multi-turn inquiry reply threading, production data gating,
+Docker PostGIS local test infrastructure restored, full suite at 95.35% coverage.
 
 ## Locked environment decisions
-- Production Supabase project ref: `fobvnshrqxduuhzgflvd`
-- Dev Supabase project ref: `umhtnqxdvffpifqbdtjs`
-- Local backend env had been pointed at dev during investigation; verify target project before any destructive or verification action
-- Never mix production and dev Supabase projects during cleanup, verification, migrations, or auth debugging
-- Railway backend service `imaginative-peace` must run with `ENV=production`
-- Railway backend service `imaginative-peace` must include `RESEND_API_KEY` for transactional email delivery
+
+| Environment | Supabase ref | Notes |
+|---|---|---|
+| Production | `fobvnshrqxduuhzgflvd` | Railway service `imaginative-peace`, `ENV=production` |
+| Staging | `avkhpachzsbgmbnkfnhu` | Pooler-only from local Windows (see note below) |
+| Dev | `umhtnqxdvffpifqbdtjs` | Never use for any real work |
+
+- Never mix production and dev Supabase projects during cleanup, verification,
+  migrations, or auth debugging
+- Railway backend service `imaginative-peace` must include `RESEND_API_KEY`
+- **Staging connectivity (locked June 30 2026):** The direct-connect endpoint
+  `db.avkhpachzsbgmbnkfnhu.supabase.co:5432` is IPv6-only and unreachable from
+  the local Windows network. Use the pooler for all Alembic operations against
+  staging: `aws-0-eu-west-1.pooler.supabase.com:6543`. Tests run against local
+  Docker PostGIS only — never against remote Supabase directly.
 
 ### Staging environment
-- Staging Supabase project ref: `avkhpachzsbgmbnkfnhu` (promoted from retiring project)
-- Staging Railway service should target the staging Supabase project; all smoke and integration runs must hit staging, not production
-- Smoke runner safeguards:
-  - Script refuses to run when `ENV=production`
-  - Default `SMOKE_BASE_URL` points to a safe non-production URL; set this explicitly to the staging Railway URL
-  - Auto-teardown soft-deletes all smoke-created data (users, profiles, memberships, agencies, properties, inquiries)
-- Operator action: run `alembic upgrade head` against `avkhpachzsbgmbnkfnhu`, confirm all migrations apply, then publish the staging Railway URL to agents for all test runs
-- Staging accounts mirror production accounts (same emails and roles: admin apineorbeenga@gmail.com, agency_owner apineorbeenga@outlook.com, agent apineorbeenga@yahoo.com, seeker apineterngu19@gmail.com). The staging Supabase project may not have the exact same user_id values; identify staging users by email when running walkthroughs.
 
-## Production accounts (new project fobvnshrqxduuhzgflvd)
+- Staging Railway service targets `avkhpachzsbgmbnkfnhu`; all smoke and integration
+  runs must hit staging, not production
+- Smoke runner safeguards: refuses to run when `ENV=production`; auto-teardown
+  soft-deletes all smoke-created data
+- Staging accounts mirror production accounts (identify by email, not user_id)
 
-| user_id | first_name | last_name | email | is_verified |
-|---|---|---|---|---|
-| 1 | Orbeenga | Apine | apineorbeenga@gmail.com | true |
-| 2 | Orbeenga | Apine | apineorbeenga@outlook.com | true |
-| 3 | Orbeenga | Apine | apineorbeenga@yahoo.com | true |
-| 4 | Terngu | Apine | apineterngu19@gmail.com | true |
+## Local test infrastructure (restored June 30 2026)
 
-### Production agency
+- **Target:** Docker PostGIS container `local-postgis`, database `testdb`
+- **Connection:** `postgresql+psycopg://postgres:postgres@localhost:5432/testdb`
+- **How it's selected:** `TEST_DATABASE_URL` env var; defaults to localhost if unset
+- **Full suite runtime:** minutes locally vs 2-3 hours against remote Supabase
+- **Coverage baseline:** 95.35%, zero pytest errors, zero pyright errors (HEAD `8330285`)
 
-| name | is_verified |
-|---|---|
-| Apine Real Estate | true |
+### Bootstrapping a fresh Docker PostGIS instance
+
+```powershell
+docker run --name local-postgis -e POSTGRES_PASSWORD=postgres -p 5432:5432 -d postgis/postgis
+
+docker exec local-postgis psql -U postgres -c "CREATE DATABASE testdb;"
+docker exec local-postgis psql -U postgres -d testdb -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+docker exec local-postgis psql -U postgres -d testdb -c "CREATE SCHEMA IF NOT EXISTS internal;"
+docker exec local-postgis psql -U postgres -d testdb -c "CREATE SCHEMA IF NOT EXISTS extensions;"
+
+# Supabase-reserved roles — vanilla Postgres lacks these, migrations require them
+docker exec local-postgis psql -U postgres -d testdb -c "
+CREATE ROLE anon NOLOGIN;
+CREATE ROLE authenticated NOLOGIN;
+CREATE ROLE service_role NOLOGIN;"
+
+$env:DATABASE_URL = "postgresql+psycopg://postgres:postgres@localhost:5432/testdb"
+.venv\Scripts\python -m alembic upgrade head
+```
+
+### Running the full test suite
+
+```powershell
+$env:TEST_DATABASE_URL = "postgresql+psycopg://postgres:postgres@localhost:5432/testdb"
+$env:PYTHONPATH = "."
+.venv\Scripts\python -m pytest --cov=app --cov-report=term-missing --cov-fail-under=95.0 -q
+```
+
+## Production accounts
+
+| user_id | email | role | agency |
+|---|---|---|---|
+| 1 | apineorbeenga@gmail.com | admin | NULL |
+| 2 | apineorbeenga@outlook.com | agency_owner | Apine Real Estate (id=1) |
+| 3 | apineorbeenga@yahoo.com | agent | Apine Real Estate (id=1) |
+| 4 | apineterngu19@gmail.com | seeker | NULL |
 
 ## Locked product decisions
-- Agency-first public hierarchy is locked: Agencies -> Listings -> Agents
-- `agency_owner` role is active in the user role enum; all four roles are active: seeker, agent, agency_owner, admin
-- Multi-agency membership is represented by the `agency_agent_memberships` table; `users.agency_id` remains the legacy primary agency pointer
-- Property moderation status enum is active: pending_review / verified / rejected / revoked
-- Property moderation status enum updated (Phase M/N): draft / agency_review / agency_rejected / admin_review / admin_rejected / live / revoked
-- Seeker join-request flow is live
-- Agent invitation flow is live
-- Membership-role resolution is backend-authoritative: membership state changes append to `agent_membership_audit`, last active membership revocation/leave demotes agents to `seeker`, and stale JWTs are rejected by `role_version`
-- Agency application and admin approval flow is live
-- Featured properties endpoint is live
-- Agency branding is pre-launch scope on property detail only for now
-- Property-card agency branding stays deferred until the property list response includes agency branding fields; do not introduce N+1 card fetches
-- Agency-wide inquiry rollup is live; do not aggregate per-property inquiry calls in the frontend
-- Public signup remains seeker-only; admin and agent are backend-authoritative roles
-- Resend is the live transactional email provider, but `onboarding@resend.dev` is test-only for real-recipient delivery restrictions. Real user email delivery is blocked until a RealtorNet-controlled sender domain is verified and Railway `MAIL_FROM` is updated.
-- Public `/agents` directory is now live (new Phase K endpoint)
-- `/account/reviews` is live
-- Public frontend hooks should use the `authMode: omit` pattern for public API surfaces
-- Browser-direct geocoding is prohibited; all Nominatim/OSM resolution must happen server-side through backend contracts.
-- Mobile total blocking time target was met in Phase I I.6 for the current revised threshold; deeper <100ms RSC work is Phase K unless fresh traces reprioritize it.
-- Schema topology (locked — Phase S): trigger functions, utility functions, and
-  scheduled job procedures must be placed in the `internal` schema, never `public`.
-  `public` is the PostgREST API exposure layer. `internal` is invisible to the REST
-  API by design. This applies to all future development on this project and is the
-  canonical pattern for any Supabase or PostgREST deployment.
-  See PREFLIGHT.md PostgREST Schema Topology Standard.
+
+- Agency-first public hierarchy: Agencies → Listings → Agents
+- Four active roles: `seeker`, `agent`, `agency_owner`, `admin`
+- `users.agency_id` is authoritative only for `agency_owner` (ownership context);
+  `agency_agent_memberships` is the sole source of truth for agent affiliation
+- Admin's only user-level power is `is_active` (deactivate/reactivate);
+  all role transitions are membership-driven and owned by agencies —
+  promote/demote buttons are permanently removed from the admin UI
+- Property moderation enum (Phase M/N): `draft / agency_review / agency_rejected /
+  admin_review / admin_rejected / live / revoked`
+- Append-only tables (never UPDATE or DELETE):
+  `agent_membership_audit`, `listing_events`, `listing_instructions`,
+  `notifications`, `inquiry_replies`
+- **Schema topology (locked Phase S):** trigger functions, utility functions, and
+  scheduled job procedures go in the `internal` schema, never `public`.
+  `public` is the PostgREST API exposure layer. `internal` is invisible to the
+  REST API by design. See PREFLIGHT.md PostgREST Schema Topology Standard.
+- **Production gating (Phase S.8):** `app/utils/validation.py` rejects placeholder
+  names (`Preview`, `Test`, `Smoke` at word boundaries) and test emails on all
+  creation schemas. Gate is skipped when `ENV != "production"`.
+- **ModerationStatus serialization:** always use `.value`, never `str()`.
+  `str(ModerationStatus.live)` produces `"ModerationStatus.live"` which breaks
+  dict keys in API responses.
+- **Notifications trigger:** `prevent_notifications_delete` fires `BEFORE DELETE`
+  only (not UPDATE). Migration `7d8c295c7ef6` corrected the S.1 regression that
+  had it blocking UPDATE, which was silently breaking `PATCH /notifications/read`.
+- **`mark-responded` endpoint:** deprecated. Do not call from frontend. Reply
+  creation in `inquiry_replies` handles status transition automatically.
+- **Reply thread polling:** currently 30s. Phase T.2 targets 10s or Supabase
+  Realtime/SSE for conversational feel.
+- All other locked decisions from Phases G–R remain in force. See DEFERRED.md.
 
 ## Phase S close summary
-- S.1: Internal schema migration — three trigger functions moved from `public` to `internal` (listing_instructions, notifications, inquiry_replies)
-- S.2: `last_login` + `is_active` fields, login tracking on `/users/me`, deactivate/reactivate endpoints, middleware `is_active` gate
-- S.3: Admin user segmentation backend — `GET /admin/users/` with role/activity_state filters, `GET /admin/users/counts/`
-- S.4: Admin user segmentation frontend — six tabs, user cards, deactivate/reactivate via AlertDialog
-- S.5: Agency owner Inactive agent tab — `last_login` in roster response, client-side 90-day filter on `/account/agency/members`
-- S.6: Multi-turn reply threading backend — seeker reply, `author_role`, PATCH edit endpoint, trigger softened to allow body/viewed_at/edited_at updates
-- S.7: Multi-turn reply thread frontend — `ReplyThread` component with bubble UI, full thread for both seeker and agent, reply composer for both
-- S.8: Production gating — `app/utils/validation.py` rejects placeholder names (Preview/Test/Smoke) and test emails on all creation schemas. DEF-S-SMOKE-001 closed (staging already clean)
-- Backend HEAD: `1b9d4e8`, Frontend HEAD: `e1d2f04`
-- Coverage: ≥95%, pyright 0, tsc 0 (pre-existing only), lint 0, build 0
 
-## Phase S opening backlog
-See `DEFERRED.md` for current deferred items.
-- `DEF-J-EMAIL-DOMAIN-001` — real-user email delivery is blocked until a verified sender domain is configured in Resend and Railway `MAIL_FROM` is updated (operator action).
-- `DEF-R-MSG-001` — In-app messaging + auto Mark Responded on reply. Manual Mark Responded button is correct MVP behavior until this lands.
-- `DEF-R-DUAL-MEMBERSHIP-001` — Dual-membership data cleanup: yahoo staging agent has users.agency_id=1 + active membership in agency 9. Operator action only.
-- `DEF-S-SMOKE-001` — Dual-membership smoke data cleanup from R.7 validation walk. Soft-delete from staging before Phase S integration tests.
-- `DEF-Q-UNBLOCK-002` — Multi-membership edge case in `_apply_membership_role_after_status_change`.
+| Task | Delivery |
+|---|---|
+| S.1 | Trigger functions moved from `public` → `internal` schema |
+| S.2 | `last_login` + `is_active`, login tracking on `/users/me`, deactivate/reactivate endpoints, middleware gate |
+| S.3 | Admin user segmentation backend — role/activity_state filters, counts endpoint |
+| S.4 | Admin Users page — six tabs, deactivate/reactivate, promote/demote permanently removed |
+| S.5 | Agency owner Inactive agent tab — `last_login` in roster, 90-day client-side filter |
+| S.6 | Multi-turn reply threading backend — seeker reply, `author_role`, PATCH edit, trigger softened |
+| S.7 | Reply thread UI — `ReplyThread` component, bubble styling, composer for both parties |
+| S.8 | Production gating — placeholder name/email validation on all creation schemas |
+| Infra | Docker PostGIS local test infrastructure restored; full suite in minutes, 95.35% coverage |
 
-## Pre-flight enforcement (derived from Phase R R.2 corrective)
-- **Before any backend code is written**, the agent MUST output a pre-flight confirmation block listing at least 5 locked rules from PREFLIGHT.md. This forces explicit reading, not passive attachment.
-- **No bare `id` in protected_fields**: All PK column names in `protected_fields` sets must be domain-qualified (`inquiry_id`, `reply_id`, `property_id`). Bare `id` violates PREFLIGHT.md Canonical Rule 2 and is a latent bug.
-- **PREFLIGHT.md is law, not reference**: The agent must read PREFLIGHT.md independently before writing code. Attaching it is not sufficient — the pre-flight declaration above proves it was read.
+Backend HEAD at Phase S close: `8330285`
+Frontend HEAD at Phase S close: `e1d2f04`
+Migration head: `7d8c295c7ef6`
+
+## Phase T opening backlog
+
+| ID | Item | Priority |
+|---|---|---|
+| DEF-S-ADMIN-MEM-001 | Admin "View agency membership" CTA shows logged-in user's memberships, not target agent's. Requires `GET /api/v1/admin/users/{id}/memberships/` endpoint | High |
+| T.2 | Conversational reply threading — `parent_reply_id FK`, quoted reply preview, reply action on bubbles, 10s polling | High |
+| DEF-J-EMAIL-DOMAIN-001 | Resend domain verification — operator action, no code changes | High |
+| DEF-Q-UNBLOCK-002 | Multi-membership edge case in `_apply_membership_role_after_status_change` | Medium |
+
+## Pre-flight enforcement
+
+- **Before any backend code is written**, the agent MUST output a pre-flight
+  confirmation block listing at least 5 locked rules from PREFLIGHT.md.
+- **No bare `id` in protected_fields.** All PK column names must be
+  domain-qualified: `inquiry_id`, `reply_id`, `property_id`. Bare `id` violates
+  PREFLIGHT.md Canonical Rule 2.
+- **PREFLIGHT.md is law, not reference.** Read it independently before writing
+  code. Attaching it is not sufficient.
 
 ## Review priorities
+
 1. DB to ORM alignment
 2. Migration safety
 3. Enum/value correctness
 4. Auth/token consistency
-5. Test coverage for changed behavior
+5. Test coverage for changed behaviour
 6. RLS/security implications
 7. Minimal, maintainable diffs
 
 ## Next session handover
-- Phase G through Phase O are closed; do not reopen unless investigating a regression
-- Phase P is closed
-- Phase Q is closed — June 22 2026
-- Phase R is closed — June 23 2026
-- Phase S is closed — June 29 2026
-- Backend quality gates are now enforced at 95%: pyright 0 errors, pytest ≥ 95.0% coverage, CI passes with all required env vars
-- Production SQL verification (E.1–E.3) has been corrected and executed against new project fobvnshrqxduuhzgflvd
-- Keep production vs dev Supabase separation strict during all investigations
-- Treat agency card branding as blocked on backend enrichment, not frontend fetch fan-out
-- Use the backlog above as the opening queue for planning and execution
-- All 12 N.9 integration journeys confirmed passing end to end
-- **Schema topology (locked — Phase S)**: trigger functions, utility functions, and
-  scheduled job procedures must be placed in the `internal` schema, never `public`.
-  `public` is the PostgREST API exposure layer. `internal` is invisible to the REST
-  API by design. This applies to all future development on this project and is the
-  canonical pattern for any Supabase or PostgREST deployment.
-- **Production gating (Phase S.8)**: all creation schemas (`AgencyBase.name/owner_name`,
-  `AgencyApplicationCreate.name/owner_name`, `UserBase.first_name/last_name`) validate
-  against placeholder names (`Preview`, `Test`, `Smoke` word boundaries) via
-  `app/utils/validation.py`. Emails are validated on all creation endpoints, not just
-  registration. Test accounts can still be created in staging/development.
-- **ModerationStatus serialization**: `str(ModerationStatus.live)` produces `"ModerationStatus.live"` — always use `.value` for clean enum-to-string conversion. This applies to any `(str, Enum)` pattern used as dict keys in API responses.
-- **mark-responded endpoint is deprecated**: Do not remove it, but do not call it from frontend. Reply creation in `inquiry_replies` now handles response tracking.
-- **Reply thread polling is 30s**: Consider reducing to 10s for Phase T.2 conversational feel, or use Supabase Realtime/SSE as the correct long-term answer.
+
+- Phases G through S are closed. Do not reopen unless investigating a regression.
+- Phase T is active. Open with `DEF-S-ADMIN-MEM-001` (backend endpoint first,
+  then frontend wiring), then `T.2` (conversational reply threading).
+- Docker PostGIS is the local test target. Staging Supabase is for deployed
+  environment validation only, via pooler connection.
+- `detect-secrets` pre-commit hook is active on the backend repo.
+- Sequential deploy order is non-negotiable: backend → Railway green → gen:types → frontend.
+- Browser evidence is required for all done-when criteria — code presence alone
+  is not completion.
