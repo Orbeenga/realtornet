@@ -40,8 +40,10 @@ from app.schemas.properties import PropertyCreate
 # Engine setup
 # ---------------------------------------------------------------------------
 
-TEST_SQLALCHEMY_DATABASE_URL = "postgresql+psycopg://postgres:WithKhaldun1332@db.avkhpachzsbgmbnkfnhu.supabase.co:5432/postgres?sslmode=require"
-print(f"Using test database URL: {TEST_SQLALCHEMY_DATABASE_URL}")
+TEST_SQLALCHEMY_DATABASE_URL = os.environ.get(
+    "TEST_DATABASE_URL",
+    "postgresql+psycopg://postgres:postgres@localhost:5432/testdb"
+)
 
 engine = create_engine(
     TEST_SQLALCHEMY_DATABASE_URL,
