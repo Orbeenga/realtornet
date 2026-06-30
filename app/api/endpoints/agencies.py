@@ -1238,7 +1238,7 @@ def unblock_agency_agent_membership(
     )
     if str(membership.status) != "blocked":
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Only blocked memberships can be unblocked.",
         )
     return _set_membership_status_and_sync_user(
@@ -2124,7 +2124,7 @@ def reconsider_agency_join_request(
         )
     if str(join_request.status) != "rejected":
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Only rejected join requests can be reconsidered",
         )
 

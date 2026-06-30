@@ -70,7 +70,7 @@ def ensure_legal_moderation_transition(
     required_role = LEGAL_TRANSITIONS.get((from_status, to_status))
     if required_role is None:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Illegal moderation status transition",
         )
 

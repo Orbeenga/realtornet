@@ -346,14 +346,14 @@ def get_users(
             user_role = UserRole(role)
         except ValueError:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=f"Invalid role: {role}. Valid options: seeker, agent, agency_owner, admin",
             )
 
     valid_states = {"active", "inactive", "deactivated"}
     if activity_state and activity_state not in valid_states:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"Invalid activity_state: {activity_state}. Valid options: active, inactive, deactivated",
         )
 
@@ -487,7 +487,7 @@ def update_user(
     )
     if is_access_reducing_role_change and not update_data.get("role_change_reason"):
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="A role change reason is required when demoting a user",
         )
 
