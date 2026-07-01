@@ -1,5 +1,5 @@
-from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Text, func
-from sqlalchemy.orm import relationship
+from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Index, Text, func
+from sqlalchemy.orm import relationship, remote, foreign
 
 from app.models.base import Base
 
@@ -11,9 +11,16 @@ class InquiryReply(Base):
     inquiry_id = Column(BigInteger, ForeignKey("inquiries.inquiry_id", ondelete="CASCADE"), nullable=False, index=True)
     author_id = Column(BigInteger, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False, index=True)
     body = Column(Text, nullable=False)
+    parent_reply_id = Column(BigInteger, ForeignKey("inquiry_replies.reply_id"), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     viewed_at = Column(DateTime(timezone=True), nullable=True)
     edited_at = Column(DateTime(timezone=True), nullable=True)
 
     inquiry = relationship("Inquiry", back_populates="replies", foreign_keys=[inquiry_id])
     author = relationship("User", foreign_keys=[author_id])
+    parent_reply = relationship(
+        "InquiryReply",
+        remote_side=[reply_id],
+        foreign_keys=[parent_reply_id],
+        uselist=False,
+    )
