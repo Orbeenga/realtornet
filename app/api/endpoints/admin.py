@@ -5,10 +5,11 @@ Handles system-wide operations with proper soft delete, audit tracking, and RLS 
 """
 import logging
 from typing import Any, Dict, List, Optional, cast as typing_cast  # Alias typing.cast so endpoint-local narrowing never shadows SQLAlchemy helpers in future edits.
+from datetime import datetime
 from decimal import Decimal
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy import text, func, and_
+from sqlalchemy import text, func, and_, update
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.dependencies import (
@@ -22,6 +23,8 @@ from app.models.users import User as User
 from app.models.listing_events import ListingEvent
 from app.models.listing_instructions import ListingInstruction
 from app.models.properties import Property
+from app.models.agency_join_requests import AgencyAgentMembership
+from app.models.agencies import Agency
 
 # --- DIRECT CRUD IMPORTS ---
 # We point directly to the files to avoid __init__.py circular/missing reference issues
@@ -53,9 +56,9 @@ from app.schemas.users import (
     UserResponse,
     UserCreate,
     UserUpdate,
-    UserRole,
 )
-from app.schemas.agencies import AgencyCreate, AgencyRejectRequest, AgencyResponse
+from app.models.users import UserRole
+from app.schemas.agencies import AgencyCreate, AgencyRejectRequest, AgencyResponse, AgencyAgentMembershipStatus, UserMembershipResponse
 from app.schemas.agent_profiles import AgentProfileCreate
 from app.schemas.properties import PropertyResponse, PropertyUpdate, ListingStatus, PropertyVerificationUpdate, ModerationStatus
 from app.schemas.properties import PropertyCreate, ListingType as PropertyListingType
@@ -331,23 +334,58 @@ def suspend_agency(
 def get_users(
     db: Session = Depends(get_db),
     pagination: dict = Depends(pagination_params),
+    role: Optional[str] = Query(None, description="Filter by role: seeker, agent, agency_owner, admin"),
+    activity_state: Optional[str] = Query(None, description="Filter by activity state: active, inactive, deactivated"),
     current_user: UserResponse = Depends(get_current_admin_user)
 ) -> Any:
     """
-    Retrieve users with pagination (admin only).
+    Retrieve users with pagination and optional role/activity_state filters (admin only).
     
     Returns only non-deleted users (deleted_at IS NULL).
-    CRUD layer enforces soft delete filtering.
     """
-    users = user_crud.get_multi(db, **pagination,)
-    total = user_crud.count_active(db)  # Use CRUD method that filters deleted_at
-    
+    user_role = None
+    if role:
+        try:
+            user_role = UserRole(role)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"Invalid role: {role}. Valid options: seeker, agent, agency_owner, admin",
+            )
+
+    valid_states = {"active", "inactive", "deactivated"}
+    if activity_state and activity_state not in valid_states:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Invalid activity_state: {activity_state}. Valid options: active, inactive, deactivated",
+        )
+
+    users = user_crud.get_multi_filtered(
+        db,
+        skip=pagination["skip"],
+        limit=pagination["limit"],
+        user_role=user_role,
+        activity_state=activity_state,
+    )
+    total = user_crud.count_active(db)
+
     return {
         "items": jsonable_encoder(users),
         "total": total,
         "page": pagination["skip"] // pagination["limit"] + 1 if pagination["limit"] else 1,
         "pages": (total + pagination["limit"] - 1) // pagination["limit"] if pagination["limit"] else 1
     }
+
+
+@router.get("/users/counts/")
+def get_users_counts(
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_admin_user)
+) -> Any:
+    """
+    Return tab badge counts for admin users page (single aggregation query).
+    """
+    return user_crud.get_counts(db)
 
 
 @router.post("/users", response_model=UserResponse)
@@ -414,6 +452,49 @@ def get_user(
     return db_user
 
 
+@router.get("/users/{user_id}/memberships/", response_model=List[UserMembershipResponse])
+def get_user_memberships(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> Any:
+    """
+    Get agency memberships for a specific user (admin only).
+
+    Returns all non-deleted memberships for the given user with agency name.
+    Non-admin JWT returns 403. Missing user_id returns 404.
+    User with no memberships returns empty list.
+    """
+    db_user = user_crud.get(db, user_id=user_id)
+    if not db_user or db_user.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    memberships = (
+        db.query(AgencyAgentMembership)
+        .options(joinedload(AgencyAgentMembership.agency))
+        .filter(
+            AgencyAgentMembership.user_id == user_id,
+            AgencyAgentMembership.deleted_at.is_(None),
+        )
+        .all()
+    )
+
+    return [
+        UserMembershipResponse(
+            membership_id=typing_cast(int, m.membership_id),
+            agency_id=typing_cast(int, m.agency_id),
+            agency_name=typing_cast(str, m.agency.name),
+            status=AgencyAgentMembershipStatus(typing_cast(str, m.status)),
+            created_at=typing_cast(datetime, m.created_at),
+            deleted_at=typing_cast(Optional[datetime], m.deleted_at),
+        )
+        for m in memberships
+    ]
+
+
 @router.put("/users/{user_id}", response_model=UserResponse)
 def update_user(
     *,
@@ -452,7 +533,7 @@ def update_user(
     )
     if is_access_reducing_role_change and not update_data.get("role_change_reason"):
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="A role change reason is required when demoting a user",
         )
 
@@ -632,6 +713,108 @@ def deactivate_user(
     logger.info(f"User deactivated: {user_id} by admin {current_user.user_id}")
     return db_user
 
+
+# --- Platform-Level Deactivation / Reactivation (Phase S) ---
+# These set is_active on the users table, distinct from soft-delete.
+# A deactivated user cannot access any authenticated endpoint.
+
+@router.patch("/users/{user_id}/deactivate/", response_model=UserResponse)
+def platform_deactivate_user(
+    *,
+    db: Session = Depends(get_db),
+    user_id: int,
+    deactivation_in: UserDeactivateRequest,
+    current_user: UserResponse = Depends(get_current_admin_user),
+    _: None = Depends(validate_request_size)
+) -> Any:
+    """
+    Platform-level deactivation (admin only).
+
+    Sets is_active = false on the target user. Unlike soft-delete (POST
+    .../deactivate), the user record remains visible but all API access
+    is blocked by the get_current_active_user dependency.
+    Writes deactivation_reason and updated_by for audit.
+    """
+    db_user = user_crud.get(db, user_id=user_id)
+
+    if not db_user or db_user.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    target_user_id: int = typing_cast(int, db_user.user_id)
+    current_user_id: int = typing_cast(int, current_user.user_id)
+    if target_user_id == current_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Admins cannot deactivate themselves",
+        )
+
+    db.execute(
+        update(User)
+        .where(User.user_id == user_id)
+        .values(
+            is_active=False,
+            deactivation_reason=deactivation_in.reason,
+            updated_by=str(current_user.supabase_id),
+        )
+    )
+    db.commit()
+    db.refresh(db_user)
+
+    logger.info(
+        "Platform deactivation",
+        extra={
+            "user_id": user_id,
+            "by_admin": current_user.user_id,
+            "reason": deactivation_in.reason,
+        },
+    )
+    return db_user
+
+
+@router.patch("/users/{user_id}/reactivate/", response_model=UserResponse)
+def platform_reactivate_user(
+    *,
+    db: Session = Depends(get_db),
+    user_id: int,
+    current_user: UserResponse = Depends(get_current_admin_user),
+    _: None = Depends(validate_request_size)
+) -> Any:
+    """
+    Platform-level reactivation (admin only).
+
+    Sets is_active = true on the target user, restoring API access.
+    The deactivation_reason is preserved for audit.
+    """
+    db_user = user_crud.get(db, user_id=user_id)
+
+    if not db_user or db_user.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    db.execute(
+        update(User)
+        .where(User.user_id == user_id)
+        .values(
+            is_active=True,
+            updated_by=str(current_user.supabase_id),
+        )
+    )
+    db.commit()
+    db.refresh(db_user)
+
+    logger.info(
+        "Platform reactivation",
+        extra={
+            "user_id": user_id,
+            "by_admin": current_user.user_id,
+        },
+    )
+    return db_user
 
 
 # PROPERTY MANAGEMENT ENDPOINTS

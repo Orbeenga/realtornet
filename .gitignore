@@ -209,3 +209,6 @@ tests/conftest_no_mock.py
 .claude/
 skills-lock.json
 RealtorNet_Phase_*_Workbook.md
+
+notification_test_results.txt
+*.txt.coverage

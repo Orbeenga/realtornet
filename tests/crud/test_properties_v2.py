@@ -39,13 +39,7 @@ from fastapi import HTTPException
 @pytest.fixture
 def property_type(db: Session):
     """Create a property type for testing"""
-    prop_type = PropertyType(
-        name="Apartment",
-        description="Modern apartment"
-    )
-    db.add(prop_type)
-    db.commit()
-    db.refresh(prop_type)
+    prop_type = db.query(PropertyType).filter_by(name="Apartment").first()
     return prop_type
 
 

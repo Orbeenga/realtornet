@@ -97,20 +97,14 @@ class TestLocationFilterEdgeCases:
     
     def test_get_by_filters_partial_match(self, db: Session):
         """Test filtering with only some parameters"""
-        # Create locations in same state, different cities
-        location_crud.create(
-            db,
-            obj_in=LocationCreate(state="Oyo", city="Ibadan")
-        )
-        location_crud.create(
-            db,
-            obj_in=LocationCreate(state="Oyo", city="Ogbomoso")
-        )
+        location_crud.create(db, obj_in=LocationCreate(state="Oyo", city="Ibadan"))
+        location_crud.create(db, obj_in=LocationCreate(state="Oyo", city="Ogbomoso"))
+        location_crud.create(db, obj_in=LocationCreate(state="Oyo", city="Oyo"))
         
         # Filter by state only
         results = location_crud.get_by_filters(db, state="Oyo")
-        assert len(results) == 2
-        
+        assert len(results) == 3
+
         # Filter by state and city
         results = location_crud.get_by_filters(db, state="Oyo", city="Ibadan")
         assert len(results) == 1

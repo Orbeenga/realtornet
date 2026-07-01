@@ -149,7 +149,7 @@ class TestAuth:
                 json=user_data
         )
         
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY  # Pydantic validation
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT  # Pydantic validation
 
     def test_register_succeeds_when_email_dispatch_fails(self, client):
         """Registration should not fail if the async welcome-email enqueue fails."""
@@ -201,7 +201,7 @@ class TestAuth:
         user_data = {
             "email": "not-an-email",
             "password": "strongpassword123",
-            "first_name": "Test",
+            "first_name": "New",
             "last_name": "User"
         }
         response = client.post(
@@ -209,7 +209,7 @@ class TestAuth:
             json=user_data
         )
         
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
     
     def test_me_endpoint(self, client, normal_user):
         """Test get current user endpoint with valid token."""

@@ -12,6 +12,7 @@ from uuid import UUID
 from enum import Enum
 
 from app.schemas.membership_audit import AgentMembershipAuditResponse
+from app.utils.validation import validate_not_placeholder, validate_not_test_email
 
 
 class AgencyStatus(str, Enum):
@@ -83,16 +84,27 @@ class AgencyBase(BaseModel):
     rejection_reason: Optional[str] = None
     status_reason: Optional[str] = None
 
+    @field_validator('name')
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        return validate_not_placeholder(v, "name") or v
+
+    @field_validator('owner_name')
+    @classmethod
+    def validate_owner_name(cls, v: Optional[str]) -> Optional[str]:
+        return validate_not_placeholder(v, "owner_name")
+
     @field_validator('email')
     @classmethod
     def email_to_lowercase(cls, v: Optional[str]) -> Optional[str]:
-        """Ensure email is lowercase (matches DB CHECK constraint)"""
-        return v.lower() if v else None
+        result = v.lower() if v else None
+        return validate_not_test_email(result, "email") or result
 
     @field_validator('owner_email')
     @classmethod
     def owner_email_to_lowercase(cls, v: Optional[str]) -> Optional[str]:
-        return v.lower() if v else None
+        result = v.lower() if v else None
+        return validate_not_test_email(result, "owner_email") or result
 
 
 # Create Schema (for POST requests - excludes DB-controlled fields)
@@ -114,10 +126,21 @@ class AgencyApplicationCreate(BaseModel):
     email: Optional[EmailStr] = None
     phone_number: Optional[str] = None
 
+    @field_validator('name')
+    @classmethod
+    def validate_application_name(cls, v: str) -> str:
+        return validate_not_placeholder(v, "name") or v
+
+    @field_validator('owner_name')
+    @classmethod
+    def validate_application_owner_name(cls, v: str) -> str:
+        return validate_not_placeholder(v, "owner_name") or v
+
     @field_validator('owner_email', 'email')
     @classmethod
     def application_email_to_lowercase(cls, v: Optional[str]) -> Optional[str]:
-        return v.lower() if v else None
+        result = v.lower() if v else None
+        return validate_not_test_email(result, "owner_email") or result
 
 
 class AgencyApplicationResponse(BaseModel):
@@ -227,6 +250,7 @@ class AgencyAgentRosterResponse(BaseModel):
     license_number: Optional[str] = None
     bio: Optional[str] = None
     company_name: Optional[str] = None
+    last_login: Optional[datetime] = None
     listing_count: int = 0
     pending_review_request_id: Optional[int] = None
     pending_review_reason: Optional[str] = None
@@ -247,6 +271,17 @@ class AgencyAgentMembershipResponse(BaseModel):
     source_join_request_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UserMembershipResponse(BaseModel):
+    membership_id: int
+    agency_id: int
+    agency_name: str
+    status: AgencyAgentMembershipStatus
+    created_at: datetime
+    deleted_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -172,6 +172,7 @@ def _membership_payload(
         "license_number": getattr(profile, "license_number", None),
         "bio": getattr(profile, "bio", None),
         "company_name": getattr(profile, "company_name", None),
+        "last_login": user.last_login,
         "listing_count": listing_count,
         "pending_review_request_id": None,
         "pending_review_reason": None,
@@ -349,7 +350,7 @@ def _first_active_membership_agency_for_user(*, db: Session, user_id: int) -> in
             AgencyAgentMembership.deleted_at.is_(None),
         )
         .order_by(AgencyAgentMembership.created_at.asc())
-    ).scalar_one_or_none()
+    ).scalars().first()
 
 
 def _apply_membership_role_after_status_change(
@@ -1237,7 +1238,7 @@ def unblock_agency_agent_membership(
     )
     if str(membership.status) != "blocked":
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Only blocked memberships can be unblocked.",
         )
     return _set_membership_status_and_sync_user(
@@ -2123,7 +2124,7 @@ def reconsider_agency_join_request(
         )
     if str(join_request.status) != "rejected":
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Only rejected join requests can be reconsidered",
         )
 

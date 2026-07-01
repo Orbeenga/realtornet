@@ -216,7 +216,7 @@ async def upload_avatar(
         max_size = 2 * 1024 * 1024
         if len(contents) > max_size:
             raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                 detail=f"File too large (max {max_size / 1024 / 1024}MB)"
             )
         

@@ -1043,7 +1043,7 @@ class TestReplyToInquiry:
         )
         assert response.status_code == 404
 
-    def test_non_owner_agency_member_cannot_reply_returns_403(
+    def test_seeker_can_reply_to_own_inquiry(
         self, client: TestClient, normal_user_token_headers,
         agent_token_headers, unverified_property_owned_by_agent
     ):
@@ -1059,8 +1059,31 @@ class TestReplyToInquiry:
 
         response = client.post(
             self.REPLY_PATH.format(inquiry_id=inquiry_id),
-            json={"body": "You should not be able to reply"},
+            json={"body": "Following up on my inquiry"},
             headers=normal_user_token_headers
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["author_role"] == "seeker"
+
+    def test_third_party_cannot_reply_returns_403(
+        self, client: TestClient, normal_user_token_headers,
+        agent_no_agency_token_headers, unverified_property_owned_by_agent
+    ):
+        create_response = client.post(
+            "/api/v1/inquiries/",
+            json={
+                "property_id": unverified_property_owned_by_agent.property_id,
+                "message": "Interested"
+            },
+            headers=normal_user_token_headers
+        )
+        inquiry_id = create_response.json()["inquiry_id"]
+
+        response = client.post(
+            self.REPLY_PATH.format(inquiry_id=inquiry_id),
+            json={"body": "You should not be able to reply"},
+            headers=agent_no_agency_token_headers
         )
         assert response.status_code == 403
 
@@ -1143,6 +1166,177 @@ class TestReplyToInquiry:
         mock_dispatch.assert_called_once()
         args = mock_dispatch.call_args.args
         assert args[1] == normal_user.email
+
+    def test_multi_turn_thread_returns_all_replies(
+        self, client: TestClient, normal_user_token_headers,
+        agent_token_headers, unverified_property_owned_by_agent
+    ):
+        create_response = client.post(
+            "/api/v1/inquiries/",
+            json={
+                "property_id": unverified_property_owned_by_agent.property_id,
+                "message": "Interested in this property"
+            },
+            headers=normal_user_token_headers
+        )
+        inquiry_id = create_response.json()["inquiry_id"]
+
+        client.post(
+            self.REPLY_PATH.format(inquiry_id=inquiry_id),
+            json={"body": "Thanks for your interest"},
+            headers=agent_token_headers
+        )
+        client.post(
+            self.REPLY_PATH.format(inquiry_id=inquiry_id),
+            json={"body": "Can I schedule a visit?"},
+            headers=normal_user_token_headers
+        )
+        response = client.post(
+            self.REPLY_PATH.format(inquiry_id=inquiry_id),
+            json={"body": "Sure, tomorrow at 10am"},
+            headers=agent_token_headers
+        )
+        assert response.status_code == 201
+
+        replies_response = client.get(
+            f"/api/v1/inquiries/{inquiry_id}/replies/",
+            headers=normal_user_token_headers
+        )
+        assert replies_response.status_code == 200
+        replies = replies_response.json()
+        assert len(replies) == 3
+        assert replies[0]["body"] == "Thanks for your interest"
+        assert replies[0]["author_role"] == "agent"
+        assert replies[1]["body"] == "Can I schedule a visit?"
+        assert replies[1]["author_role"] == "seeker"
+        assert replies[2]["body"] == "Sure, tomorrow at 10am"
+        assert replies[2]["author_role"] == "agent"
+
+
+class TestEditInquiryReply:
+
+    REPLY_PATH = "/api/v1/inquiries/{inquiry_id}/reply/"
+    EDIT_PATH = "/api/v1/inquiries/{inquiry_id}/replies/{reply_id}/"
+
+    def test_unauthenticated_returns_401(self, client: TestClient):
+        response = client.patch(
+            self.EDIT_PATH.format(inquiry_id=1, reply_id=1),
+            json={"body": "edited"}
+        )
+        assert response.status_code == 401
+
+    def test_reply_not_found_returns_404(
+        self, client: TestClient, normal_user_token_headers,
+        agent_token_headers, unverified_property_owned_by_agent
+    ):
+        create_response = client.post(
+            "/api/v1/inquiries/",
+            json={
+                "property_id": unverified_property_owned_by_agent.property_id,
+                "message": "Interested"
+            },
+            headers=normal_user_token_headers
+        )
+        inquiry_id = create_response.json()["inquiry_id"]
+
+        response = client.patch(
+            self.EDIT_PATH.format(inquiry_id=inquiry_id, reply_id=999999),
+            json={"body": "edited"},
+            headers=agent_token_headers
+        )
+        assert response.status_code == 404
+
+    def test_non_author_cannot_edit_returns_403(
+        self, client: TestClient, normal_user_token_headers,
+        agent_token_headers, unverified_property_owned_by_agent
+    ):
+        create_response = client.post(
+            "/api/v1/inquiries/",
+            json={
+                "property_id": unverified_property_owned_by_agent.property_id,
+                "message": "Interested"
+            },
+            headers=normal_user_token_headers
+        )
+        inquiry_id = create_response.json()["inquiry_id"]
+
+        reply_response = client.post(
+            self.REPLY_PATH.format(inquiry_id=inquiry_id),
+            json={"body": "Agent reply"},
+            headers=agent_token_headers
+        )
+        reply_id = reply_response.json()["reply_id"]
+
+        response = client.patch(
+            self.EDIT_PATH.format(inquiry_id=inquiry_id, reply_id=reply_id),
+            json={"body": "Hacked"},
+            headers=normal_user_token_headers
+        )
+        assert response.status_code == 403
+
+    def test_edit_before_viewed_succeeds(
+        self, client: TestClient, normal_user_token_headers,
+        agent_token_headers, unverified_property_owned_by_agent
+    ):
+        create_response = client.post(
+            "/api/v1/inquiries/",
+            json={
+                "property_id": unverified_property_owned_by_agent.property_id,
+                "message": "Interested"
+            },
+            headers=normal_user_token_headers
+        )
+        inquiry_id = create_response.json()["inquiry_id"]
+
+        reply_response = client.post(
+            self.REPLY_PATH.format(inquiry_id=inquiry_id),
+            json={"body": "Original reply"},
+            headers=agent_token_headers
+        )
+        reply_id = reply_response.json()["reply_id"]
+
+        response = client.patch(
+            self.EDIT_PATH.format(inquiry_id=inquiry_id, reply_id=reply_id),
+            json={"body": "Edited reply"},
+            headers=agent_token_headers
+        )
+        assert response.status_code == 200
+        assert response.json()["body"] == "Edited reply"
+        assert response.json()["edited_at"] is not None
+
+    def test_edit_after_viewed_returns_400(
+        self, client: TestClient, normal_user_token_headers,
+        agent_token_headers, unverified_property_owned_by_agent
+    ):
+        create_response = client.post(
+            "/api/v1/inquiries/",
+            json={
+                "property_id": unverified_property_owned_by_agent.property_id,
+                "message": "Interested"
+            },
+            headers=normal_user_token_headers
+        )
+        inquiry_id = create_response.json()["inquiry_id"]
+
+        reply_response = client.post(
+            self.REPLY_PATH.format(inquiry_id=inquiry_id),
+            json={"body": "Agent reply to be viewed"},
+            headers=agent_token_headers
+        )
+        reply_id = reply_response.json()["reply_id"]
+
+        client.get(
+            f"/api/v1/inquiries/{inquiry_id}/replies/",
+            headers=normal_user_token_headers
+        )
+
+        response = client.patch(
+            self.EDIT_PATH.format(inquiry_id=inquiry_id, reply_id=reply_id),
+            json={"body": "Should fail"},
+            headers=agent_token_headers
+        )
+        assert response.status_code == 400
+        assert "viewed" in response.json()["detail"].lower()
 
 
 class TestReadInquiryReplies:

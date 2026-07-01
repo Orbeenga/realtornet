@@ -302,7 +302,7 @@ async def upload_user_profile_image(
         # Validate file size (5MB limit)
         if len(contents) > 5 * 1024 * 1024:
             raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                 detail="File too large (max 5MB)"
             )
         

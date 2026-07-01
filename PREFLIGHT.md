@@ -87,6 +87,10 @@ Applies to the full RealtorNet stack: FastAPI · SQLAlchemy · PostGIS · Supaba
 
 8. **SQLAlchemy 2.x-native**
    No deprecated APIs. Consistent sync or async — never mixed arbitrarily in the same request path.
+   **Same-transaction timestamp collision on ORDER BY**
+   Problem: `server_default=func.now()` resolves once per PostgreSQL transaction, not per-statement. Rows created in rapid succession within the same transaction (common in tests using the "Double-Tap" pattern, also possible in production under connection pooling) can receive identical `created_at` values, making `ORDER BY created_at` non-deterministic for ties.
+   Solution: Always add the primary key as a secondary sort key: `.order_by(Model.created_at.asc(), Model.pk_id.asc())`.
+   Standard: Any `ORDER BY <timestamp>` query must include a PK tiebreaker if row creation order matters.
 
 9. **DB is SSOT**
    Database is the single source of truth. ORM conforms to DB. API types conform to ORM. Frontend types are generated from OpenAPI — never manually written for API response shapes.
@@ -163,6 +167,128 @@ WHERE n.nspname = 'public' AND d.deptype = 'e';
 
 ### Why this cannot be fixed after the fact:
 Once any table has a `geography` or `geometry` column, `ALTER EXTENSION postgis SET SCHEMA extensions` is blocked by PostgreSQL type dependency constraints. The only remediation is clean-slate provisioning. This was discovered in Phase K (May 2026) when the production Supabase project was initialized without this sequence.
+
+---
+
+## PostgREST Schema Topology Standard
+
+**The three-schema rule applies to every project using Supabase or raw PostgREST.**
+
+PostgREST exposes all functions in the `search_path`-accessible schemas via the
+REST API at `/rest/v1/rpc/function_name`. This is not a bug — it is the designed
+behaviour. Schema assignment is the authoritative access control boundary for
+database functions, not PostgreSQL privilege configuration.
+
+### Canonical schema assignments
+
+| Schema | Contents | REST-exposed? |
+|---|---|---|
+| `public` | Application tables, views, functions intended for API access | Yes |
+| `internal` | Trigger functions, utility functions, scheduled job procedures, internal logic | No |
+| `extensions` | Extension objects (PostGIS, uuid-ossp, etc.) | No |
+
+### Rule: Trigger functions always go in `internal` schema
+
+Trigger enforcement functions are database infrastructure, not application API
+surfaces. They must never be placed in `public`. A trigger function in `internal`
+is invisible to PostgREST by design — no REVOKE, no privilege configuration, no
+advisor warnings.
+
+**Correct pattern:**
+
+```sql
+CREATE SCHEMA IF NOT EXISTS internal;
+
+CREATE OR REPLACE FUNCTION internal.prevent_example_mutation()
+  RETURNS trigger
+  LANGUAGE plpgsql
+  SECURITY DEFINER
+  SET search_path = ''
+AS $$
+BEGIN
+  RAISE EXCEPTION 'this table is append-only';
+END;
+$$;
+
+CREATE OR REPLACE TRIGGER prevent_example_mutation
+  BEFORE UPDATE OR DELETE ON public.example_table
+  FOR EACH ROW EXECUTE FUNCTION internal.prevent_example_mutation();
+```
+
+**Wrong pattern (never do this):**
+
+```sql
+-- WRONG: placing trigger function in public exposes it via REST API
+CREATE OR REPLACE FUNCTION public.prevent_example_mutation()
+  RETURNS trigger ...
+```
+
+### Why REVOKE does not work in hosted Supabase
+
+Hosted Supabase provisions a co-grantor role (`supabase_admin`) whose default
+privileges in the `public` schema cannot be modified by the `postgres` tenant role.
+`ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin` returns `permission denied 42501`
+in all hosted environments. Direct `REVOKE EXECUTE ... FROM PUBLIC` statements are
+overwritten on every `CREATE OR REPLACE FUNCTION` by the Supabase default privilege
+system.
+
+Schema separation is the only durable solution in a hosted Supabase environment.
+It is also the correct architectural solution in any PostgREST deployment.
+
+### Migration pattern for moving existing trigger functions to internal schema
+
+```python
+def upgrade():
+    # Create the internal schema
+    op.execute("CREATE SCHEMA IF NOT EXISTS internal;")
+
+    # Recreate function in internal schema
+    op.execute("""
+        CREATE OR REPLACE FUNCTION internal.prevent_example_mutation()
+          RETURNS trigger
+          LANGUAGE plpgsql
+          SECURITY DEFINER
+          SET search_path = ''
+        AS $$
+        BEGIN
+          RAISE EXCEPTION 'this table is append-only';
+        END;
+        $$;
+    """)
+
+    # Update the trigger to reference internal schema
+    op.execute("""
+        CREATE OR REPLACE TRIGGER prevent_example_mutation
+          BEFORE UPDATE OR DELETE ON public.example_table
+          FOR EACH ROW EXECUTE FUNCTION internal.prevent_example_mutation();
+    """)
+
+    # Drop the public schema version
+    op.execute("""
+        DROP FUNCTION IF EXISTS public.prevent_example_mutation();
+    """)
+
+def downgrade():
+    # Restore public schema version
+    op.execute("""
+        CREATE OR REPLACE FUNCTION public.prevent_example_mutation()
+          RETURNS trigger
+          LANGUAGE plpgsql
+          SECURITY DEFINER
+          SET search_path = ''
+        AS $$
+        BEGIN
+          RAISE EXCEPTION 'this table is append-only';
+        END;
+        $$;
+    """)
+    op.execute("""
+        CREATE OR REPLACE TRIGGER prevent_example_mutation
+          BEFORE UPDATE OR DELETE ON public.example_table
+          FOR EACH ROW EXECUTE FUNCTION public.prevent_example_mutation();
+    """)
+    op.execute("DROP FUNCTION IF EXISTS internal.prevent_example_mutation();")
+```
 
 ---
 
@@ -480,6 +606,18 @@ pnpm gen:types   # regenerate src/types/api.generated.ts from live OpenAPI
 - Touching `apiClient.ts` auth intercept logic without explicitly re-verifying silent JWT refresh
 - Removing existing UI sections instead of adding alongside them
 - Using `users.agency_id` to resolve an agent's current agency — use `agency_agent_memberships` instead
+- Placing trigger functions in `public` schema — PostgREST exposes them via REST API.
+  Use `internal` schema for all trigger functions, utility functions, and scheduled
+  job procedures. See PostgREST Schema Topology Standard above.
+- Attempting `ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin` in hosted Supabase —
+  returns `permission denied 42501`. Schema separation is the only durable fix.
+  REVOKE statements against `anon` and `authenticated` do not survive the next
+  `CREATE OR REPLACE FUNCTION` call in hosted environments.
+- Assuming staging and production Supabase projects have identical privilege
+  architecture — they may have been provisioned at different points in Supabase's
+  platform evolution. Newer projects have `supabase_admin` as a co-grantor;
+  older projects do not. Always verify ACLs on both environments independently.
+- Sorting by created_at alone without a PK tiebreaker — same-transaction writes can share identical       timestamps.
 
 ---
 

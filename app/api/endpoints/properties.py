@@ -965,7 +965,7 @@ def agency_reject_property(
 
     if not action_in.moderation_reason or not str(action_in.moderation_reason).strip():
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="A moderation reason is required for rejection",
         )
 
@@ -1156,7 +1156,7 @@ def admin_reject_property(
 
     if not action_in.moderation_reason or not str(action_in.moderation_reason).strip():
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="A moderation reason is required for rejection",
         )
 
@@ -1293,7 +1293,7 @@ def revoke_property(
 
     if not action_in.moderation_reason or not str(action_in.moderation_reason).strip():
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="A moderation reason is required for revocation",
         )
 
@@ -1572,14 +1572,14 @@ def instruct_agent(
     property_status = str(getattr(property.moderation_status, "value", property.moderation_status))
     if property_status not in ("revoked", "admin_rejected"):
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Can only instruct on revoked or admin_rejected listings",
         )
 
     most_recent_event = get_most_relevant_rejection_event(db, listing_id=property_id)
     if not most_recent_event:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="No revocation or rejection event found for this listing",
         )
 
