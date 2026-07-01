@@ -275,6 +275,17 @@ class AgencyAgentMembershipResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class UserMembershipResponse(BaseModel):
+    membership_id: int
+    agency_id: int
+    agency_name: str
+    status: AgencyAgentMembershipStatus
+    created_at: datetime
+    deleted_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class AgencyMembershipReviewRequestResponse(BaseModel):
     review_request_id: int
     membership_id: int

@@ -5,6 +5,7 @@ Handles system-wide operations with proper soft delete, audit tracking, and RLS 
 """
 import logging
 from typing import Any, Dict, List, Optional, cast as typing_cast  # Alias typing.cast so endpoint-local narrowing never shadows SQLAlchemy helpers in future edits.
+from datetime import datetime
 from decimal import Decimal
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from fastapi.encoders import jsonable_encoder
@@ -22,6 +23,8 @@ from app.models.users import User as User
 from app.models.listing_events import ListingEvent
 from app.models.listing_instructions import ListingInstruction
 from app.models.properties import Property
+from app.models.agency_join_requests import AgencyAgentMembership
+from app.models.agencies import Agency
 
 # --- DIRECT CRUD IMPORTS ---
 # We point directly to the files to avoid __init__.py circular/missing reference issues
@@ -55,7 +58,7 @@ from app.schemas.users import (
     UserUpdate,
 )
 from app.models.users import UserRole
-from app.schemas.agencies import AgencyCreate, AgencyRejectRequest, AgencyResponse
+from app.schemas.agencies import AgencyCreate, AgencyRejectRequest, AgencyResponse, AgencyAgentMembershipStatus, UserMembershipResponse
 from app.schemas.agent_profiles import AgentProfileCreate
 from app.schemas.properties import PropertyResponse, PropertyUpdate, ListingStatus, PropertyVerificationUpdate, ModerationStatus
 from app.schemas.properties import PropertyCreate, ListingType as PropertyListingType
@@ -447,6 +450,49 @@ def get_user(
         )
     
     return db_user
+
+
+@router.get("/users/{user_id}/memberships/", response_model=List[UserMembershipResponse])
+def get_user_memberships(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> Any:
+    """
+    Get agency memberships for a specific user (admin only).
+
+    Returns all non-deleted memberships for the given user with agency name.
+    Non-admin JWT returns 403. Missing user_id returns 404.
+    User with no memberships returns empty list.
+    """
+    db_user = user_crud.get(db, user_id=user_id)
+    if not db_user or db_user.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    memberships = (
+        db.query(AgencyAgentMembership)
+        .options(joinedload(AgencyAgentMembership.agency))
+        .filter(
+            AgencyAgentMembership.user_id == user_id,
+            AgencyAgentMembership.deleted_at.is_(None),
+        )
+        .all()
+    )
+
+    return [
+        UserMembershipResponse(
+            membership_id=typing_cast(int, m.membership_id),
+            agency_id=typing_cast(int, m.agency_id),
+            agency_name=typing_cast(str, m.agency.name),
+            status=AgencyAgentMembershipStatus(typing_cast(str, m.status)),
+            created_at=typing_cast(datetime, m.created_at),
+            deleted_at=typing_cast(Optional[datetime], m.deleted_at),
+        )
+        for m in memberships
+    ]
 
 
 @router.put("/users/{user_id}", response_model=UserResponse)
