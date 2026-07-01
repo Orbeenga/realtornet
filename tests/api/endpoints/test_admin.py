@@ -21,6 +21,9 @@ from app.api.endpoints import admin as admin_api
 from app.models.properties import Property, ListingType, ListingStatus
 from app.models.listing_events import ListingEvent
 from app.models.listing_instructions import ListingInstruction
+from app.models.agency_join_requests import AgencyAgentMembership
+from app.models.agencies import Agency
+from app.schemas.agencies import AgencyAgentMembershipStatus
 
 
 def _create_property(db, user_id, location, property_type, agency, title):
@@ -369,6 +372,71 @@ class TestAdminGetUser:
         """
         response = client.get(f"/api/v1/admin/users/{normal_user.user_id}")
         assert response.status_code == 401
+
+
+class TestAdminUserMemberships:
+    def test_admin_can_get_user_memberships(
+        self, client: TestClient, admin_token_headers, agency, normal_user, db
+    ):
+        """
+        Admin can retrieve agency memberships for any user.
+        """
+        membership = AgencyAgentMembership(
+            agency_id=agency.agency_id,
+            user_id=normal_user.user_id,
+            status="active",
+        )
+        db.add(membership)
+        db.flush()
+
+        response = client.get(
+            f"/api/v1/admin/users/{normal_user.user_id}/memberships/",
+            headers=admin_token_headers,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, list)
+        assert len(data) == 1
+        assert data[0]["agency_id"] == agency.agency_id
+        assert data[0]["agency_name"] == agency.name
+        assert data[0]["status"] == AgencyAgentMembershipStatus.ACTIVE.value
+
+    def test_admin_get_memberships_nonexistent_user_returns_404(
+        self, client: TestClient, admin_token_headers
+    ):
+        """
+        Nonexistent user IDs must return 404.
+        """
+        response = client.get(
+            "/api/v1/admin/users/999999/memberships/",
+            headers=admin_token_headers,
+        )
+        assert response.status_code == 404
+
+    def test_admin_get_memberships_non_admin_returns_403(
+        self, client: TestClient, normal_user_token_headers, normal_user
+    ):
+        """
+        Non-admin users must not access this endpoint.
+        """
+        response = client.get(
+            f"/api/v1/admin/users/{normal_user.user_id}/memberships/",
+            headers=normal_user_token_headers,
+        )
+        assert response.status_code == 403
+
+    def test_admin_get_memberships_empty_for_user_with_no_memberships(
+        self, client: TestClient, admin_token_headers, normal_user
+    ):
+        """
+        User with no memberships returns an empty list.
+        """
+        response = client.get(
+            f"/api/v1/admin/users/{normal_user.user_id}/memberships/",
+            headers=admin_token_headers,
+        )
+        assert response.status_code == 200
+        assert response.json() == []
 
 
 class TestAdminUpdateUser:
