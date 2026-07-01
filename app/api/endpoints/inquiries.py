@@ -554,11 +554,29 @@ def reply_to_inquiry(
             detail="Not enough permissions to reply to this inquiry"
         )
 
+    parent_reply_id: Optional[int] = reply_in.parent_reply_id
+    parent_reply_record = None
+    if parent_reply_id is not None:
+        parent_reply_record = db.query(InquiryReply).filter(
+            InquiryReply.reply_id == parent_reply_id,
+        ).first()
+        if parent_reply_record is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Parent reply not found",
+            )
+        if typing_cast(int, parent_reply_record.inquiry_id) != inquiry_id:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Parent reply does not belong to this inquiry",
+            )
+
     reply = inquiry_reply_crud.create(
         db=db,
         inquiry_id=inquiry_id,
         author_id=current_user_id,
         body=reply_in.body,
+        parent_reply_id=parent_reply_id,
     )
 
     is_first_reply = inquiry_reply_crud.count_by_inquiry(db=db, inquiry_id=inquiry_id) == 1
@@ -606,6 +624,30 @@ def reply_to_inquiry(
 
     author_role = "seeker" if is_reply_from_seeker else "agent"
     author_display_name = author_name
+
+    parent_reply_response = None
+    if parent_reply_id is not None and parent_reply_record is not None:
+        parent_author = getattr(parent_reply_record, "author", None)
+        parent_display_name = ""
+        if parent_author is not None:
+            first = str(getattr(parent_author, "first_name", "") or "").strip()
+            last = str(getattr(parent_author, "last_name", "") or "").strip()
+            parent_display_name = f"{first} {last}".strip()
+        parent_author_role = "seeker" if typing_cast(int, parent_reply_record.author_id) == inquiry_user_id else "agent"
+        parent_reply_response = InquiryReplyResponse(
+            reply_id=typing_cast(int, parent_reply_record.reply_id),
+            inquiry_id=typing_cast(int, parent_reply_record.inquiry_id),
+            author_id=typing_cast(int, parent_reply_record.author_id),
+            author_display_name=parent_display_name,
+            author_role=parent_author_role,
+            body=typing_cast(str, parent_reply_record.body),
+            parent_reply_id=None,
+            parent_reply=None,
+            created_at=typing_cast(datetime, parent_reply_record.created_at),
+            viewed_at=typing_cast(datetime | None, parent_reply_record.viewed_at),
+            edited_at=typing_cast(datetime | None, parent_reply_record.edited_at),
+        )
+
     return InquiryReplyResponse(
         reply_id=typing_cast(int, reply.reply_id),
         inquiry_id=typing_cast(int, reply.inquiry_id),
@@ -613,6 +655,8 @@ def reply_to_inquiry(
         author_display_name=author_display_name,
         author_role=author_role,
         body=typing_cast(str, reply.body),
+        parent_reply_id=typing_cast(int | None, reply.parent_reply_id),
+        parent_reply=parent_reply_response,
         created_at=typing_cast(datetime, reply.created_at),
         viewed_at=typing_cast(datetime | None, reply.viewed_at),
         edited_at=typing_cast(datetime | None, reply.edited_at),
@@ -701,6 +745,30 @@ def read_inquiry_replies(
             typing_cast(Any, reply).viewed_at = now
             db.flush()
 
+        parent_reply_obj = getattr(reply, "parent_reply", None)
+        parent_reply_response = None
+        if parent_reply_obj is not None:
+            parent_author = getattr(parent_reply_obj, "author", None)
+            parent_display_name = ""
+            if parent_author is not None:
+                first = str(getattr(parent_author, "first_name", "") or "").strip()
+                last = str(getattr(parent_author, "last_name", "") or "").strip()
+                parent_display_name = f"{first} {last}".strip()
+            parent_author_role = "seeker" if typing_cast(int, parent_reply_obj.author_id) == inquiry_user_id else "agent"
+            parent_reply_response = InquiryReplyResponse(
+                reply_id=typing_cast(int, parent_reply_obj.reply_id),
+                inquiry_id=typing_cast(int, parent_reply_obj.inquiry_id),
+                author_id=typing_cast(int, parent_reply_obj.author_id),
+                author_display_name=parent_display_name,
+                author_role=parent_author_role,
+                body=typing_cast(str, parent_reply_obj.body),
+                parent_reply_id=None,
+                parent_reply=None,
+                created_at=typing_cast(datetime, parent_reply_obj.created_at),
+                viewed_at=typing_cast(datetime | None, parent_reply_obj.viewed_at),
+                edited_at=typing_cast(datetime | None, parent_reply_obj.edited_at),
+            )
+
         result.append(InquiryReplyResponse(
             reply_id=typing_cast(int, reply.reply_id),
             inquiry_id=typing_cast(int, reply.inquiry_id),
@@ -708,6 +776,8 @@ def read_inquiry_replies(
             author_display_name=display_name,
             author_role=author_role,
             body=typing_cast(str, reply.body),
+            parent_reply_id=typing_cast(int | None, reply.parent_reply_id),
+            parent_reply=parent_reply_response,
             created_at=typing_cast(datetime, reply.created_at),
             viewed_at=typing_cast(datetime | None, reply.viewed_at),
             edited_at=typing_cast(datetime | None, reply.edited_at),
@@ -772,6 +842,8 @@ def edit_inquiry_reply(
         author_display_name="",
         author_role=author_role,
         body=typing_cast(str, reply.body),
+        parent_reply_id=typing_cast(int | None, reply.parent_reply_id),
+        parent_reply=None,
         created_at=typing_cast(datetime, reply.created_at),
         viewed_at=typing_cast(datetime | None, reply.viewed_at),
         edited_at=typing_cast(datetime | None, reply.edited_at),
