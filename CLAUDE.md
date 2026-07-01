@@ -162,12 +162,24 @@ Backend HEAD at Phase S close: `8330285`
 Frontend HEAD at Phase S close: `e1d2f04`
 Migration head: `7d8c295c7ef6`
 
+## Phase T close summary
+
+| Task | Delivery |
+|---|---|
+| T.1 / DEF-S-ADMIN-MEM-001 | `GET /api/v1/admin/users/{id}/memberships/` endpoint + frontend wiring. Backend merged via PR #9. Auth issue (401 admin vs 403 non-admin) confirmed to be a JWT/token configuration mismatch on staging — code behaviour is correct. |
+| T.2 | `parent_reply_id` FK on `inquiry_replies`, self-referential relationship, validation, eager-loading, recursive schema. Backend commit `76d6d1f` on `feature/t-2-conversational-threading`, PR #11 to staging. Frontend (quoted reply preview, reply action on bubbles, 10s polling) deferred. |
+| T.2-frontend | Quoted reply preview, reply action on bubbles, 10s polling — pending Railway deploy → `pnpm gen:types` → frontend logic |
+| Infra | Docker PostGIS local test infrastructure restored; full suite runs locally in minutes, 95%+ coverage maintained. |
+
+Backend HEAD at Phase T close: `76d6d1f`
+Frontend HEAD at Phase T close: `e1d2f04`
+Migration head: `a4de654baa02`
+
 ## Phase T opening backlog
 
 | ID | Item | Priority |
 |---|---|---|
-| DEF-S-ADMIN-MEM-001 | Admin "View agency membership" CTA shows logged-in user's memberships, not target agent's. Requires `GET /api/v1/admin/users/{id}/memberships/` endpoint | High |
-| T.2 | Conversational reply threading — `parent_reply_id FK`, quoted reply preview, reply action on bubbles, 10s polling | High |
+| T.2-frontend | Quoted reply preview, reply action on bubbles, 10s polling | High |
 | DEF-J-EMAIL-DOMAIN-001 | Resend domain verification — operator action, no code changes | High |
 | DEF-Q-UNBLOCK-002 | Multi-membership edge case in `_apply_membership_role_after_status_change` | Medium |
 
@@ -194,8 +206,10 @@ Migration head: `7d8c295c7ef6`
 ## Next session handover
 
 - Phases G through S are closed. Do not reopen unless investigating a regression.
-- Phase T is active. Open with `DEF-S-ADMIN-MEM-001` (backend endpoint first,
-  then frontend wiring), then `T.2` (conversational reply threading).
+- Phase T is active. `T.1` backend is merged (PR #9), `T.2` backend is PR'd (#11 to staging).
+  Next: validate PR #11 on staging, run `pnpm gen:types`, then commit frontend for
+  T.1 wiring + T.2 quoted reply preview, reply action on bubbles, 10s polling.
+- `T.1` admin JWT 401-401 issue confirmed to be staging JWT secret mismatch — not a code bug.
 - Docker PostGIS is the local test target. Staging Supabase is for deployed
   environment validation only, via pooler connection.
 - `detect-secrets` pre-commit hook is active on the backend repo.

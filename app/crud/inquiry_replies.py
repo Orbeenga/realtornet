@@ -21,11 +21,13 @@ class InquiryReplyCRUD:
         inquiry_id: int,
         author_id: int,
         body: str,
+        parent_reply_id: Optional[int] = None,
     ) -> InquiryReply:
         obj = InquiryReply(
             inquiry_id=inquiry_id,
             author_id=author_id,
             body=body,
+            parent_reply_id=parent_reply_id,
         )
         db.add(obj)
         db.flush()
@@ -42,7 +44,10 @@ class InquiryReplyCRUD:
     ) -> List[InquiryReply]:
         stmt = (
             select(InquiryReply)
-            .options(joinedload(InquiryReply.author))
+            .options(
+                joinedload(InquiryReply.author),
+                joinedload(InquiryReply.parent_reply).joinedload(InquiryReply.author),
+            )
             .where(InquiryReply.inquiry_id == inquiry_id)
             # List query (oldest first)
             .order_by(InquiryReply.created_at.asc(), InquiryReply.reply_id.asc())

@@ -5,6 +5,8 @@ Follows BaseSchema/CreateSchema/UpdateSchema pattern.
 DB-controlled fields (id, timestamps) excluded from Create/Update.
 """
 
+from __future__ import annotations
+
 from pydantic import BaseModel, ConfigDict, field_validator
 from typing import Optional
 from datetime import datetime
@@ -68,6 +70,7 @@ class InquiryUpdate(BaseModel):
 
 class InquiryReplyCreate(BaseModel):
     body: str
+    parent_reply_id: Optional[int] = None
 
     @field_validator('body')
     @classmethod
@@ -95,6 +98,8 @@ class InquiryReplyResponse(BaseModel):
     author_display_name: str = ""
     author_role: str = "agent"
     body: str
+    parent_reply_id: Optional[int] = None
+    parent_reply: Optional[InquiryReplyResponse] = None
     created_at: datetime
     viewed_at: Optional[datetime] = None
     edited_at: Optional[datetime] = None
